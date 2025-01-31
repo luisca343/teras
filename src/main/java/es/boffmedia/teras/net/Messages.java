@@ -2,6 +2,8 @@ package es.boffmedia.teras.net;
 
 import es.boffmedia.teras.net.client.*;
 import es.boffmedia.teras.net.server.*;
+import es.boffmedia.teras.net.server.serverOld.SMessageFinalizarLlamada;
+import es.boffmedia.teras.net.server.serverOld.SMessageIniciarLlamada;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -45,6 +47,10 @@ public class Messages {
         INSTANCE.registerMessage(index++, CMessageFindPath.class, CMessageFindPath::encode, CMessageFindPath::decode, CMessageFindPath::handle);
         INSTANCE.registerMessage(index++, SMessageChatMessage.class, SMessageChatMessage::encode, SMessageChatMessage::decode, SMessageChatMessage::handle);
 
+        INSTANCE.registerMessage(index++, SMessageIniciarLlamada.class, SMessageIniciarLlamada::encode, SMessageIniciarLlamada::decode, SMessageIniciarLlamada::handle);
+        INSTANCE.registerMessage(index++, SMessageFinalizarLlamada.class, SMessageFinalizarLlamada::encode, SMessageFinalizarLlamada::decode, SMessageFinalizarLlamada::handle);
+
+
         //INSTANCE.registerMessage(index++, MessageCarTest.class, MessageCarTest::encode, MessageCarTest::decode, MessageCarTest::handle);
 
         /// OOLD
@@ -52,8 +58,6 @@ public class Messages {
         INSTANCE.registerMessage(index++, SMessageSetPC.class, SMessageSetPC::encode, SMessageSetPC::decode, SMessageSetPC::handle);
 
         INSTANCE.registerMessage(index++, SMessagePadCtrl.class, SMessagePadCtrl::encode, SMessagePadCtrl::decode, SMessagePadCtrl::handle);
-        INSTANCE.registerMessage(index++, SMessageIniciarLlamada.class, SMessageIniciarLlamada::encode, SMessageIniciarLlamada::decode, SMessageIniciarLlamada::handle);
-        INSTANCE.registerMessage(index++, SMessageFinalizarLlamada.class, SMessageFinalizarLlamada::encode, SMessageFinalizarLlamada::decode, SMessageFinalizarLlamada::handle);
         INSTANCE.registerMessage(index++, SMessageDarObjetos.class, SMessageDarObjetos::encode, SMessageDarObjetos::decode, SMessageDarObjetos::handle);
         INSTANCE.registerMessage(index++, SMessageVerMisiones.class, SMessageVerMisiones::encode, SMessageVerMisiones::decode, SMessageVerMisiones::handle);
 

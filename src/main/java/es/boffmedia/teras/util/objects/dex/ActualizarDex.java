@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects._old.dex;
+package es.boffmedia.teras.util.objects.dex;
 
 import es.boffmedia.teras.util.objects.post.SmartRotomPost;
 

@@ -1,7 +1,6 @@
 package es.boffmedia.teras.items;
 
 
-import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.api.pokedex.PlayerPokedex;
 import com.pixelmonmod.pixelmon.api.pokedex.PokedexRegistrationStatus;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
@@ -10,16 +9,13 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.server.serverOld.SMessageUpdateDex;
-import es.boffmedia.teras.util.objects._old.dex.ActualizarDex;
-import es.boffmedia.teras.util.data.WingullAPI;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
+import es.boffmedia.teras.util.objects.dex.ActualizarDex;
 import es.boffmedia.teras.util.math.vector.RayTrace;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemUseContext;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.EntityRayTraceResult;
@@ -123,8 +119,7 @@ public class SmartRotom extends Item {
         }
         if(!form.isEmpty() && !world.isClientSide()){
             ActualizarDex updateDex = new ActualizarDex(player.getUUID().toString(), dex, 1, form, palette);
-            Gson gson = new Gson();
-            WingullAPI.wingullPOST("/pokemon/registry", gson.toJson(updateDex));
+            SmartRotomService.postRegistry(updateDex);
         }
         return super.use(world, player, hand);
     }

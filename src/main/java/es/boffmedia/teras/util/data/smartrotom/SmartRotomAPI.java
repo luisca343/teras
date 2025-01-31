@@ -1,15 +1,15 @@
-package es.boffmedia.teras.util.data;
+package es.boffmedia.teras.util.data.smartrotom;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.util.data.QueryHelper;
 
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 
-public class WingullAPI {
+public class SmartRotomAPI {
     // private static String WINGULL_URL = "http://79.116.9.120:34301/";
 
 

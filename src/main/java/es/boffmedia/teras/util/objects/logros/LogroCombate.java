@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects._old.logros;
+package es.boffmedia.teras.util.objects.logros;
 
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
 import es.boffmedia.teras.util.objects._old.pixelmon.PokemonData;

@@ -31,6 +31,7 @@ import es.boffmedia.teras.net.client.clientOld.CMessageVerVideo;
 import es.boffmedia.teras.net.client.clientOld.CMessageWaypoints;
 import es.boffmedia.teras.net.video.ScreenManager;
 import es.boffmedia.teras.util.RouteCreator;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
 import es.boffmedia.teras.util.objects._old.WayPoint;
 import es.boffmedia.teras.util.objects._old.karts.Circuito;
@@ -40,7 +41,6 @@ import es.boffmedia.teras.pixelmon.frentebatalla.TorreBatallaController;
 import es.boffmedia.teras.util.file.FileHelper;
 import es.boffmedia.teras.util.string.MessageHelper;
 import es.boffmedia.teras.util.data.PersistentDataFields;
-import es.boffmedia.teras.util.data.WingullAPI;
 import es.boffmedia.teras.util.media.AudioManager;
 import moe.plushie.armourers_workshop.core.data.LocalDataService;
 import moe.plushie.armourers_workshop.core.skin.Skin;
@@ -77,8 +77,8 @@ public class TestCommand {
                 .then(cargarEquipo())
                 .then(iniciarCombateFrenteBatalla())
                 .then(playVideo())
-                .requires((commandSource -> commandSource.hasPermission(3))
-                ).then(crearWaypoint())
+                .requires((commandSource -> commandSource.hasPermission(3)))
+                    .then(crearWaypoint())
                 .then(reproducirSonido())
                 .then(testset())
                 .then(findPath());
@@ -115,9 +115,7 @@ public class TestCommand {
         return Commands.literal("npc")
                 .executes((command) -> {
                     UpdateNPCs updateNPCs = new UpdateNPCs();
-
-                    Gson gson = new Gson();
-                    WingullAPI.wingullPOST("/misiones/npcs", gson.toJson(updateNPCs));
+                    SmartRotomService.updateNPCs(updateNPCs);
 
                     return 1;
                 });

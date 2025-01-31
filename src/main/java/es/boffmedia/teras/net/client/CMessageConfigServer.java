@@ -6,7 +6,7 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import es.boffmedia.teras.util.PolygonCreator;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.data.WingullAPI;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
 import journeymap.client.waypoint.WaypointGroup;
 import journeymap.client.waypoint.WaypointGroupStore;
@@ -32,7 +32,7 @@ public class CMessageConfigServer implements Runnable{
         TerasConfig conf = gson.fromJson(datos, TerasConfig.class);
         Teras.config = conf;
 
-        String regionDataStr = WingullAPI.wingullGET("/regions");
+        String regionDataStr = SmartRotomService.getRegions();
 
         Type regionListType = new TypeToken<List<PolygonCreator.Region>>() {}.getType();
         List<PolygonCreator.Region> regions = gson.fromJson(regionDataStr, regionListType);

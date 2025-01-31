@@ -15,6 +15,7 @@ import net.minecraft.network.PacketBuffer;
 import net.minecraftforge.fml.network.NetworkEvent;
 import net.minecraftforge.fml.network.PacketDistributor;
 
+import java.util.UUID;
 import java.util.function.Supplier;
 
 public class SMessageIniciarLlamada implements Runnable{
@@ -42,7 +43,14 @@ public class SMessageIniciarLlamada implements Runnable{
         }*/
 
         String idLlamada = datosLlamada.getCaller();
-        Group group = api.createGroup(idLlamada, null);
+        Group group;
+        if(player.getStringUUID().equals(idLlamada)){
+            group = api.createGroup(idLlamada, null);
+        } else {
+            VoicechatConnection conn = api.getConnectionOf(UUID.fromString(idLlamada));
+            group = conn.getGroup();
+        }
+
         VoicechatConnection conn = api.getConnectionOf(player.getUUID());
         conn.setGroup(group);
 

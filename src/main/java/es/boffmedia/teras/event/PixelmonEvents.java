@@ -1,6 +1,5 @@
 package es.boffmedia.teras.event;
 
-import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.api.events.ExperienceGainEvent;
 import com.pixelmonmod.pixelmon.api.events.PokedexEvent;
 import com.pixelmonmod.pixelmon.api.events.ShopkeeperEvent;
@@ -9,14 +8,14 @@ import com.pixelmonmod.pixelmon.api.pokedex.PokedexRegistrationStatus;
 import com.pixelmonmod.pixelmon.entities.npcs.NPCShopkeeper;
 import com.pixelmonmod.pixelmon.entities.npcs.registry.ShopItemWithVariation;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.ShopTransaction;
-import es.boffmedia.teras.util.objects._old.dex.ActualizarDex;
+import es.boffmedia.teras.util.objects.dex.ActualizarDex;
 import es.boffmedia.teras.pixelmon.battle.TerasBattle;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleRuleRegistry;
 import es.boffmedia.teras.util.string.MessageHelper;
 import es.boffmedia.teras.util.data.PersistentDataFields;
-import es.boffmedia.teras.util.data.WingullAPI;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
@@ -58,9 +57,7 @@ public class PixelmonEvents {
         int estado = event.getNewStatus().equals(PokedexRegistrationStatus.SEEN) ? 0 : 1;
 
         ActualizarDex dex = new ActualizarDex(uuid, idPokemon, estado, form, palette);
-        Gson gson = new Gson();
-
-        WingullAPI.wingullPOST("/pokemon/registry", gson.toJson(dex));
+        SmartRotomService.postRegistry(dex);
     }
     
     @SubscribeEvent
@@ -97,8 +94,7 @@ public class PixelmonEvents {
                 int count = itemStack.getCount();
 
                 ShopTransaction shopTransaction = new ShopTransaction(event.getEntityPlayer().getStringUUID(), npcName, itemName, operation, unitPrice, count);
-                Gson gson = new Gson();
-                WingullAPI.wingullPOST("/starbank/shop", gson.toJson(shopTransaction));
+                SmartRotomService.saveShopTransaction(shopTransaction);
 
                 encontrado = true;
             }

@@ -8,8 +8,8 @@ import com.mrcrayfish.vehicle.init.ModEntities;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.clientOld.CMessageCambioPosicion;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.string.MessageHelper;
-import es.boffmedia.teras.util.data.WingullAPI;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.SoundCategory;
@@ -263,9 +263,7 @@ public class Carrera {
         }
 
         resultado.setParticipantes(participantesCarrera);
-        String json = gson.toJson(resultado);
-
-        WingullAPI.wingullPOST("/karts/carrera", json);
+        SmartRotomService.postCarrera(resultado);
 
         cerrarCarrera();
         Teras.carreraManager.carreras.remove(circuito.nombre);
