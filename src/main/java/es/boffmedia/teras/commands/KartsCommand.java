@@ -39,6 +39,7 @@ public class KartsCommand {
                         .then(salirCarrera())
                         .then(cuentaAtras())
                         .then(iniciarCarrera())
+                        .then(raceStatus())
                 )
                 .then(Commands.literal("circuito")
                         .requires((commandSource -> commandSource.hasPermission(3)))
@@ -165,22 +166,22 @@ public class KartsCommand {
     private ArgumentBuilder<CommandSource,?> entrarCarrera() {
         return Commands.literal("entrar")
                 .then(Commands.argument("jugador", EntityArgument.player())
-                .then(Commands.argument("nombre", StringArgumentType.string())
-                        .then(Commands.argument("vueltas", IntegerArgumentType.integer())
-                        .executes((command) -> {
-                            if(esJugador(command)) return 0;
-                            int vueltas = IntegerArgumentType.getInteger(command, "vueltas");
-                            String nombre = StringArgumentType.getString(command, "nombre");
-                            ServerPlayerEntity player = EntityArgument.getPlayer(command, "jugador");
+                        .then(Commands.argument("nombre", StringArgumentType.string())
+                                .then(Commands.argument("vueltas", IntegerArgumentType.integer())
+                                        .executes((command) -> {
+                                            if(esJugador(command)) return 0;
+                                            int vueltas = IntegerArgumentType.getInteger(command, "vueltas");
+                                            String nombre = StringArgumentType.getString(command, "nombre");
+                                            ServerPlayerEntity player = EntityArgument.getPlayer(command, "jugador");
 
 
-                            // Usar el CarreraManager para crear la carrera
-                            Teras.raceManager.joinRace(nombre, vueltas, player);
+                                            // Usar el CarreraManager para crear la carrera
+                                            Teras.raceManager.joinRace(nombre, vueltas, player);
 
 
-                            return 1;
-                        })
-                )));
+                                            return 1;
+                                        })
+                                )));
     }
 
 
@@ -289,4 +290,17 @@ public class KartsCommand {
                 });
     }
 
+    private ArgumentBuilder<CommandSource, ?> raceStatus() {
+        return Commands.literal("status")
+                .executes((command) -> {
+                    Entity entity = command.getSource().getEntity();
+                    if (entity instanceof ServerPlayerEntity) {
+                        ServerPlayerEntity player = (ServerPlayerEntity) entity;
+                        Teras.raceManager.displayRaceStatus(player);
+                        return 1;
+                    }
+                    return 0;
+                });
+    }
 }
+

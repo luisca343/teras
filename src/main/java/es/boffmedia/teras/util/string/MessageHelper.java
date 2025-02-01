@@ -13,6 +13,12 @@ import java.util.UUID;
 
 public class MessageHelper {
 
+    public static void enviarMensajeGlobal(String mensaje) {
+        for (ServerPlayerEntity player : ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayers()) {
+            enviarMensaje(player, mensaje);
+        }
+    }
+
     public static void enviarMensaje(String uuid, String mensaje) {
         ServerPlayerEntity player = ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayer(UUID.fromString(uuid));
         if (player != null) {

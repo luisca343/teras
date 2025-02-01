@@ -8,13 +8,16 @@ import es.boffmedia.teras.util.string.MessageHelper;
 import io.leangen.geantyref.TypeToken;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.util.text.Style;
 import net.minecraft.util.text.TextComponent;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraft.util.text.event.ClickEvent;
 import net.minecraft.util.text.event.HoverEvent;
+import net.minecraftforge.fml.common.ObfuscationReflectionHelper;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.UUID;
@@ -101,7 +104,6 @@ public class RaceManager {
 
 
     public void leaveRace(ServerPlayerEntity jugador) {
-        MessageHelper.enviarMensaje(jugador, "Saliendo de la carrera");
         if (!participants.containsKey(jugador.getUUID())) {
             MessageHelper.enviarMensaje(jugador, "No estás en ninguna carrera");
             return;
@@ -110,12 +112,11 @@ public class RaceManager {
         Race race = participants.get(jugador.getUUID()).getRaceIn();
         race.getParticipants().removeIf(participante -> participante.getPlayer().getUUID().equals(jugador.getUUID()));
         participants.remove(jugador.getUUID());
-        MessageHelper.enviarMensaje(jugador, "Has salido de la carrera");
+        Teras.LOGGER.info(jugador.getName() + " has salido de la carrera " + race.getTrack().getName());
 
         if (race.getParticipants().isEmpty()) {
             activeRaces.remove(race.getTrack().getName());
-            MessageHelper.enviarMensaje(jugador, "La carrera ha sido eliminada al no tener participantes");
-
+            Teras.LOGGER.info("La carrera ha sido eliminada al no tener participantes");
         }
     }
 
@@ -201,36 +202,112 @@ public class RaceManager {
         participant.tick();
     }
 
+    private static Method setRawPosition;
 
-    public void hitCar(ServerPlayerEntity player){
-        Teras.LOGGER.info("GOLPEANDO COCHE");
-        PoweredVehicleEntity vehicleEntity = (PoweredVehicleEntity) player.getVehicle();
-
-        int tiempo = 2000;
-        new Thread(() -> {
-            assert vehicleEntity != null;
-            vehicleEntity.setEngine(false);
-
-            for(int i = 0; i < 8; i++){
-
-                float f = MathHelper.wrapDegrees(vehicleEntity.yRot);
-                float f2 = MathHelper.wrapDegrees(player.yRot);
-
-                vehicleEntity.yRot = f+ 45f ;
-                vehicleEntity.yRotO = f+ 45f ;
-                player.yRot = f2+45f;
-
-                vehicleEntity.push(5,10,5);
-
-                Teras.LOGGER.info(vehicleEntity.yRot);
-                try {
-                    Thread.sleep(tiempo / 8);
-                } catch (InterruptedException e) {
-                    Teras.LOGGER.error(e);
-                }
-            }
-            vehicleEntity.setEngine(true);
-        }).start();
+    static {
+        try {
+            setRawPosition = ObfuscationReflectionHelper.findMethod(PoweredVehicleEntity.class, "func_70080_a", double.class, double.class, double.class, float.class, float.class);
+            setRawPosition.setAccessible(true);
+        } catch (Exception e) {
+            Teras.LOGGER.error("Failed to get setRawPosition method", e);
+        }
     }
 
+    public void hitCar(ServerPlayerEntity player) {
+        Teras.LOGGER.info("GOLPEANDO COCHE");
+        if (player.getVehicle() instanceof PoweredVehicleEntity) {
+            PoweredVehicleEntity vehicleEntity = (PoweredVehicleEntity) player.getVehicle();
+
+            // Disable the engine temporarily
+            vehicleEntity.setEngine(false);
+
+            // Start a new thread to handle the spinning effect
+            new Thread(() -> {
+                try {
+                    int spinDuration = 40; // Number of ticks to spin (2 seconds at 20 ticks per second)
+                    float totalRotation = 360f; // Total degrees to rotate
+                    float instabilityStrength = 0.05f; // Adjust this value to control instability
+
+                    double initialX = vehicleEntity.getX();
+                    double initialY = vehicleEntity.getY();
+                    double initialZ = vehicleEntity.getZ();
+                    float initialYaw = vehicleEntity.yRot;
+
+                    for (int i = 0; i < spinDuration; i++) {
+                        // Calculate new rotation
+                        float progress = (float) i / spinDuration;
+                        float newYaw = initialYaw + progress * totalRotation;
+
+                        // Apply rotation
+                        vehicleEntity.setYBodyRot(newYaw);
+                        vehicleEntity.yRotO = newYaw;
+
+                        // Sync player rotation with vehicle
+                        player.setYBodyRot(newYaw);
+                        player.yRotO = newYaw;
+
+                        // Add instability
+                        double instabilityX = (Math.random() - 0.5) * instabilityStrength;
+                        double instabilityZ = (Math.random() - 0.5) * instabilityStrength;
+
+                        // Apply a small upward force to prevent sinking
+                        double upwardForce = 0.05;
+
+                        Vector3d instabilityMotion = new Vector3d(instabilityX, upwardForce, instabilityZ);
+                        vehicleEntity.setDeltaMovement(instabilityMotion);
+
+                        // Force position update to keep the vehicle in place
+                        vehicleEntity.setPos(initialX, initialY, initialZ);
+
+                        // Update the vehicle's prevPosX, prevPosY, prevPosZ
+                        vehicleEntity.xo = initialX;
+                        vehicleEntity.yo = initialY;
+                        vehicleEntity.zo = initialZ;
+
+                        Thread.sleep(50); // 50ms sleep for 20 ticks per second
+                    }
+
+                    // Re-enable the engine after spinning
+                    vehicleEntity.setEngine(true);
+
+                    // Apply speed loss
+                    Vector3d currentMotion = vehicleEntity.getDeltaMovement();
+                    vehicleEntity.setDeltaMovement(currentMotion.multiply(0.5, 1, 0.5));
+
+                } catch (InterruptedException e) {
+                    Teras.LOGGER.error("Error during car hit effect", e);
+                }
+            }).start();
+        }
+    }
+    private boolean isPlayerInRace(UUID uuid) {
+        return participants.containsKey(uuid);
+    }
+
+    public void displayRaceStatus(ServerPlayerEntity player) {
+        if (!isPlayerInRace(player.getUUID())) {
+            MessageHelper.enviarMensaje(player, "No estás en ninguna carrera.");
+            return;
+        }
+
+        RaceParticipant participant = participants.get(player.getUUID());
+        Race race = participant.getRaceIn();
+
+        String status = String.format("Carrera: %s\n" +
+                        "Vuelta: %d/%d\n" +
+                        "Checkpoint: %d/%d\n" +
+                        "Posición: %d/%d\n" +
+                        "Tiempo restante: %s",
+                race.getTrack().getName(),
+                participant.getCurrentLap(),
+                race.laps,
+                participant.getCurrentCheckpointIndex() + 1,
+                race.getCheckpoints().size(),
+                race.getParticipants().indexOf(participant) + 1,
+                race.getParticipants().size(),
+                MessageHelper.formatearTiempo(race.getRemainingTime()));
+
+        MessageHelper.enviarMensaje(player, status);
+    }
 }
+

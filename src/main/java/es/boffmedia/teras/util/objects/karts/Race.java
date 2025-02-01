@@ -4,11 +4,14 @@ import com.mrcrayfish.vehicle.entity.EngineTier;
 import com.mrcrayfish.vehicle.entity.PoweredVehicleEntity;
 import com.mrcrayfish.vehicle.entity.vehicle.ATVEntity;
 import com.mrcrayfish.vehicle.init.ModEntities;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageRacePositionChange;
 import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.ServerPlayerEntity;
+import net.minecraft.util.SoundCategory;
+import net.minecraft.util.SoundEvents;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.network.PacketDistributor;
 import net.minecraftforge.fml.server.ServerLifecycleHooks;
@@ -17,8 +20,9 @@ import java.util.*;
 
 public class Race {
     private RaceTrack track;
-    private int laps;
+    int laps;
     private ArrayList<RaceParticipant> participants;
+    private List<RaceParticipant> finishedParticipants = new ArrayList<>();
     private RaceStatus status;
     private ArrayList<UUID> startVotes;
     private long startTime;
@@ -84,11 +88,10 @@ public class Race {
         player.startRiding(vehicleEntity);
     }
 
-    public void startCountdown(){
+    public void startCountdown() {
         this.status = RaceStatus.STARTING;
         int i = 0;
         for (RaceParticipant participant : participants) {
-            // Teleport each participant to a position
             CoordinatePoint startingPoint = track.getStartingPoints().get(i);
             StartingDirection orientacion = track.getStartingDirection() == null ? StartingDirection.NORTH : track.getStartingDirection();
             spawnVehicle(participant.getPlayer(), startingPoint, orientacion);
@@ -100,13 +103,19 @@ public class Race {
                 status = RaceStatus.STARTING;
                 for (int j = 3; j > 0; j--) {
                     for (RaceParticipant participant : participants) {
-                        MessageHelper.enviarTitulo(participant.getPlayer(), j + "");
+                        ServerPlayerEntity player = participant.getPlayer();
+                        MessageHelper.enviarTitulo(player, j + "");
+                        // Play high-pitched note sound for countdown
+                        player.playSound(SoundEvents.NOTE_BLOCK_PLING,1.0F, 2.0F);
                     }
                     Thread.sleep(1000);
                 }
 
                 for (RaceParticipant participant : participants) {
-                    MessageHelper.enviarTitulo(participant.getPlayer(), "GO!");
+                    ServerPlayerEntity player = participant.getPlayer();
+                    MessageHelper.enviarTitulo(player, "GO!");
+                    // Play lower-pitched, louder note for "GO!"
+                    player.playSound(SoundEvents.NOTE_BLOCK_PLING, 1.0F, 1.0F);
                     allowMove(participant.getPlayer().getUUID(), true);
                 }
                 start();
@@ -126,12 +135,12 @@ public class Race {
     }
 
     public void start() {
-            this.status = RaceStatus.IN_PROGRESS;
-            this.startTime = System.currentTimeMillis();
+        this.status = RaceStatus.IN_PROGRESS;
+        this.startTime = System.currentTimeMillis();
 
-            participants.forEach(p -> p.setCurrentCheckpoint(0));
+        participants.forEach(p -> p.setCurrentCheckpoint(0));
 
-            calculatePositions();
+        calculatePositions();
     }
 
     public void calculatePositions(){
@@ -156,24 +165,49 @@ public class Race {
     }
 
     public void checkPlayerInCheckpoint(ServerPlayerEntity player, CoordinatePoint point) {
-
         UUID uuid = player.getUUID();
-        RaceParticipant participant = getParticipants().stream().filter(p -> p.getPlayer().getUUID().equals(uuid)).findFirst().orElse(null);
+        RaceParticipant participant = getParticipants().stream()
+                .filter(p -> p.getPlayer().getUUID().equals(uuid))
+                .findFirst()
+                .orElse(null);
         if (participant == null) return;
+
         Checkpoint checkpoint = track.getCheckpoints().get(participant.getCurrentCheckpointIndex());
         if (checkpoint.isInCheckpoint(point)) {
             participant.nextCheckpoint();
             if (participant.getCurrentCheckpointIndex() == track.getCheckpoints().size()) {
                 participant.setCurrentLap(participant.getCurrentLap() + 1);
                 participant.setCurrentCheckpoint(0);
-                MessageHelper.enviarMensaje(participant.getPlayer(), "Has completado una vuelta");
+                if(participant.getCurrentLap() <= laps) MessageHelper.enviarMensaje(participant.getPlayer(), "Has completado una vuelta " + participant.getCurrentLap() + "/" + laps);
             }
-            if(participant.getCurrentLap() > laps){
+            if (participant.getCurrentLap() > laps) {
                 participant.setFinishTime(System.currentTimeMillis());
+                finishedParticipants.add(participant);
+                int position = finishedParticipants.size();
+
+                String title;
+                String subtitle;
+                if (position == 1) {
+                    title = "§e§lVICTORIA!";
+                    subtitle = "§bHas quedado primero en " + MessageHelper.formatearTiempo(participant.getFinishTime() - startTime);
+                    player.playSound(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0F, 1.0F);
+                } else {
+                    title = "§b§lCARRERA TERMINADA";
+                    subtitle = String.format("§fHas terminado §e%d%s §fen %s", position, "º", MessageHelper.formatearTiempo(participant.getFinishTime() - startTime));
+                    player.playSound(SoundEvents.PLAYER_LEVELUP, 1.0F, 1.0F);
+                }
+
+                MessageHelper.enviarTitulo(player, title, 10, 70, 20);
+                MessageHelper.enviarTitulo(player, subtitle, 10, 70, 20);
 
                 player.getVehicle().remove();
                 MessageHelper.enviarMensaje(player, "Has terminado la carrera en " + MessageHelper.formatearTiempo(participant.getFinishTime() - startTime));
                 Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> participant.getPlayer()), new CMessageRacePositionChange(0));
+
+                // Check if all players have finished
+                if (finishedParticipants.size() == participants.size()) {
+                    end();
+                }
             }
         }
     }
@@ -214,4 +248,53 @@ public class Race {
     public void setStatus(RaceStatus status) {
         this.status = status;
     }
+
+    public void end() {
+        this.status = RaceStatus.FINISHED;
+        this.endTime = System.currentTimeMillis();
+        Teras.raceManager.activeRaces.remove(this);
+
+
+        if(participants.size() == 1) {
+            RaceParticipant participant = participants.get(0);
+            Teras.raceManager.leaveRace(participant.getPlayer());
+            return;
+        }
+
+        // Announce overall results
+        MessageHelper.enviarMensajeGlobal("§6§l=== §b§lResultados Finales §6§l===");
+        for (int i = 0; i < finishedParticipants.size(); i++) {
+            RaceParticipant participant = finishedParticipants.get(i);
+            ServerPlayerEntity player = participant.getPlayer();
+            long raceTime = participant.getFinishTime() - startTime;
+            String formattedTime = MessageHelper.formatearTiempo(raceTime);
+            Teras.raceManager.leaveRace(participant.getPlayer());
+
+
+            String positionColor;
+            if (i == 0) positionColor = "§e"; // Gold for 1st
+            else if (i == 1) positionColor = "§7"; // Gray for 2nd
+            else if (i == 2) positionColor = "§6"; // Dark Gold for 3rd
+            else positionColor = "§f"; // White for others
+
+            String message = String.format("%s%d. §r§b%s §7- §aTiempo: §f%s",
+                    positionColor, i + 1, player.getName().getString(), formattedTime);
+
+            MessageHelper.enviarMensajeGlobal(message);
+        }
+        MessageHelper.enviarMensajeGlobal("§6§l========================");
+
+    }
+
+
+
+    public long getRemainingTime() {
+        if (status != RaceStatus.IN_PROGRESS) {
+            return 0;
+        }
+        long maxRaceTime = 10 * 60 * 1000; // 10 minutes in milliseconds
+        long elapsedTime = System.currentTimeMillis() - startTime;
+        return Math.max(0, maxRaceTime - elapsedTime);
+    }
 }
+
