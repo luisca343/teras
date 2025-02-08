@@ -237,7 +237,6 @@ public class TestCommand {
                         ClipboardReader reader = BuiltInClipboardFormat.SPONGE_SCHEMATIC.getReader(new FileInputStream(schem));
                         Clipboard clipboard = reader.read();
 
-
                         World world = ForgeAdapter.adapt(player.level);
                         EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(world, -1);
 

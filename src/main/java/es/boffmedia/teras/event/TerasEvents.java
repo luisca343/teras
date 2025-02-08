@@ -170,6 +170,8 @@ public class TerasEvents {
         new KartsCommand(event.getDispatcher());
         new FrenteBatallaCommand(event.getDispatcher());
 
+        new DungeonCommand(event.getDispatcher());
+
         // Client only commands
 
 
