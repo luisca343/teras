@@ -168,7 +168,7 @@ public class FileHelper {
     }
 
     public static File getSchematic(String name) {
-        File file = new File("plugins/WorldEdit/schematics/" + name + ".schematic");
+        File file = new File("plugins/WorldEdit/schematics/" + name + ".schem");
         if(!file.exists()){
             try {
                 file.createNewFile();
