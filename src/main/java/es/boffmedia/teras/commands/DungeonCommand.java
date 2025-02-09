@@ -8,10 +8,13 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.sk89q.worldedit.forge.ForgeAdapter;
 import es.boffmedia.teras.util.game.dungeons.DungeonGenerator;
+import es.boffmedia.teras.util.game.dungeons.DungeonUtils;
 import es.boffmedia.teras.util.game.dungeons.Room;
 import es.boffmedia.teras.util.game.dungeons.RoomType;
+import net.minecraft.block.Blocks;
 import net.minecraft.command.CommandSource;
 import net.minecraft.command.Commands;
+import net.minecraft.util.Direction;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.world.World;
@@ -71,7 +74,7 @@ public class DungeonCommand {
                         Room room = dungeon[z][x];
                         BlockPos pos = startPos.offset(x * 21, 0, z * 21);
                         if(room.getType() == RoomType.WALL) continue;
-                        context.getSource().getServer().execute(() -> placeRoomSchematic(context.getSource().getLevel(), pos, room.getType()));
+                        context.getSource().getServer().execute(() -> placeRoomSchematic(context.getSource().getLevel(), pos, room, dungeon));
                         // Update progress
                         context.getSource().sendSuccess(new StringTextComponent("Generating dungeon: " + (z * dungeon.length + x + 1) + "/" + (dungeon.length * dungeon.length)), true);
                     }
@@ -137,9 +140,8 @@ public class DungeonCommand {
         }
     }
 
-    private void placeRoomSchematic(World world, BlockPos pos, RoomType type) {
-        if(type == RoomType.WALL) return;
-        String schematicName = getSchematicNameForRoomType(type);
+    private void placeRoomSchematic(World world, BlockPos pos, Room room, Room[][] dungeon) {
+        String schematicName = getSchematicNameForRoomType(room);
         File schem = FileHelper.getSchematic(schematicName);
         if (!schem.exists() || schem.length() == 0) {
             System.err.println("Schematic file " + schematicName + " is missing or empty.");
@@ -160,25 +162,102 @@ public class DungeonCommand {
                     .build();
             Operations.complete(operation);
             editSession.flushSession();
+
+            // Place doors after placing the room schematic
+            placeDoors(world, pos, room, dungeon);
+
         } catch (IOException | WorldEditException e) {
             e.printStackTrace();
         }
     }
 
-    private String getSchematicNameForRoomType(RoomType type) {
-        switch (type) {
-            case WALL: return "dungeon_wall";
-            case NORMAL: return "dungeon_room";
-            case START: return "dungeon_room";
-            case BOSS: return "dungeon_room";
-            case SUPER_SECRET: return "dungeon_room";
-            case SHOP: return "dungeon_room";
-            case TREASURE: return "dungeon_room";
-            case SECRET: return "dungeon_room";
-            case CHALLENGE: return "dungeon_room";
-            case CURSE: return "dungeon_room";
-            case MINI_BOSS: return "dungeon_room";
-            default: return "dungeon_room";
+    private void placeDoors(World world, BlockPos pos, Room room, Room[][] dungeon) {
+        int roomX = room.getX();
+        int roomY = room.getY();
+
+        // Check and place doors for each direction
+        placeDoorIfAdjacent(world, pos, roomX, roomY, roomX + 1, roomY, Direction.EAST, dungeon);
+        placeDoorIfAdjacent(world, pos, roomX, roomY, roomX - 1, roomY, Direction.WEST, dungeon);
+        placeDoorIfAdjacent(world, pos, roomX, roomY, roomX, roomY + 1, Direction.SOUTH, dungeon);
+        placeDoorIfAdjacent(world, pos, roomX, roomY, roomX, roomY - 1, Direction.NORTH, dungeon);
+    }
+
+    private void placeDoorIfAdjacent(World world, BlockPos pos, int x1, int y1, int x2, int y2, Direction direction, Room[][] dungeon) {
+        Room room = dungeon[y2][x2];
+        if (DungeonUtils.isValidRoom(x2, y2) && room.getType() != RoomType.WALL) {
+            BlockPos doorPos = getDoorPosition(pos, direction);
+            if(room.getType() != RoomType.SECRET && room.getType() != RoomType.SUPER_SECRET) create3x3AirDoor(world, doorPos, direction);
+        }
+    }
+
+
+    private int ROOM_SIZE = 21;
+    private int ROOM_HEIGHT = 8;
+    private int DOOR_SIZE = 3;
+
+    // Gets the position of the bottom left corner of the door given the room position and direction
+    private BlockPos getDoorPosition(BlockPos pos, Direction direction) {
+        int ROOM_Y_OFFSET = DOOR_SIZE - ROOM_HEIGHT;
+
+        int ROOM_OFFSET_OPP = ROOM_SIZE - 1;
+        int ROOM_OFFSET = (ROOM_SIZE - DOOR_SIZE) / 2;
+
+        switch (direction) {
+            case NORTH:
+                return pos.offset(ROOM_OFFSET, ROOM_Y_OFFSET, 0);
+            case EAST:
+                return pos.offset(ROOM_OFFSET_OPP, ROOM_Y_OFFSET, ROOM_OFFSET);
+            case SOUTH:
+                return pos.offset(ROOM_OFFSET, ROOM_Y_OFFSET, ROOM_OFFSET_OPP);
+            case WEST:
+                return pos.offset(0, ROOM_Y_OFFSET, ROOM_OFFSET);
+            default:
+                return pos;
+        }
+    }
+
+    private void create3x3AirDoor(World world, BlockPos pos, Direction direction) {
+        int dx = 0, dz = 0;
+        switch (direction) {
+            case EAST:
+            case WEST:
+                dz = 1;
+                break;
+            case NORTH:
+            case SOUTH:
+                dx = 1;
+                break;
+        }
+
+        for (int i = 0; i <= 2; i++) {
+            for (int j = 0; j <= 2; j++) {
+                world.setBlock(pos.offset(dx * i, j, dz * i), Blocks.AIR.defaultBlockState(), 3);
+            }
+        }
+    }
+
+    private String getSchematicNameForRoomType(Room room) {
+        /*
+        if(room.getWidth() == 2 && room.getHeight() == 2) {
+            return "dungeon_room_2x2";
+        }
+
+        if(room.getWidth() + room.getHeight() == 3) {
+            return "dungeon_room_1x2";
+        }*/
+
+        switch (room.getType()) {
+            case NORMAL: return "rooms/normal";
+            case START: return "rooms/starting";
+            case BOSS: return "rooms/boss";
+            case SUPER_SECRET: return "rooms/secret";
+            case SHOP: return "rooms/shop";
+            case TREASURE: return "rooms/treasure";
+            case SECRET: return "rooms/secret";
+            case CHALLENGE: return "rooms/normal";
+            case CURSE: return "rooms/normal";
+            case MINI_BOSS: return "rooms/boss";
+            default: return "rooms/normal";
         }
     }
 }
