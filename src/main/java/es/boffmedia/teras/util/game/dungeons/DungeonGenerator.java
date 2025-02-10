@@ -8,10 +8,12 @@ public class DungeonGenerator {
     public static class DungeonResult {
         public Room[][] dungeon;
         public String seed;
+        public List<String> warnings;
 
-        public DungeonResult(Room[][] dungeon, String seed) {
+        public DungeonResult(Room[][] dungeon, String seed, List<String> warnings) {
             this.dungeon = dungeon;
             this.seed = seed;
+            this.warnings = warnings;
         }
     }
 
@@ -35,21 +37,7 @@ public class DungeonGenerator {
         if (stageId == 12) minDeadEnds += 2;
         return minDeadEnds;
     }
-
-    public static DungeonResult generateDungeon(int stageId, boolean curseOfTheLabyrinth, boolean curseOfTheLost, String seed) {
-        String generatedSeed = (seed != null && !seed.isEmpty()) ? seed : String.valueOf(System.currentTimeMillis());
-        String combinedSeed = stageId + "-" + generatedSeed;
-        SeededRandom rng = new SeededRandom(combinedSeed);
-
-        int requiredRooms = calculateNumberOfRooms(stageId, curseOfTheLabyrinth, curseOfTheLost, rng);
-        int requiredDeadEnds = calculateMinDeadEnds(stageId, curseOfTheLabyrinth);
-
-        Room[][] dungeon = NewRoomCarver.generateDungeonLayout(requiredRooms, requiredDeadEnds, rng);
-        placeSpecialRooms(dungeon, stageId, rng);
-
-        return new DungeonResult(dungeon, combinedSeed);
-    }
-
+    
     static void placeSpecialRooms(Room[][] dungeon, int stageId, SeededRandom rng) {
         List<Room> deadEnds = findDeadEnds(dungeon);
         Collections.sort(deadEnds, (a, b) -> getDistanceFromStart(dungeon, b) - getDistanceFromStart(dungeon, a));

@@ -1,5 +1,8 @@
 package es.boffmedia.teras.util.game.dungeons;
 
+import java.util.Collections;
+import java.util.List;
+
 public class DungeonBuilder {
     private int stageId;
     private boolean curseOfTheLabyrinth;
@@ -36,7 +39,7 @@ public class DungeonBuilder {
         return this;
     }
 
-    public DungeonGenerator.DungeonResult build() {
+    public DungeonGenerator.DungeonResult build() throws IllegalStateException {
         String generatedSeed = (seed != null) ? seed : String.valueOf(System.currentTimeMillis());
         String combinedSeed = stageId + "-" + generatedSeed;
         this.rng = new SeededRandom(combinedSeed);
@@ -49,6 +52,16 @@ public class DungeonBuilder {
         Room[][] dungeon = NewRoomCarver.generateDungeonLayout(requiredRooms, requiredDeadEnds, rng);
         DungeonGenerator.placeSpecialRooms(dungeon, stageId, rng);
 
-        return new DungeonGenerator.DungeonResult(dungeon, combinedSeed);
+        // Validate the generated dungeon
+        DungeonValidator.ValidationResult validation = DungeonValidator.validateDungeon(
+                dungeon, stageId, curseOfTheLabyrinth, curseOfTheLost);
+
+        if (!validation.isValid()) {
+            throw new IllegalStateException("Dungeon validation failed:\n" +
+                    String.join("\n", validation.getErrors()));
+        }
+
+        List<String> warnings = validation.getWarnings();
+        return new DungeonGenerator.DungeonResult(dungeon, combinedSeed, warnings.isEmpty() ? Collections.emptyList() : warnings);
     }
 }

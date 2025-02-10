@@ -83,8 +83,15 @@ public class DungeonCommand {
         }
 
         DungeonGenerator.DungeonResult result = builder.build();
-        Room[][] dungeon = result.dungeon;
 
+        // Log any warnings
+        if (!result.warnings.isEmpty()) {
+            context.getSource().sendSuccess(
+                    new StringTextComponent("Generation warnings:\n" + String.join("\n", result.warnings)),
+                    true);
+        }
+
+        Room[][] dungeon = result.dungeon;
         BlockPos startPos = context.getSource().getPlayerOrException().blockPosition();
         placeRooms(context, dungeon, startPos);
         teleportPlayerToStart(context, dungeon, startPos);
