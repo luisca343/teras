@@ -34,10 +34,10 @@ public class NewRoomCarver {
 
         RoomShapeManager() {
             shapes = new ArrayList<>();
-            shapes.add(new RoomShape(2, 2, 0.15, true));
-            shapes.add(new RoomShape(2, 1, 0.2, true));
-            shapes.add(new RoomShape(1, 2, 0.2, true));
-            shapes.add(new RoomShape(1, 1, 1.0, false));
+            shapes.add(new RoomShape(2, 2, DungeonConfig.RoomProbabilities.get2x2Chance(), true));
+            shapes.add(new RoomShape(2, 1, DungeonConfig.RoomProbabilities.get2x1Chance(), true));
+            shapes.add(new RoomShape(1, 2, DungeonConfig.RoomProbabilities.get1x2Chance(), true));
+            shapes.add(new RoomShape(1, 1, DungeonConfig.RoomProbabilities.get1x1Chance(), false));
         }
 
         void updateChances(int width, int height) {
@@ -81,7 +81,7 @@ public class NewRoomCarver {
     }
 
     private static boolean isValidLargeRoom(Room[][] dungeon, int x, int y, int width, int height) {
-        if (x + width > DungeonUtils.GRID_SIZE || y + height > DungeonUtils.GRID_SIZE) {
+        if (x + width > DungeonConfig.Dimensions.getGridSize() || y + height > DungeonConfig.Dimensions.getGridSize()) {
             return false;
         }
 
@@ -137,10 +137,10 @@ public class NewRoomCarver {
         List<PendingRoom> pendingRooms = new ArrayList<>();
         RoomShapeManager shapeManager = new RoomShapeManager();
 
-        // First, process the starting room
+        // Process starting room
         for (int[] direction : DungeonUtils.DIRECTIONS) {
-            int newX = DungeonUtils.CENTER + direction[0];
-            int newY = DungeonUtils.CENTER + direction[1];
+            int newX = DungeonConfig.Dimensions.getCenter() + direction[0];
+            int newY = DungeonConfig.Dimensions.getCenter() + direction[1];
 
             if (DungeonUtils.isValidRoom(newX, newY) && dungeon[newY][newX].getType() == RoomType.WALL) {
                 if (DungeonUtils.countNeighboringRooms(dungeon, newX, newY) < 2 && rng.randomChance(0.5)) {
@@ -184,24 +184,7 @@ public class NewRoomCarver {
 
         // Fill remaining rooms if needed
         while (roomsCreated < targetRooms) {
-            List<int[]> possibleSpaces = new ArrayList<>();
-
-            for (int y = 0; y < DungeonUtils.GRID_SIZE; y++) {
-                for (int x = 0; x < DungeonUtils.GRID_SIZE; x++) {
-                    if (dungeon[y][x].getType() != RoomType.WALL) {
-                        for (int[] direction : DungeonUtils.DIRECTIONS) {
-                            int newX = x + direction[0];
-                            int newY = y + direction[1];
-                            if (DungeonUtils.isValidRoom(newX, newY) &&
-                                    dungeon[newY][newX].getType() == RoomType.WALL &&
-                                    DungeonUtils.countNeighboringRooms(dungeon, newX, newY) < 2) {
-                                possibleSpaces.add(new int[]{newX, newY});
-                            }
-                        }
-                    }
-                }
-            }
-
+            List<int[]> possibleSpaces = findPossibleSpaces(dungeon);
             if (possibleSpaces.isEmpty()) break;
 
             int[] selectedSpace = possibleSpaces.get(rng.randomInt(0, possibleSpaces.size() - 1));
@@ -214,7 +197,6 @@ public class NewRoomCarver {
                 roomsCreated++;
             }
 
-            // Reset chances periodically to avoid getting stuck with only 1x1 rooms
             if (roomsCreated % 10 == 0) {
                 shapeManager.resetChances();
             }
@@ -223,19 +205,42 @@ public class NewRoomCarver {
         return roomsCreated;
     }
 
+    private static List<int[]> findPossibleSpaces(Room[][] dungeon) {
+        List<int[]> possibleSpaces = new ArrayList<>();
+        int gridSize = DungeonConfig.Dimensions.getGridSize();
+
+        for (int y = 0; y < gridSize; y++) {
+            for (int x = 0; x < gridSize; x++) {
+                if (dungeon[y][x].getType() != RoomType.WALL) {
+                    for (int[] direction : DungeonUtils.DIRECTIONS) {
+                        int newX = x + direction[0];
+                        int newY = y + direction[1];
+                        if (DungeonUtils.isValidRoom(newX, newY) &&
+                                dungeon[newY][newX].getType() == RoomType.WALL &&
+                                DungeonUtils.countNeighboringRooms(dungeon, newX, newY) < 2) {
+                            possibleSpaces.add(new int[]{newX, newY});
+                        }
+                    }
+                }
+            }
+        }
+
+        return possibleSpaces;
+    }
+
     public static Room[][] generateDungeonLayout(int requiredRooms, int requiredDeadEnds, SeededRandom rng) {
         Room[][] dungeon = DungeonUtils.initializeDungeon();
-        dungeon[DungeonUtils.CENTER][DungeonUtils.CENTER] = new Room(RoomType.START, DungeonUtils.CENTER, DungeonUtils.CENTER, 1, 1);
+        dungeon[DungeonConfig.Dimensions.getCenter()][DungeonConfig.Dimensions.getCenter()] =
+                new Room(RoomType.START, DungeonConfig.Dimensions.getCenter(), DungeonConfig.Dimensions.getCenter(), 1, 1);
 
         int roomsCreated = carveRooms(dungeon, requiredRooms, rng);
         int currentDeadEnds = DungeonUtils.countDeadEnds(dungeon);
 
-        // Add dead ends if necessary
         while (currentDeadEnds < requiredDeadEnds) {
             if (addDeadEnd(dungeon, rng)) {
                 currentDeadEnds++;
             } else {
-                break; // If we can't add more dead ends, break the loop
+                break;
             }
         }
 
@@ -245,8 +250,8 @@ public class NewRoomCarver {
     private static boolean addDeadEnd(Room[][] dungeon, SeededRandom rng) {
         List<int[]> possibleDeadEnds = new ArrayList<>();
 
-        for (int y = 0; y < DungeonUtils.GRID_SIZE; y++) {
-            for (int x = 0; x < DungeonUtils.GRID_SIZE; x++) {
+        for (int y = 0; y < DungeonConfig.Dimensions.getGridSize(); y++) {
+            for (int x = 0; x < DungeonConfig.Dimensions.getGridSize(); x++) {
                 if (dungeon[y][x].getType() == RoomType.WALL) {
                     if (DungeonUtils.countNeighboringRooms(dungeon, x, y) == 1) {
                         possibleDeadEnds.add(new int[]{x, y});
@@ -264,4 +269,3 @@ public class NewRoomCarver {
         return false;
     }
 }
-
