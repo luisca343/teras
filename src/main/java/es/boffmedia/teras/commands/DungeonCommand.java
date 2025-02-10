@@ -7,6 +7,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import es.boffmedia.teras.services.SchematicService;
+import es.boffmedia.teras.util.game.dungeons.DungeonBuilder;
 import es.boffmedia.teras.util.game.dungeons.DungeonGenerator;
 import es.boffmedia.teras.util.game.dungeons.Room;
 import es.boffmedia.teras.util.game.dungeons.RoomType;
@@ -65,10 +66,23 @@ public class DungeonCommand {
     }
 
     private void generateAndPlaceDungeon(CommandContext<CommandSource> context, int stageId,
-                                         boolean curseOfTheLabyrinth, boolean curseOfTheLost, String seed) throws CommandSyntaxException {
+                                         boolean curseOfTheLabyrinth, boolean curseOfTheLost, String seed)
+            throws CommandSyntaxException {
 
-        DungeonGenerator.DungeonResult result = DungeonGenerator.generateDungeon(
-                stageId, curseOfTheLabyrinth, curseOfTheLost, seed);
+        DungeonBuilder builder = new DungeonBuilder()
+                .stageId(stageId);
+
+        if (curseOfTheLabyrinth) {
+            builder.withCurseOfTheLabyrinth();
+        }
+        if (curseOfTheLost) {
+            builder.withCurseOfTheLost();
+        }
+        if (seed != null) {
+            builder.seed(seed);
+        }
+
+        DungeonGenerator.DungeonResult result = builder.build();
         Room[][] dungeon = result.dungeon;
 
         BlockPos startPos = context.getSource().getPlayerOrException().blockPosition();

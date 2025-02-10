@@ -15,21 +15,20 @@ public class DungeonGenerator {
         }
     }
 
-    public static int calculateNumberOfRooms(int stageId, boolean curseOfTheLabyrinth, boolean curseOfTheLost, SeededRandom rng) {
+    static int calculateNumberOfRooms(int stageId, boolean curseOfTheLabyrinth, boolean curseOfTheLost, SeededRandom rng) {
         if (!DungeonConfig.isValidStageId(stageId)) {
             throw new IllegalArgumentException("Invalid stage ID: " + stageId);
         }
 
         int baseRooms = Math.min(20, (rng.randomChance(0.5) ? 0 : 1) + 5 + (stageId * 10) / 3);
         int numberOfRooms = DungeonConfig.StageModifiers.calculateRooms(baseRooms, curseOfTheLabyrinth, curseOfTheLost, stageId);
-
-        // Add rooms for hard difficulty
         numberOfRooms += 2 + (rng.randomChance(0.5) ? 0 : 1);
 
         return numberOfRooms;
     }
 
-    public static int calculateMinDeadEnds(int stageId, boolean curseOfTheLabyrinth) {
+
+    static int calculateMinDeadEnds(int stageId, boolean curseOfTheLabyrinth) {
         int minDeadEnds = 5;
         if (stageId != 1) minDeadEnds++;
         if (curseOfTheLabyrinth) minDeadEnds++;
@@ -51,7 +50,7 @@ public class DungeonGenerator {
         return new DungeonResult(dungeon, combinedSeed);
     }
 
-    private static void placeSpecialRooms(Room[][] dungeon, int stageId, SeededRandom rng) {
+    static void placeSpecialRooms(Room[][] dungeon, int stageId, SeededRandom rng) {
         List<Room> deadEnds = findDeadEnds(dungeon);
         Collections.sort(deadEnds, (a, b) -> getDistanceFromStart(dungeon, b) - getDistanceFromStart(dungeon, a));
 
