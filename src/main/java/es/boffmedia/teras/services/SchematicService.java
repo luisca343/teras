@@ -39,8 +39,14 @@ public class SchematicService {
         if(room.getType() == RoomType.WALL) return;
         if(room.getParentX() != null && room.getParentY() != null) {
             Room parent = dungeon[room.getParentY()][room.getParentX()];
-            Teras.getLogger().info("Skipping child room " + room.getType() + " at " + room.getX() + ", " + room.getY());
-            return;
+            if(room.getShape().equals(RoomShape.L_SHAPE_BOTTOM_RIGHT) && room.getParentX() == room.getX() - 1 && room.getParentY() == room.getY()) {
+                Teras.getLogger().info("Building L shaped room from parent " + parent.getType() + " at " + parent.getX() + ", " + parent.getY());
+                room.setX(parent.getX());
+                room.setY(parent.getY());
+            } else {
+                Teras.getLogger().info("Skipping child room " + room.getType() + " at " + room.getX() + ", " + room.getY());
+                return;
+            }
         }
 
         try {
