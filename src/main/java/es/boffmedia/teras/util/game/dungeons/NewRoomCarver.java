@@ -41,7 +41,7 @@ public class NewRoomCarver {
             shapes.add(new RoomShapeConfig(RoomShape.L_SHAPE_TOP_LEFT, lShapeChance));
             shapes.add(new RoomShapeConfig(RoomShape.L_SHAPE_TOP_RIGHT, lShapeChance));
             shapes.add(new RoomShapeConfig(RoomShape.L_SHAPE_BOTTOM_LEFT, lShapeChance));
-            shapes.add(new RoomShapeConfig(RoomShape.L_SHAPE_BOTTOM_RIGHT, lShapeChance));
+            // shapes.add(new RoomShapeConfig(RoomShape.L_SHAPE_BOTTOM_RIGHT, lShapeChance));
         }
 
         void updateChances(RoomShape usedShape) {
