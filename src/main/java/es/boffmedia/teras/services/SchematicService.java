@@ -165,6 +165,20 @@ public class SchematicService {
                         break;
                 }
             }
+        } else if (room.getShape().isLShaped()) {
+            int doubleRoomSize = DungeonConfig.Dimensions.getRoomSize() * 2 - 1;
+
+            if (rotation == 90.0) {
+                // Move 2 rooms - 1 block EAST
+                adjustedPos = adjustedPos.offset(doubleRoomSize, 0, 0);
+            } else if (rotation == 180.0) {
+                // Move 2 rooms - 1 block EAST and 2 rooms - 1 block SOUTH
+                adjustedPos = adjustedPos.offset(doubleRoomSize, 0, doubleRoomSize);
+            } else if (rotation == 270.0) {
+                // Move 1 room - 1 block SOUTH
+                adjustedPos = adjustedPos.offset(0, 0, DungeonConfig.Dimensions.getRoomSize() - 1);
+            }
+            // Rotation 0: No offset needed
         }
 
         return adjustedPos;
