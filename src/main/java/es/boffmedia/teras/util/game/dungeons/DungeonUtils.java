@@ -58,7 +58,7 @@ public class DungeonUtils {
         for (int[] direction : DIRECTIONS) {
             int newX = x + direction[0];
             int newY = y + direction[1];
-            if (isValidRoom(newX, newY) && dungeon[newY][newX].getType() != RoomType.WALL) {
+            if (isValidRoom(newX, newY) && dungeon[newY][newX].getType() != RoomType.WALL && dungeon[newY][newX].getType() != RoomType.SECRET) {
                 count++;
             }
         }

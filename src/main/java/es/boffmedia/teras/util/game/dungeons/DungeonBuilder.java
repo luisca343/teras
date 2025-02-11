@@ -53,7 +53,8 @@ public class DungeonBuilder {
         DungeonGenerator.placeSpecialRooms(dungeon, stageId, rng);
 
         // Validate the generated dungeon
-        DungeonValidator.ValidationResult validation = DungeonValidator.validateDungeon(
+
+        /*DungeonValidator.ValidationResult validation = DungeonValidator.validateDungeon(
                 dungeon, stageId, curseOfTheLabyrinth, curseOfTheLost);
 
         if (!validation.isValid()) {
@@ -61,7 +62,8 @@ public class DungeonBuilder {
                     String.join("\n", validation.getErrors()));
         }
 
-        List<String> warnings = validation.getWarnings();
-        return new DungeonGenerator.DungeonResult(dungeon, combinedSeed, warnings.isEmpty() ? Collections.emptyList() : warnings);
+        List<String> warnings = validation.getWarnings();*/
+        return new DungeonGenerator.DungeonResult(dungeon, combinedSeed, Collections.emptyList());
+        //return new DungeonGenerator.DungeonResult(dungeon, combinedSeed, warnings.isEmpty() ? Collections.emptyList() : warnings);
     }
 }

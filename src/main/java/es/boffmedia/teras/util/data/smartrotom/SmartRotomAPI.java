@@ -14,8 +14,6 @@ public class SmartRotomAPI {
 
 
     public static String wingullGET(String str) {
-        Teras.LOGGER.info("WingullAPI: " + str);
-        Teras.LOGGER.info("WingullAPI: " + Teras.config.getAPI_URL());
         FutureTask<String> futureTask = new FutureTask<>(() -> {
             try {
                 String apiUrl = Teras.config.getAPI_URL();

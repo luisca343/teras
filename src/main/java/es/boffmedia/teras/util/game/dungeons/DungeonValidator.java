@@ -65,6 +65,12 @@ public class DungeonValidator {
             errors.add(String.format("Invalid room dimensions at [%d, %d]", room.getX(), room.getY()));
         }
 
+        // Add validation for special rooms
+        if (room.getType() != RoomType.NORMAL && room.getType() != RoomType.WALL &&
+                (room.getWidth() > 1 || room.getHeight() > 1)) {
+            errors.add(String.format("Special room at [%d, %d] cannot be larger than 1x1", room.getX(), room.getY()));
+        }
+
         if (room.getWidth() > 2 || room.getHeight() > 2) {
             errors.add(String.format("Room too large at [%d, %d]", room.getX(), room.getY()));
         }

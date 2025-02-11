@@ -37,10 +37,13 @@ public class DungeonGenerator {
         if (stageId == 12) minDeadEnds += 2;
         return minDeadEnds;
     }
-    
+
     static void placeSpecialRooms(Room[][] dungeon, int stageId, SeededRandom rng) {
         List<Room> deadEnds = findDeadEnds(dungeon);
         Collections.sort(deadEnds, (a, b) -> getDistanceFromStart(dungeon, b) - getDistanceFromStart(dungeon, a));
+
+        // Ensure all special rooms are placed in 1x1 rooms only
+        deadEnds.removeIf(room -> room.getWidth() > 1 || room.getHeight() > 1);
 
         int currentDeadEndIndex = 0;
         Room bossRoom = null;

@@ -15,6 +15,7 @@ public class DungeonConfig {
     private static final double PROBABILITY_2x1 = 0.20;
     private static final double PROBABILITY_1x2 = 0.20;
     private static final double PROBABILITY_1x1 = 1.00;
+    private static final double PROBABILITY_L_SHAPED = 0.10;
 
     // Special room generation
     private static final double CURSE_ROOM_CHANCE = 0.5;
@@ -42,6 +43,7 @@ public class DungeonConfig {
         public static double get2x1Chance() { return PROBABILITY_2x1; }
         public static double get1x2Chance() { return PROBABILITY_1x2; }
         public static double get1x1Chance() { return PROBABILITY_1x1; }
+        public static double getLShapedChance() { return PROBABILITY_L_SHAPED; }
     }
 
     public static class SpecialRooms {
