@@ -251,39 +251,25 @@ public class SchematicService {
 
     private void placeDoors(World world, BlockPos pos, Room room, Room[][] dungeon) {
         if (room.getType() == RoomType.WALL) {
-            Teras.getLogger().info("Skipping door placement for WALL room at " + room.getX() + "," + room.getY());
             return;
         }
-
-        Teras.getLogger().info("Checking doors for room type " + room.getType() +
-                " at " + room.getX() + "," + room.getY() +
-                " shape: " + room.getShape() +
-                " parent: " + (room.getParentX() != null ? room.getParentX() + "," + room.getParentY() : "none"));
 
         // Check all four directions for every room
         for (Direction direction : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
             int adjacentX = room.getX() + direction.getStepX();
             int adjacentY = room.getY() + direction.getStepZ();
 
-            Teras.getLogger().info("  Checking direction " + direction +
-                    " (adjacent pos: " + adjacentX + "," + adjacentY + ")");
-
             // Check if adjacent position is valid and contains a room
             if (!isValidAdjacentRoom(dungeon, adjacentX, adjacentY)) {
-                Teras.getLogger().info("    Skip: Not a valid adjacent room");
                 continue;
             }
 
             Room adjacentRoom = dungeon[adjacentY][adjacentX];
-            Teras.getLogger().info("    Adjacent room: type=" + adjacentRoom.getType() +
-                    " shape=" + adjacentRoom.getShape() +
-                    " parent=" + (adjacentRoom.getParentX() != null ? adjacentRoom.getParentX() + "," + adjacentRoom.getParentY() : "none"));
 
             // Skip if this room is trying to connect to its parent
             if (room.getParentX() != null && room.getParentY() != null &&
                     adjacentRoom.getX() == room.getParentX() &&
                     adjacentRoom.getY() == room.getParentY()) {
-                Teras.getLogger().info("    Skip: Adjacent room is parent");
                 continue;
             }
 
@@ -291,7 +277,6 @@ public class SchematicService {
             if (adjacentRoom.getParentX() != null && adjacentRoom.getParentY() != null &&
                     adjacentRoom.getParentX() == room.getX() &&
                     adjacentRoom.getParentY() == room.getY()) {
-                Teras.getLogger().info("    Skip: Adjacent room is child");
                 continue;
             }
 
@@ -300,20 +285,15 @@ public class SchematicService {
                     room.getParentY() != null && adjacentRoom.getParentY() != null &&
                     room.getParentX().equals(adjacentRoom.getParentX()) &&
                     room.getParentY().equals(adjacentRoom.getParentY())) {
-                Teras.getLogger().info("    Skip: Rooms are siblings");
                 continue;
             }
 
             // Skip if either room is a secret room
             if (isSecretRoom(room.getType()) || isSecretRoom(adjacentRoom.getType())) {
-                Teras.getLogger().info("    Skip: Secret room");
                 continue;
             }
 
-            Teras.getLogger().info("    Creating door between " + room.getType() +
-                    " and " + adjacentRoom.getType());
             BlockPos doorPos = calculateDoorPosition(pos, direction, room);
-            Teras.getLogger().info("    Door position: " + doorPos.getX() + "," + doorPos.getY() + "," + doorPos.getZ());
             createDoor(world, doorPos, direction, adjacentRoom.getType());
         }
     }
