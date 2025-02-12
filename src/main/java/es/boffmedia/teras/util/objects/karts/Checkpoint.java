@@ -1,64 +1,82 @@
 package es.boffmedia.teras.util.objects.karts;
 
 public class Checkpoint {
-    CoordinatePoint start;
-    CoordinatePoint end;
+    private final CoordinatePoint start;
+    private final CoordinatePoint end;
+    private final double padding = 1.0; // Configurable padding
 
     public Checkpoint(CoordinatePoint start, CoordinatePoint end) {
-        this.start = start;
-        this.end = end;
+        if (start == null || end == null) {
+            throw new IllegalArgumentException("Checkpoint points cannot be null");
+        }
+        if (start.equals(end)) {
+            throw new IllegalArgumentException("Checkpoint start and end points cannot be the same");
+        }
+        // Create defensive copies to ensure immutability
+        this.start = new CoordinatePoint(start.getX(), start.getY(), start.getZ());
+        this.end = new CoordinatePoint(end.getX(), end.getY(), end.getZ());
     }
 
+    public boolean isInCheckpoint(CoordinatePoint loc) {
+        if (loc == null) {
+            return false;
+        }
+
+        double playerX = loc.getX();
+        double playerY = loc.getY();
+        double playerZ = loc.getZ();
+
+        // Calculate bounds with padding
+        double minX = Math.min(start.getX(), end.getX()) - padding;
+        double maxX = Math.max(start.getX(), end.getX()) + padding;
+        double minY = Math.min(start.getY(), end.getY()) - padding;
+        double maxY = Math.max(start.getY(), end.getY()) + padding;
+        double minZ = Math.min(start.getZ(), end.getZ()) - padding;
+        double maxZ = Math.max(start.getZ(), end.getZ()) + padding;
+
+        return playerX >= minX && playerX <= maxX &&
+                playerY >= minY && playerY <= maxY &&
+                playerZ >= minZ && playerZ <= maxZ;
+    }
+
+    // Return defensive copies to prevent modification
     public CoordinatePoint getStart() {
-        return start;
+        return new CoordinatePoint(start.getX(), start.getY(), start.getZ());
     }
 
     public CoordinatePoint getEnd() {
-        return end;
+        return new CoordinatePoint(end.getX(), end.getY(), end.getZ());
     }
 
-    public void setStart(CoordinatePoint start) {
-        this.start = start;
+    // Calculate checkpoint dimensions
+    public double getWidth() {
+        return Math.abs(end.getX() - start.getX());
     }
 
-    public void setEnd(CoordinatePoint end) {
-        this.end = end;
+    public double getHeight() {
+        return Math.abs(end.getY() - start.getY());
     }
 
-    public boolean equals(Checkpoint checkpoint) {
-        return start.equals(checkpoint.getStart()) && end.equals(checkpoint.getEnd());
+    public double getLength() {
+        return Math.abs(end.getZ() - start.getZ());
     }
 
-    public boolean isInCheckpoint(CoordinatePoint loc){
-        CoordinatePoint l1 = start;
-        CoordinatePoint l2 = end;
-
-        int playerX = (int) loc.getX();
-        int playerY = (int) loc.getY();
-        int playerZ = (int) loc.getZ();
-
-        double x1 = Math.min(l1.getX(), l2.getX()) -1;
-        double x2 = Math.max(l1.getX(), l2.getX()) +1;
-
-        double y1 = Math.min(l1.getY(), l2.getY()) -1;
-        double y2 = Math.min(l1.getY(), l2.getY()) +1;
-
-        double z1 = Math.min(l1.getZ(), l2.getZ()) -1;
-        double z2 = Math.max(l1.getZ(), l2.getZ()) +1;
-
-        return playerX >= x1 && playerX <= x2
-                && playerY >= y1 && playerY <= y2
-                && playerZ >= z1 && playerZ <= z2;
-
-        /*
-        Teras.getLogger().info("==================================");
-        Teras.getLogger().info("En Checkpoint: " + enCheck);
-        Teras.getLogger().info("Posicion actual: " + loc);
-        Teras.getLogger().info("CheckPoint: " + l1 + " - " + l2);
-        return enCheck;*/
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Checkpoint that = (Checkpoint) obj;
+        return start.equals(that.start) && end.equals(that.end);
     }
 
+    @Override
+    public int hashCode() {
+        return 31 * start.hashCode() + end.hashCode();
+    }
+
+    @Override
     public String toString() {
-        return "Start: " + start.toString() + ", End: " + end.toString();
+        return String.format("Checkpoint[start=%s, end=%s, dimensions=%.1fx%.1fx%.1f]",
+                start, end, getWidth(), getHeight(), getLength());
     }
 }
