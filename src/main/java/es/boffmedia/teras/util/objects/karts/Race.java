@@ -184,7 +184,14 @@ public class Race {
         }).start();
     }
 
-    private Vector3d getParticipantPosition(RaceParticipant participant) {
+    public int getParticipantPosition(ServerPlayerEntity player) {
+        return participants.indexOf(participants.stream()
+                .filter(p -> p.getPlayer().getUUID().equals(player.getUUID()))
+                .findFirst()
+                .orElse(null)) + 1;
+    }
+
+    public Vector3d getParticipantPosition(RaceParticipant participant) {
         Entity vehicle = participant.getPlayer().getVehicle();
         if (vehicle == null) {
             return new Vector3d(0, 0, 0);

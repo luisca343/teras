@@ -19,6 +19,7 @@ import net.minecraftforge.fml.common.ObfuscationReflectionHelper;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,6 +27,7 @@ public class RaceManager {
     public Map<String, RaceTrack> tracks;
     public Map<String, Race> activeRaces;
     public Map<UUID, RaceParticipant> participants;
+    private Map<UUID, VehicleHitHandler> hitHandlers = new HashMap<>();
 
 
     public RaceManager(){
@@ -194,12 +196,23 @@ public class RaceManager {
         }
     }
 
-    public void playerTick(ServerPlayerEntity jugador) {
-        if (!participants.containsKey(jugador.getUUID())) {
+    public void playerTick(ServerPlayerEntity player) {
+        if (!participants.containsKey(player.getUUID())) {
             return;
         }
-        RaceParticipant participant = participants.get(jugador.getUUID());
+        RaceParticipant participant = participants.get(player.getUUID());
         participant.tick();
+
+        // Add vehicle tick
+        tickVehicles();
+    }
+
+    public void tickVehicles() {
+        // Remove handlers for vehicles that no longer exist
+        hitHandlers.entrySet().removeIf(entry -> !entry.getValue().isStunned());
+
+        // Update all active hit handlers
+        hitHandlers.values().forEach(VehicleHitHandler::tick);
     }
 
     private static Method setRawPosition;
@@ -213,71 +226,26 @@ public class RaceManager {
         }
     }
 
+
     public void hitCar(ServerPlayerEntity player) {
-        Teras.LOGGER.info("GOLPEANDO COCHE");
         if (player.getVehicle() instanceof PoweredVehicleEntity) {
             PoweredVehicleEntity vehicleEntity = (PoweredVehicleEntity) player.getVehicle();
 
-            // Disable the engine temporarily
-            vehicleEntity.setEngine(false);
+            // Get or create hit handler
+            VehicleHitHandler hitHandler = hitHandlers.computeIfAbsent(
+                    vehicleEntity.getUUID(),
+                    k -> new VehicleHitHandler(vehicleEntity)
+            );
 
-            // Start a new thread to handle the spinning effect
-            new Thread(() -> {
-                try {
-                    int spinDuration = 40; // Number of ticks to spin (2 seconds at 20 ticks per second)
-                    float totalRotation = 360f; // Total degrees to rotate
-                    float instabilityStrength = 0.05f; // Adjust this value to control instability
+            // Calculate hit direction (you can modify this based on where the hit comes from)
+            Vector3d hitDirection = new Vector3d(
+                    player.level.random.nextDouble() - 0.5,
+                    0,
+                    player.level.random.nextDouble() - 0.5
+            );
 
-                    double initialX = vehicleEntity.getX();
-                    double initialY = vehicleEntity.getY();
-                    double initialZ = vehicleEntity.getZ();
-                    float initialYaw = vehicleEntity.yRot;
-
-                    for (int i = 0; i < spinDuration; i++) {
-                        // Calculate new rotation
-                        float progress = (float) i / spinDuration;
-                        float newYaw = initialYaw + progress * totalRotation;
-
-                        // Apply rotation
-                        vehicleEntity.setYBodyRot(newYaw);
-                        vehicleEntity.yRotO = newYaw;
-
-                        // Sync player rotation with vehicle
-                        player.setYBodyRot(newYaw);
-                        player.yRotO = newYaw;
-
-                        // Add instability
-                        double instabilityX = (Math.random() - 0.5) * instabilityStrength;
-                        double instabilityZ = (Math.random() - 0.5) * instabilityStrength;
-
-                        // Apply a small upward force to prevent sinking
-                        double upwardForce = 0.05;
-
-                        Vector3d instabilityMotion = new Vector3d(instabilityX, upwardForce, instabilityZ);
-                        vehicleEntity.setDeltaMovement(instabilityMotion);
-
-                        // Force position update to keep the vehicle in place
-                        vehicleEntity.setPos(initialX, initialY, initialZ);
-
-                        // Update the vehicle's prevPosX, prevPosY, prevPosZ
-                        vehicleEntity.xo = initialX;
-                        vehicleEntity.yo = initialY;
-                        vehicleEntity.zo = initialZ;
-
-                        Thread.sleep(50); // 50ms sleep for 20 ticks per second
-                    }
-
-                    // Re-enable the engine after spinning
-                    vehicleEntity.setEngine(true);
-
-                    // Apply speed loss
-                    Vector3d currentMotion = vehicleEntity.getDeltaMovement();
-                    vehicleEntity.setDeltaMovement(currentMotion.multiply(0.5, 1, 0.5));
-
-                } catch (InterruptedException e) {
-                    Teras.LOGGER.error("Error during car hit effect", e);
-                }
-            }).start();
+            // Apply the hit
+            hitHandler.applyHit(hitDirection);
         }
     }
     private boolean isPlayerInRace(UUID uuid) {

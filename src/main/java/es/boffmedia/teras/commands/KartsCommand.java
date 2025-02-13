@@ -61,6 +61,7 @@ public class KartsCommand {
                         .then(nuevoInicio())
                         .then(nuevoCheckpoint())
                         .then(guardarCircuito())
+                        .then(addPowerUpPoint())
                         .then(listaCircuitos())
                         .then(visualizeTrack())
                         .then(validateTrack())
@@ -109,6 +110,25 @@ public class KartsCommand {
         dispatcher.register(literalBuilder);
     }
 
+    private ArgumentBuilder<CommandSource,?> addPowerUpPoint() {
+        return Commands.literal("powerup")
+                .executes((command) -> {
+                    if (currentTrack == null) {
+                        command.getSource().sendFailure(new StringTextComponent("No track being edited"));
+                        return 0;
+                    }
+
+                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                    currentTrack.addPowerUpPoint(new CoordinatePoint(
+                            player.getX(),
+                            player.getY(),
+                            player.getZ()
+                    ));
+
+                    command.getSource().sendSuccess(new StringTextComponent("Power-up point added"), false);
+                    return 1;
+                });
+    }
 
 
     public boolean esJugador(CommandContext<CommandSource> command) {
