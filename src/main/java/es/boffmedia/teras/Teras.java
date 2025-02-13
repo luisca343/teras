@@ -35,6 +35,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.*;
 import net.minecraftforge.fml.event.server.FMLServerStartingEvent;
+import net.minecraftforge.fml.event.server.FMLServerStoppingEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.server.permission.DefaultPermissionLevel;
 import net.minecraftforge.server.permission.PermissionAPI;
@@ -263,6 +264,11 @@ public class Teras
                 e.printStackTrace();
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(FMLServerStoppingEvent event) {
+
     }
 
 

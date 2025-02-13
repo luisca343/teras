@@ -2,7 +2,6 @@ package es.boffmedia.teras.event.wungill;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.TerasConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
