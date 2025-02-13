@@ -3,6 +3,7 @@ package es.boffmedia.teras.util.objects.karts.editor;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.particles.ParticleTypes;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.world.server.ServerWorld;
 import es.boffmedia.teras.util.objects.karts.*;
 import net.minecraft.util.text.StringTextComponent;
@@ -163,6 +164,25 @@ public class TrackEditor {
             // Give temporary speed effect for preview
             player.addEffect(new net.minecraft.potion.EffectInstance(
                     net.minecraft.potion.Effects.MOVEMENT_SPEED, 600, 1));
+        }
+    }
+
+    public void visualizeSplinePath(ServerWorld world) {
+        SplineTrackPath splinePath = new SplineTrackPath(track.getCheckpoints());
+        List<Vector3d> controlPoints = splinePath.getControlPoints();
+
+        // Visualize control points
+        for (Vector3d point : controlPoints) {
+            spawnParticle(world, point.x, point.y + 1, point.z);
+        }
+
+        // Visualize spline path
+        for (int i = 0; i < controlPoints.size() - 1; i++) {
+            for (int j = 0; j <= 10; j++) {
+                double t = j / 10.0;
+                Vector3d point = splinePath.getSplinePoint(i, t);
+                spawnParticle(world, point.x, point.y + 1, point.z);
+            }
         }
     }
 }

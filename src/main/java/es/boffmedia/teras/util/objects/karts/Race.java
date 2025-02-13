@@ -12,6 +12,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.SoundEvents;
+import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.network.PacketDistributor;
 import net.minecraftforge.fml.server.ServerLifecycleHooks;
@@ -20,13 +21,14 @@ import java.util.*;
 
 public class Race {
     private RaceTrack track;
-    int laps;
+    public int laps;
     private ArrayList<RaceParticipant> participants;
     private List<RaceParticipant> finishedParticipants = new ArrayList<>();
     private RaceStatus status;
     private ArrayList<UUID> startVotes;
     private long startTime;
     private long endTime;
+    private SplineTrackPath trackPath;
 
     public Race(RaceTrack track, int laps){
         this.track = track;
@@ -36,6 +38,7 @@ public class Race {
         this.startVotes = new ArrayList<>();
         this.startTime = 0;
         this.endTime = 0;
+        this.trackPath = new SplineTrackPath(track.getCheckpoints());
     }
 
     public void voteStart(UUID player){
@@ -143,25 +146,73 @@ public class Race {
         calculatePositions();
     }
 
-    public void calculatePositions(){
+    public void calculatePositions() {
         new Thread(() -> {
             try {
-                while (status == RaceStatus.IN_PROGRESS){
-                    Collections.sort(participants,
-                            Comparator.comparing(RaceParticipant::getCurrentLap)
-                                    .thenComparing(RaceParticipant::getCurrentCheckpointIndex).reversed()
-                    );
+                while (status == RaceStatus.IN_PROGRESS) {
+                    // Sort participants based on lap and progress along spline
+                    Collections.sort(participants, (p1, p2) -> {
+                        // First compare laps
+                        int lapCompare = Integer.compare(p2.getCurrentLap(), p1.getCurrentLap());
+                        if (lapCompare != 0) return lapCompare;
+
+                        // If on same lap, compare progress along spline
+                        Vector3d pos1 = getParticipantPosition(p1);
+                        Vector3d pos2 = getParticipantPosition(p2);
+
+                        double progress1 = trackPath.calculateProgress(pos1);
+                        double progress2 = trackPath.calculateProgress(pos2);
+
+                        return Double.compare(progress2, progress1);
+                    });
+
+                    // Update positions
                     for (RaceParticipant participant : participants) {
-                        if(participant.getFinishTime() == 0){
-                            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> participant.getPlayer()), new CMessageRacePositionChange(participants.indexOf(participant) + 1));
+                        if (participant.getFinishTime() == 0) {
+                            Messages.INSTANCE.send(
+                                    PacketDistributor.PLAYER.with(() -> participant.getPlayer()),
+                                    new CMessageRacePositionChange(participants.indexOf(participant) + 1)
+                            );
                         }
                     }
+
                     Thread.sleep(1000);
                 }
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private Vector3d getParticipantPosition(RaceParticipant participant) {
+        Entity vehicle = participant.getPlayer().getVehicle();
+        if (vehicle == null) {
+            return new Vector3d(0, 0, 0);
+        }
+        return new Vector3d(vehicle.getX(), vehicle.getY(), vehicle.getZ());
+    }
+
+    // Method to check if player is going the wrong way
+    public boolean isGoingWrongWay(RaceParticipant participant) {
+        if (participant.getCoords() == null) return false;
+
+        Vector3d currentPos = getParticipantPosition(participant);
+        Vector3d prevPos = new Vector3d(
+                participant.getCoords().getX(),
+                participant.getCoords().getY(),
+                participant.getCoords().getZ()
+        );
+
+        double currentProgress = trackPath.calculateProgress(currentPos);
+        double prevProgress = trackPath.calculateProgress(prevPos);
+
+        // Consider wrap-around at finish line
+        double progressDiff = currentProgress - prevProgress;
+        if (progressDiff < -0.5) progressDiff += 1.0;
+        if (progressDiff > 0.5) progressDiff -= 1.0;
+
+        // If progress is decreasing significantly, player is going wrong way
+        return progressDiff < -0.1;
     }
 
     public void checkPlayerInCheckpoint(ServerPlayerEntity player, CoordinatePoint point) {
@@ -295,6 +346,10 @@ public class Race {
         long maxRaceTime = 10 * 60 * 1000; // 10 minutes in milliseconds
         long elapsedTime = System.currentTimeMillis() - startTime;
         return Math.max(0, maxRaceTime - elapsedTime);
+    }
+
+    public long getStartTime() {
+        return startTime;
     }
 }
 

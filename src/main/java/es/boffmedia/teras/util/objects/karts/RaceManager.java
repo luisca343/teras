@@ -309,5 +309,9 @@ public class RaceManager {
 
         MessageHelper.enviarMensaje(player, status);
     }
+
+    public boolean hasParticipant(UUID uuid) {
+        return participants.containsKey(uuid);
+    }
 }
 
