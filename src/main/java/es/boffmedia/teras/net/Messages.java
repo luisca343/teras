@@ -50,6 +50,7 @@ public class Messages {
         INSTANCE.registerMessage(index++, SMessageIniciarLlamada.class, SMessageIniciarLlamada::encode, SMessageIniciarLlamada::decode, SMessageIniciarLlamada::handle);
         INSTANCE.registerMessage(index++, SMessageFinalizarLlamada.class, SMessageFinalizarLlamada::encode, SMessageFinalizarLlamada::decode, SMessageFinalizarLlamada::handle);
 
+        INSTANCE.registerMessage(index++, CMessageDriftState.class, CMessageDriftState::encode, CMessageDriftState::decode, CMessageDriftState::handle);
 
         //INSTANCE.registerMessage(index++, MessageCarTest.class, MessageCarTest::encode, MessageCarTest::decode, MessageCarTest::handle);
 

@@ -29,6 +29,8 @@ public class RaceManager {
     public Map<UUID, RaceParticipant> participants;
     private Map<UUID, VehicleHitHandler> hitHandlers = new HashMap<>();
 
+    private Map<UUID, VehicleDriftHandler> driftHandlers = new HashMap<>();
+
 
     public RaceManager(){
         tracks = new LinkedTreeMap<>();
@@ -207,12 +209,40 @@ public class RaceManager {
         tickVehicles();
     }
 
+    public void handleDriftInput(ServerPlayerEntity player, boolean startDrift, boolean driftRight) {
+        if (!participants.containsKey(player.getUUID())) return;
+
+        if (player.getVehicle() instanceof PoweredVehicleEntity) {
+            PoweredVehicleEntity vehicle = (PoweredVehicleEntity) player.getVehicle();
+
+            // Get or create drift handler
+            VehicleDriftHandler driftHandler = driftHandlers.computeIfAbsent(
+                    vehicle.getUUID(),
+                    k -> new VehicleDriftHandler(vehicle)
+            );
+
+            if (startDrift) {
+                driftHandler.startDrift(driftRight);
+            } else {
+                driftHandler.endDrift();
+            }
+        }
+    }
+
     public void tickVehicles() {
         // Remove handlers for vehicles that no longer exist
         hitHandlers.entrySet().removeIf(entry -> !entry.getValue().isStunned());
 
         // Update all active hit handlers
         hitHandlers.values().forEach(VehicleHitHandler::tick);
+
+
+        // Add drift handler ticking
+        driftHandlers.entrySet().removeIf(entry ->
+                entry.getValue().isDrifting() &&
+                        !entry.getValue().getVehicle().isAlive()
+        );
+        driftHandlers.values().forEach(VehicleDriftHandler::tick);
     }
 
     private static Method setRawPosition;
