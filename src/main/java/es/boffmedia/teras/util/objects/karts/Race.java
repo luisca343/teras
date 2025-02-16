@@ -109,7 +109,8 @@ public class Race {
                         ServerPlayerEntity player = participant.getPlayer();
                         MessageHelper.enviarTitulo(player, j + "");
                         // Play high-pitched note sound for countdown
-                        player.playSound(SoundEvents.NOTE_BLOCK_PLING,1.0F, 2.0F);
+                        player.level.playSound(null, player.getX(), player.getY(), player.getZ(),
+                                SoundEvents.NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0F, 2.0F);
                     }
                     Thread.sleep(1000);
                 }
@@ -118,7 +119,8 @@ public class Race {
                     ServerPlayerEntity player = participant.getPlayer();
                     MessageHelper.enviarTitulo(player, "GO!");
                     // Play lower-pitched, louder note for "GO!"
-                    player.playSound(SoundEvents.NOTE_BLOCK_PLING, 1.0F, 1.0F);
+                    player.level.playSound(null, player.getX(), player.getY(), player.getZ(),
+                            SoundEvents.NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0F, 0.5F);
                     allowMove(participant.getPlayer().getUUID(), true);
                 }
                 start();
