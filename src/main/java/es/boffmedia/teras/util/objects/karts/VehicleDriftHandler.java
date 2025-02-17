@@ -56,10 +56,10 @@ public class VehicleDriftHandler {
                     vehicle.getX(),
                     vehicle.getY(),
                     vehicle.getZ(),
-                    SoundEvents.SPLASH_POTION_BREAK,
+                    SoundEvents.BUCKET_FILL_LAVA, // More fitting "skidding" type sound
                     SoundCategory.PLAYERS,
-                    1.0F,
-                    1.5F);
+                    0.8F,
+                    1.2F);
         }
     }
 
@@ -159,15 +159,57 @@ public class VehicleDriftHandler {
         // Start the boost
         isBoosting = true;
 
-        // Play boost sound
-        vehicle.level.playSound(null,
-                vehicle.getX(),
-                vehicle.getY(),
-                vehicle.getZ(),
-                SoundEvents.FIREWORK_ROCKET_LAUNCH,
-                SoundCategory.PLAYERS,
-                1.0F,
-                1.0F);
+        // Play boost sound based on boost level
+        switch (boostLevel) {
+            case 1: // Blue boost
+                vehicle.level.playSound(null,
+                        vehicle.getX(),
+                        vehicle.getY(),
+                        vehicle.getZ(),
+                        SoundEvents.FIREWORK_ROCKET_LAUNCH,
+                        SoundCategory.PLAYERS,
+                        0.8F,
+                        1.2F);
+                break;
+            case 2: // Orange boost
+                vehicle.level.playSound(null,
+                        vehicle.getX(),
+                        vehicle.getY(),
+                        vehicle.getZ(),
+                        SoundEvents.BLAZE_SHOOT,
+                        SoundCategory.PLAYERS,
+                        1.0F,
+                        0.8F);
+                // Add secondary sound for more impact
+                vehicle.level.playSound(null,
+                        vehicle.getX(),
+                        vehicle.getY(),
+                        vehicle.getZ(),
+                        SoundEvents.FIREWORK_ROCKET_LARGE_BLAST,
+                        SoundCategory.PLAYERS,
+                        0.7F,
+                        0.9F);
+                break;
+            case 3: // Purple boost
+                vehicle.level.playSound(null,
+                        vehicle.getX(),
+                        vehicle.getY(),
+                        vehicle.getZ(),
+                        SoundEvents.ENDER_DRAGON_SHOOT,
+                        SoundCategory.PLAYERS,
+                        0.8F,
+                        1.0F);
+                // Add secondary sound for more impact
+                vehicle.level.playSound(null,
+                        vehicle.getX(),
+                        vehicle.getY(),
+                        vehicle.getZ(),
+                        SoundEvents.FIREWORK_ROCKET_TWINKLE,
+                        SoundCategory.PLAYERS,
+                        1.0F,
+                        0.7F);
+                break;
+        }
     }
 
     private void spawnBoostParticles() {
@@ -229,12 +271,50 @@ public class VehicleDriftHandler {
     }
 
     private void updateBoostLevel() {
+        int previousBoostLevel = boostLevel;
+
         if (driftTicks >= PURPLE_SPARK_THRESHOLD) {
             boostLevel = 3;
         } else if (driftTicks >= ORANGE_SPARK_THRESHOLD) {
             boostLevel = 2;
         } else if (driftTicks >= BLUE_SPARK_THRESHOLD) {
             boostLevel = 1;
+        }
+
+        // Play sounds when boost level changes
+        if (boostLevel != previousBoostLevel) {
+            switch (boostLevel) {
+                case 1: // Blue spark
+                    vehicle.level.playSound(null,
+                            vehicle.getX(),
+                            vehicle.getY(),
+                            vehicle.getZ(),
+                            SoundEvents.EXPERIENCE_ORB_PICKUP,
+                            SoundCategory.PLAYERS,
+                            0.7F,
+                            1.5F);
+                    break;
+                case 2: // Orange spark
+                    vehicle.level.playSound(null,
+                            vehicle.getX(),
+                            vehicle.getY(),
+                            vehicle.getZ(),
+                            SoundEvents.BLAZE_SHOOT,
+                            SoundCategory.PLAYERS,
+                            0.7F,
+                            1.2F);
+                    break;
+                case 3: // Purple spark
+                    vehicle.level.playSound(null,
+                            vehicle.getX(),
+                            vehicle.getY(),
+                            vehicle.getZ(),
+                            SoundEvents.ENDER_DRAGON_GROWL,
+                            SoundCategory.PLAYERS,
+                            0.5F,
+                            1.5F);
+                    break;
+            }
         }
     }
 
