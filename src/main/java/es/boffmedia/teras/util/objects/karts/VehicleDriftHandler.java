@@ -19,28 +19,43 @@ public class VehicleDriftHandler {
     private static final int ORANGE_SPARK_THRESHOLD = 60; // 3 seconds
     private static final int PURPLE_SPARK_THRESHOLD = 100; // 5 seconds
     private static final float DRIFT_TURN_SPEED = 2.0f;
-    private static final float MAX_DRIFT_ANGLE = 45.0f;
+    private static final float MAX_DRIFT_ANGLE = 15.0f;
     private Vector3d preBoostVelocity = null; // Store the velocity from before boost started
-    
+
+    // Boost durations in ticks (20 ticks = 1 second)
+    private static final int BLUE_BOOST_DURATION = 20;   // 1 second
+    private static final int ORANGE_BOOST_DURATION = 40;  // 2 seconds
+    private static final int PURPLE_BOOST_DURATION = 60;  // 3 seconds
+
+    private float targetDriftAngle = 0.0f;
+    private float vehicleStartYaw = 0.0f;
+    private static final float DRIFT_ANGLE_SPEED = 1.5f;
+
+    private int boostTimeRemaining = 0;
+    private double currentBoostStrength = 0.0;
+    private boolean isBoosting = false;
 
     public VehicleDriftHandler(PoweredVehicleEntity vehicle) {
         this.vehicle = vehicle;
     }
 
-    public void startDrift(boolean driftRight) {
+    public void startDrift(boolean driftRight, float vehicleYaw) {
         if (!isDrifting) {
             isDrifting = true;
             driftTicks = 0;
             boostLevel = 0;
-            // Initial drift angle based on direction
-            driftAngle = driftRight ? 15.0f : -15.0f;
+            vehicleStartYaw = vehicleYaw;
+
+            // Set target drift angle based on direction
+            targetDriftAngle = driftRight ? MAX_DRIFT_ANGLE : -MAX_DRIFT_ANGLE;
+            driftAngle = 0.0f; // Start from 0 and smoothly interpolate
 
             // Play drift start sound
             vehicle.level.playSound(null,
                     vehicle.getX(),
                     vehicle.getY(),
                     vehicle.getZ(),
-                    SoundEvents.SPLASH_POTION_BREAK, // You might want to use a different sound
+                    SoundEvents.SPLASH_POTION_BREAK,
                     SoundCategory.PLAYERS,
                     1.0F,
                     1.5F);
@@ -56,15 +71,19 @@ public class VehicleDriftHandler {
         }
     }
 
-    private static final int BOOST_DURATION = 40; // 2 seconds at 20 ticks per second
-    private int boostTimeRemaining = 0;
-    private double currentBoostStrength = 0.0;
-    private boolean isBoosting = false;
-
     public void tick() {
         if (isDrifting) {
             driftTicks++;
             updateBoostLevel();
+
+            // Smoothly interpolate drift angle
+            if (Math.abs(driftAngle - targetDriftAngle) > 0.1f) {
+                float angleDiff = targetDriftAngle - driftAngle;
+                driftAngle += Math.signum(angleDiff) * DRIFT_ANGLE_SPEED;
+                // Clamp to max angle
+                driftAngle = MathHelper.clamp(driftAngle, -MAX_DRIFT_ANGLE, MAX_DRIFT_ANGLE);
+            }
+
             applyDriftPhysics();
             spawnDriftParticles();
         }
@@ -83,7 +102,7 @@ public class VehicleDriftHandler {
             if (boostTimeRemaining <= 0) {
                 isBoosting = false;
                 currentBoostStrength = 0.0;
-                preBoostVelocity = null; // Clear stored velocity
+                preBoostVelocity = null;
             }
         }
     }
@@ -118,24 +137,27 @@ public class VehicleDriftHandler {
         // Store the current velocity before applying boost
         preBoostVelocity = vehicle.getDeltaMovement();
 
-        // Calculate boost multiplier based on level
+        // All boost types have 2x multiplier but different durations
+        currentBoostStrength = 2.0; // Double speed for all boost types
+
+        // Set duration based on boost level
         switch (boostLevel) {
             case 1:
-                currentBoostStrength = 1.3; // 30% speed increase for blue spark
+                boostTimeRemaining = BLUE_BOOST_DURATION;   // 1 second
                 break;
             case 2:
-                currentBoostStrength = 1.6; // 60% speed increase for orange spark
+                boostTimeRemaining = ORANGE_BOOST_DURATION; // 2 seconds
                 break;
             case 3:
-                currentBoostStrength = 2.0; // Double speed for purple spark
+                boostTimeRemaining = PURPLE_BOOST_DURATION; // 3 seconds
                 break;
             default:
+                boostTimeRemaining = 0;
                 currentBoostStrength = 1.0;
         }
 
         // Start the boost
         isBoosting = true;
-        boostTimeRemaining = BOOST_DURATION;
 
         // Play boost sound
         vehicle.level.playSound(null,
@@ -152,7 +174,7 @@ public class VehicleDriftHandler {
         if (!(vehicle.level instanceof ServerWorld)) return;
         ServerWorld serverWorld = (ServerWorld) vehicle.level;
 
-        float particleIntensity = (float)boostTimeRemaining / BOOST_DURATION;
+        float particleIntensity = (float)boostTimeRemaining / PURPLE_BOOST_DURATION;
         int particleCount = (int)(particleIntensity * 25);
 
         switch (boostLevel) {
@@ -221,12 +243,14 @@ public class VehicleDriftHandler {
         if (!(vehicle.getControllingPassenger() instanceof ServerPlayerEntity)) return;
         ServerPlayerEntity player = (ServerPlayerEntity) vehicle.getControllingPassenger();
 
-        // Calculate the desired movement direction based on drift angle
-        float yaw = vehicle.yRot + driftAngle;
+        // Calculate drift yaw based on vehicle's initial direction and drift angle
+        float driftYaw = vehicle.yRot + driftAngle;
+
+        // Calculate the movement direction
         Vector3d moveDir = new Vector3d(
-                -MathHelper.sin(yaw * 0.017453292F),
+                -MathHelper.sin(driftYaw * 0.017453292F),
                 0,
-                MathHelper.cos(yaw * 0.017453292F)
+                MathHelper.cos(driftYaw * 0.017453292F)
         );
 
         // Apply sideways force based on drift angle
@@ -238,15 +262,11 @@ public class VehicleDriftHandler {
         double speed = motion.length();
 
         // Combine forward and sideways movement
-        Vector3d newMotion = moveDir.scale(speed * 0.8)
+        Vector3d newMotion = moveDir.scale(speed * 0.6)
                 .add(sideDir.scale(sidewaysForce));
 
-        // Apply the new motion
-        vehicle.setDeltaMovement(newMotion);
-
-        // Update vehicle and player rotation
-        vehicle.yRot = yaw;
-        player.yRot = yaw;
+        // Apply the new motion while preserving vertical component
+        vehicle.setDeltaMovement(newMotion.x, motion.y, newMotion.z);
     }
 
     private void spawnDriftParticles() {
@@ -327,6 +347,10 @@ public class VehicleDriftHandler {
 
     public float getDriftAngle() {
         return driftAngle;
+    }
+
+    public boolean isBoosting() {
+        return isBoosting;
     }
 
     public PoweredVehicleEntity getVehicle() {

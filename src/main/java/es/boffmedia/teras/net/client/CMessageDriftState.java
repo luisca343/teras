@@ -9,19 +9,26 @@ import java.util.function.Supplier;
 public class CMessageDriftState {
     private final boolean isDrifting;
     private final boolean driftRight;
+    private final float vehicleYaw;
 
-    public CMessageDriftState(boolean isDrifting, boolean driftRight) {
+    public CMessageDriftState(boolean isDrifting, boolean driftRight, float vehicleYaw) {
         this.isDrifting = isDrifting;
         this.driftRight = driftRight;
+        this.vehicleYaw = vehicleYaw;
     }
 
     public static void encode(CMessageDriftState message, PacketBuffer buffer) {
         buffer.writeBoolean(message.isDrifting);
         buffer.writeBoolean(message.driftRight);
+        buffer.writeFloat(message.vehicleYaw);
     }
 
     public static CMessageDriftState decode(PacketBuffer buffer) {
-        return new CMessageDriftState(buffer.readBoolean(), buffer.readBoolean());
+        return new CMessageDriftState(
+                buffer.readBoolean(),
+                buffer.readBoolean(),
+                buffer.readFloat()
+        );
     }
 
     public static void handle(CMessageDriftState message, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -32,7 +39,8 @@ public class CMessageDriftState {
                 Teras.raceManager.handleDriftInput(
                         context.getSender(),
                         message.isDrifting,
-                        message.driftRight
+                        message.driftRight,
+                        message.vehicleYaw
                 );
             }
         });

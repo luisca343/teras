@@ -209,7 +209,7 @@ public class RaceManager {
         tickVehicles();
     }
 
-    public void handleDriftInput(ServerPlayerEntity player, boolean startDrift, boolean driftRight) {
+    public void handleDriftInput(ServerPlayerEntity player, boolean startDrift, boolean driftRight, float vehicleYaw) {
         if (!participants.containsKey(player.getUUID())) return;
 
         if (player.getVehicle() instanceof PoweredVehicleEntity) {
@@ -222,7 +222,7 @@ public class RaceManager {
             );
 
             if (startDrift) {
-                driftHandler.startDrift(driftRight);
+                driftHandler.startDrift(driftRight, vehicleYaw);
             } else {
                 driftHandler.endDrift();
             }
@@ -236,12 +236,13 @@ public class RaceManager {
         // Update all active hit handlers
         hitHandlers.values().forEach(VehicleHitHandler::tick);
 
-
-        // Add drift handler ticking
+        // Remove drift handlers for vehicles that no longer exist or aren't drifting
         driftHandlers.entrySet().removeIf(entry ->
-                entry.getValue().isDrifting() &&
-                        !entry.getValue().getVehicle().isAlive()
+                !entry.getValue().getVehicle().isAlive() ||
+                        (!entry.getValue().isDrifting() && !entry.getValue().isBoosting())
         );
+
+        // Update all active drift handlers
         driftHandlers.values().forEach(VehicleDriftHandler::tick);
     }
 

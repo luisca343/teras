@@ -33,7 +33,7 @@ public class VehicleDriftClient {
         long currentTime = System.currentTimeMillis();
         if (currentTime - turnKeyReleaseTime > TURN_KEY_GRACE_PERIOD) {
             // Grace period expired - end drift
-            endDrift();
+            endDrift(minecraft.player);
             return;
         }
 
@@ -63,10 +63,10 @@ public class VehicleDriftClient {
 
             if (isPressed && !isDrifting) {
                 // Starting a new drift
-                startDrift(minecraft);
+                startDrift(minecraft, (PoweredVehicleEntity)ridingEntity);
             } else if (!isPressed && isDrifting) {
                 // Space key released, stop drifting immediately
-                endDrift();
+                endDrift(player);
             }
         } else if (isDrifting) {
             // Check for turn key events
@@ -87,7 +87,7 @@ public class VehicleDriftClient {
         }
     }
 
-    private void startDrift(Minecraft minecraft) {
+    private void startDrift(Minecraft minecraft, PoweredVehicleEntity vehicle) {
         isDrifting = true;
         isInGracePeriod = false;
         turnKeyReleaseTime = 0;
@@ -95,18 +95,21 @@ public class VehicleDriftClient {
 
         if (!isDriftingRight && !minecraft.options.keyLeft.isDown()) {
             // If no turn key is pressed, use the vehicle's current rotation
-            float yaw = minecraft.player.yRot % 360;
+            float yaw = vehicle.yRot % 360;
             if (yaw < 0) yaw += 360;
             isDriftingRight = (yaw >= 45 && yaw < 225);
         }
 
-        Messages.INSTANCE.sendToServer(new CMessageDriftState(true, isDriftingRight));
+        Messages.INSTANCE.sendToServer(new CMessageDriftState(true, isDriftingRight, vehicle.yRot));
     }
 
-    private void endDrift() {
-        isDrifting = false;
-        isInGracePeriod = false;
-        turnKeyReleaseTime = 0;
-        Messages.INSTANCE.sendToServer(new CMessageDriftState(false, isDriftingRight));
+    private void endDrift(ClientPlayerEntity player) {
+        Entity vehicle = player.getVehicle();
+        if (vehicle instanceof PoweredVehicleEntity) {
+            isDrifting = false;
+            isInGracePeriod = false;
+            turnKeyReleaseTime = 0;
+            Messages.INSTANCE.sendToServer(new CMessageDriftState(false, isDriftingRight, vehicle.yRot));
+        }
     }
 }
