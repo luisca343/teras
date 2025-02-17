@@ -10,6 +10,7 @@ import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.world.server.ServerWorld;
 
 public class VehicleDriftHandler {
+    private static final double BOOST_MULTIPLIER = 2.0;
     private final PoweredVehicleEntity vehicle;
     private boolean isDrifting = false;
     private int driftTicks = 0;
@@ -137,8 +138,7 @@ public class VehicleDriftHandler {
         // Store the current velocity before applying boost
         preBoostVelocity = vehicle.getDeltaMovement();
 
-        // All boost types have 2x multiplier but different durations
-        currentBoostStrength = 2.0; // Double speed for all boost types
+        currentBoostStrength = BOOST_MULTIPLIER;
 
         // Set duration based on boost level
         switch (boostLevel) {
