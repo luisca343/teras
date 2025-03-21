@@ -30,6 +30,7 @@ import es.boffmedia.teras.net.client.CMessageFindPath;
 import es.boffmedia.teras.net.client.clientOld.CMessageVerVideo;
 import es.boffmedia.teras.net.client.clientOld.CMessageWaypoints;
 import es.boffmedia.teras.net.video.ScreenManager;
+import es.boffmedia.teras.util.PokedexHelper;
 import es.boffmedia.teras.util.RouteCreator;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
@@ -81,10 +82,21 @@ public class TestCommand {
                     .then(crearWaypoint())
                 .then(reproducirSonido())
                 .then(testset())
-                .then(findPath());
+                .then(findPath())
+                .then(getPokedex())
+                ;
 
         dispatcher.register(literalBuilder);
 
+    }
+
+    private ArgumentBuilder<CommandSource, ?> getPokedex() {
+        return Commands.literal("pokedex")
+                .executes((command) -> {
+                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                    PokedexHelper.printPokedexStatusGroupedByStatus(player.getStringUUID());
+                    return 1;
+                });
     }
 
     private ArgumentBuilder<CommandSource, ?> findPath() {

@@ -357,38 +357,26 @@ public class TerasBattleLog {
         }*/
     }
 
+    private static final Map<Double, Integer> MODIFIER_TO_STAGE = new HashMap<>();
+
+    static {
+        MODIFIER_TO_STAGE.put(1.0, 0);
+        MODIFIER_TO_STAGE.put(1.5, 1);
+        MODIFIER_TO_STAGE.put(2.0, 2);
+        MODIFIER_TO_STAGE.put(2.5, 3);
+        MODIFIER_TO_STAGE.put(3.0, 4);
+        MODIFIER_TO_STAGE.put(3.5, 5);
+        MODIFIER_TO_STAGE.put(4.0, 6);
+        MODIFIER_TO_STAGE.put(0.67, -1);
+        MODIFIER_TO_STAGE.put(0.5, -2);
+        MODIFIER_TO_STAGE.put(0.4, -3);
+        MODIFIER_TO_STAGE.put(0.33, -4);
+        MODIFIER_TO_STAGE.put(0.28, -5);
+        MODIFIER_TO_STAGE.put(0.25, -6);
+    }
+
     public static int getBoostStage(double modifier) {
-        int mod = (int) modifier;
-        switch (mod) {
-            case 100:
-                return 0;
-            case 150:
-                return 1;
-            case 200:
-                return 2;
-            case 250:
-                return 3;
-            case 300:
-                return 4;
-            case 350:
-                return 5;
-            case 400:
-                return 6;
-            case 67:
-                return -1;
-            case 50:
-                return -2;
-            case 40:
-                return -3;
-            case 33:
-                return -4;
-            case 28:
-                return -5;
-            case 25:
-                return -6;
-            default:
-                throw new IllegalArgumentException("Invalid modifier: " + modifier);
-        }
+        return MODIFIER_TO_STAGE.getOrDefault(modifier, 0);
     }
 
     public static void fieldChangeAction(TerrainChangeAction action, TerasBattle terasBattle){
@@ -412,76 +400,64 @@ public class TerasBattleLog {
     }
 
 
-    public static void weatherChangeAction(WeatherChangeAction action, TerasBattle terasBattle){
-        BattleController bc = terasBattle.battle;
-        //|-weather|SunnyDay|[from] ability: Drought|[of] p1a: Kyogren't
-        GlobalStatusBase newGlobalStatus = (GlobalStatusBase) getProtectedProperty("newWeather", action);
-        GlobalStatusBase oldGlobalStatus = (GlobalStatusBase) getProtectedProperty("oldWeather", action);
-        PixelmonWrapper pokemon = (PixelmonWrapper) getProtectedProperty("pokemon", action);
+    public enum WeatherType {
+        SUNNY("SunnyDay"),
+        RAIN("RainDance"),
+        SANDSTORM("Sandstorm"),
+        HAIL("Hail"),
+        NONE("none");
 
-        if(newGlobalStatus instanceof Weather){
-            Weather newWeather = (Weather) newGlobalStatus;
-            String weatherName;
-            switch(newWeather.type) {
-                case Sunny:
-                    weatherName = "SunnyDay";
-                    break;
-                case Rainy:
-                    weatherName = "RainDance";
-                    break;
-                case Sandstorm:
-                    weatherName = "Sandstorm";
-                    break;
-                case Hail:
-                    weatherName = "Hail";
-                    break;
-                default:
-                    weatherName = "none";
-                    break;
+        private final String showdownName;
+
+        WeatherType(String showdownName) {
+            this.showdownName = showdownName;
+        }
+
+        public String getShowdownName() {
+            return showdownName;
+        }
+
+        public static WeatherType fromPixelmonWeather(Weather weather) {
+            switch(weather.type) {
+                case Sunny: return SUNNY;
+                case Rainy: return RAIN;
+                case Sandstorm: return SANDSTORM;
+                case Hail: return HAIL;
+                default: return NONE;
             }
-            appendLine(terasBattle, "|-weather|" + weatherName + "|");
+        }
+    }
+
+    public static void weatherChangeAction(WeatherChangeAction action, TerasBattle terasBattle) {
+        GlobalStatusBase newGlobalStatus = (GlobalStatusBase) getProtectedProperty("newWeather", action);
+        if (newGlobalStatus instanceof Weather) {
+            Weather newWeather = (Weather) newGlobalStatus;
+            WeatherType weatherType = WeatherType.fromPixelmonWeather(newWeather);
+            appendLine(terasBattle, "|-weather|" + weatherType.getShowdownName() + "|");
         }
     }
 
 
-    public static void statusAddAction(StatusAddAction action, TerasBattle terasBattle){
+    public static void statusAddAction(StatusAddAction action, TerasBattle terasBattle) {
         StatusBase status = (StatusBase) getProtectedProperty("status", action);
         PixelmonWrapper pokemon = (PixelmonWrapper) getProtectedProperty("pokemon", action);
 
-        if(status.type == StatusType.Burn) {
-            appendLine(terasBattle, "|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|brn");
-        }
+        Map<StatusType, String> statusMap = new EnumMap<>(StatusType.class);
+        statusMap.put(StatusType.Burn, "brn");
+        statusMap.put(StatusType.Freeze, "frz");
+        statusMap.put(StatusType.Paralysis, "par");
+        statusMap.put(StatusType.Poison, "psn");
+        statusMap.put(StatusType.PoisonBadly, "tox");
+        statusMap.put(StatusType.Sleep, "slp");
+        statusMap.put(StatusType.Confusion, "confusion");
 
-        if(status.type == StatusType.Freeze){
-            appendLine(terasBattle,"|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|frz");
-        }
-
-        if(status.type == StatusType.Paralysis){
-            appendLine(terasBattle,"|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|par");
-        }
-
-        if(status.type == StatusType.Poison){
-            appendLine(terasBattle,"|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|psn");
-        }
-
-        if(status.type == StatusType.PoisonBadly){
-            appendLine(terasBattle,"|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|tox");
-        }
-
-        if(status.type == StatusType.Sleep){
-            appendLine(terasBattle,"|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|slp");
-        }
-
-        if(status.type == StatusType.Confusion){
-            appendLine(terasBattle,"|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|confusion");
-        }
-
-        if(status.type == StatusType.Flinch){
-            appendLine(terasBattle,"|-flinch|" + getPositionAndNameString(pokemon, terasBattle));
-        }
-
-        if(status.type == StatusType.ParadoxBoost){
-            appendLine(terasBattle,"|-activate|" + getPositionAndNameString(pokemon, terasBattle) + "|ability: " + pokemon.getAbility().getName());
+        String showdownStatus = statusMap.get(status.type);
+        if (showdownStatus != null) {
+            appendLine(terasBattle, "|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|" + showdownStatus);
+        } else if (status.type == StatusType.Flinch) {
+            appendLine(terasBattle, "|-flinch|" + getPositionAndNameString(pokemon, terasBattle));
+        } else if (status.type == StatusType.ParadoxBoost) {
+            appendLine(terasBattle, "|-activate|" + getPositionAndNameString(pokemon, terasBattle) + "|ability: " + pokemon.getAbility().getName());
         }
     }
 
@@ -643,14 +619,16 @@ public class TerasBattleLog {
 
 
     // Reflection
-    public static Object getProtectedProperty(String property, Object obj){
-        Field f = FieldUtils.getField(obj.getClass(), property, true);
-        f.setAccessible(true);
-
+    public static Object getProtectedProperty(String property, Object obj) {
         try {
+            Field f = FieldUtils.getField(obj.getClass(), property, true);
+            if (f == null) {
+                throw new IllegalArgumentException("Property " + property + " not found in " + obj.getClass());
+            }
+            f.setAccessible(true);
             return f.get(obj);
         } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to access property: " + property, e);
         }
     }
 }
