@@ -29,14 +29,13 @@ public class CMessageDatosServer implements Runnable{
         String uuid = Minecraft.getInstance().player.getStringUUID();
         String nombre = Minecraft.getInstance().player.getName().getString();
 
-        //System.out.println("Enviando datos de usuario: " + uuid + " " + nombre);
-
         GetUserData userData = new GetUserData();
         userData.setWorld(idServer);
         userData.setUuid(uuid);
         userData.setUsername(nombre);
-
-        //System.out.println("Enviando datos de usuario: " + userData.toString());
+        userData.setX(Minecraft.getInstance().player.getX());
+        userData.setY(Minecraft.getInstance().player.getY());
+        userData.setZ(Minecraft.getInstance().player.getZ());
 
         String respuesta = gson.toJson(userData);
 
