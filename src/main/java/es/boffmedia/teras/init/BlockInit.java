@@ -37,6 +37,8 @@ public class BlockInit {
 
     public static final RegistryObject<Block> BLUE_NETHER_BRICK_SLAB = registerBlock("blue_nether_brick_slab", () -> new SlabBlock(AbstractBlock.Properties.of(Material.STONE).requiresCorrectToolForDrops().harvestTool(ToolType.PICKAXE)));
 
+    public static final RegistryObject<Block> LAVENDER = registerBlock("lavender", () -> new LavenderFlower());
+
     public static void inicializarComidas(){
         ArrayList<ObjColocable> objetos = ComidasTeras.getComidas();
         for (ObjColocable objeto : objetos) {

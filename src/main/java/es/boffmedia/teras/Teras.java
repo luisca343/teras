@@ -4,6 +4,8 @@ package es.boffmedia.teras;
 import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.Pixelmon;
 import com.pixelmonmod.pixelmon.battles.attacks.EffectTypeAdapter;
+
+import es.boffmedia.teras.blocks.LavenderFlower;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.event.*;
 import es.boffmedia.teras.init.*;
@@ -213,7 +215,9 @@ public class Teras
         RenderTypeLookup.setRenderLayer(BlockInit.TVBLOCK.get(), RenderType.cutout());
         ClientRegistry.bindTileEntityRenderer(TileEntityInit.FRAME_TE.get(), TVBlockRenderer::new);
 
-
+        event.enqueueWork(() -> {
+            LavenderFlower.registerRenderType();
+        });
 
         LOGGER.info("Got game settings {}", event.getMinecraftSupplier().get().options);
     }
