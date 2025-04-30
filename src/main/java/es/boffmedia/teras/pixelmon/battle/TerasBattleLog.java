@@ -141,7 +141,7 @@ public class TerasBattleLog {
         appendLine(terasBattle, "|t:|" + System.currentTimeMillis() / 1000);
 
         List<BattleParticipant> participantsList = new ArrayList<>(bc.participants);
-        Collections.reverse(participantsList);
+        //Collections.reverse(participantsList);
 
         int participantIndex = 1;
         for (BattleParticipant participant : participantsList) {
@@ -538,14 +538,14 @@ public class TerasBattleLog {
         Teras.getLogger().warn("THE CURRENT INDEX IS: " + index);
 
         List<BattleParticipant> participantsList = new ArrayList<>(bc.participants);
-        Collections.reverse(participantsList);
+        //Collections.reverse(participantsList);
 
         Teras.getLogger().info("Participants: " + participantsList.size());
 
 
         for (BattleParticipant participant : participantsList) {
             Teras.getLogger().info("Participant: " + participant.getDisplayName());
-            terasBattle.setParticipant(participantsList.size() - index, participant);
+            terasBattle.setParticipant(index - 1, participant);
 
             for(int i = 0; i < participant.allPokemon.length; i++){
                 PixelmonWrapper pokemon = participant.allPokemon[i];

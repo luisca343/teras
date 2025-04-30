@@ -88,11 +88,6 @@ public class NPCTerasBattle extends TerasBattle {
                                 }
 
 
-                                for (PixelmonWrapper pixelmonWrapper : part.allPokemon) {
-                                    //playerTeam.add(pixelmonWrapper.pokemon);
-                                }
-
-
 
                                 npcEntity.remove();
                                 npcEntity = null;

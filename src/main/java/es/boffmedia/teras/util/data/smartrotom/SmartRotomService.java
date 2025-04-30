@@ -28,7 +28,7 @@ public class SmartRotomService {
     }
 
     public static void saveBattle(LogroCombate battle) {
-        SmartRotomAPI.wingullPOST("/battle", gson.toJson(battle));
+        SmartRotomAPI.wingullPOST("/smartrotom/achievements/battle", gson.toJson(battle));
     }
 
     public static void saveShopTransaction(ShopTransaction shopTransaction) {
