@@ -2,6 +2,8 @@
 
 Teras is a comprehensive Minecraft Forge mod for version 1.16.5 that enhances gameplay with various features, with a special focus on kart racing. The mod integrates with several popular Minecraft mods like Pixelmon, MrCrayfish's Vehicle Mod, and others to create a rich gaming experience.
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/luisca343/teras)
+
 ## 🏁 Kart Racing System
 
 The heart of this mod is its fully-featured kart racing system, allowing players to compete in races around custom tracks.
