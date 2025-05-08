@@ -5,7 +5,7 @@ import com.mrcrayfish.vehicle.entity.vehicle.GoKartEntity;
 import com.mrcrayfish.vehicle.init.ModEntities;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.clientOld.CMessageCambioPosicion;
+import es.boffmedia.teras.net.client.clientOld.CMessageCambioPosicion;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.math.MathHelper;

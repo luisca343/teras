@@ -11,11 +11,10 @@ import com.pixelmonmod.pixelmon.battles.api.rules.BattleRules;
 import com.pixelmonmod.pixelmon.battles.api.rules.teamselection.TeamSelectionRegistry;
 import com.pixelmonmod.pixelmon.battles.controller.BattleController;
 import com.pixelmonmod.pixelmon.battles.controller.participants.*;
-import com.pixelmonmod.pixelmon.entities.npcs.NPCTrainer;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.objects.pixelmon.BattleConfig;
-import es.boffmedia.teras.util.Scoreboard;
+import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
+import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.entity.MobEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 
@@ -86,11 +85,6 @@ public class NPCTerasBattle extends TerasBattle {
                                     if(participant instanceof PlayerParticipant){
                                         part = participant;
                                     }
-                                }
-
-
-                                for (PixelmonWrapper pixelmonWrapper : part.allPokemon) {
-                                    //playerTeam.add(pixelmonWrapper.pokemon);
                                 }
 
 

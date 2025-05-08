@@ -4,6 +4,7 @@ import com.mojang.blaze3d.matrix.MatrixStack;
 import com.mojang.blaze3d.platform.GlStateManager;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
+import es.boffmedia.teras.pixelmon.battle.TerasBattle;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.util.text.StringTextComponent;
@@ -271,9 +272,7 @@ public class PantallaSmartRotom extends Screen {
     @Override
     public boolean charTyped(char key, int mod) {
         boolean consume = enviarInterfaz(key) && super.charTyped(key, mod); // 257 335
-        Teras.LOGGER.info("CHAR TYPED: "+key);
         if (browser != null && (!consume || Arrays.stream(injectedKeys).anyMatch(i -> i == key))) {
-            Teras.LOGGER.info("CHAR TYPED AND SENT: "+key + " - "+key);
             browser.injectKeyTyped(key, key, getMask());
             return true;
         }
@@ -285,34 +284,47 @@ public class PantallaSmartRotom extends Screen {
     public boolean keyPressed(int key, int p_231046_2_, int p_231046_3_) {
         boolean consume = enviarInterfaz(key) && super.keyPressed(key, p_231046_2_, p_231046_3_);
         if (minecraft == null) return true;
-
         int correctedKey = getCorrectedKey(key);
 
-        Teras.LOGGER.info("KEY PRESSED: "+key);
         if (browser != null && (!consume || Arrays.stream(injectedKeys).anyMatch(i -> i == key))) {
             // El punto está bugeado, así que lo remapeamos por el del teclado numérico
             if(key == 46){
                 browser.injectKeyPressedByKeyCode(330, '?', getMask());
                 return true;
             }
-            // El enter está bugeado, así que lo remapeamos por el del teclado numérico
-
+            // El enter está bugeado, así que lo remapeamos por el del teclado numérico.
+            // Hay que enviar tanto el evento de tecla pulsada como el de tecla introducida.
             if(correctedKey == 13){
-                browser.injectKeyPressedByKeyCode(335, (char) 335, getMask());
+                //browser.injectKeyPressedByKeyCode(335, (char) 335, getMask());
+                browser.injectKeyPressedByKeyCode(correctedKey, (char) correctedKey, 0);
+                browser.injectKeyTyped((char) correctedKey, correctedKey, 0);
+                return true;
             }
             browser.injectKeyPressedByKeyCode(correctedKey, (char) correctedKey, getMask());
             return true;
         }
         return false;
     }
-    int[] injectedKeys = {46, 256, 257};
+    int[] injectedKeys = {46, 256 };
+    //int[] injectedKeys = {46, 256, 257};
+
+    // 257 = Enter
+    // 256 = Escape
+    // 46 = Delete
+
     @Override
     public boolean keyReleased(int key, int p_223281_2_, int p_223281_3_) {
-        boolean consume = enviarInterfaz(key) ? super.keyReleased(key, p_223281_2_, p_223281_3_) : false;
+        boolean consume = enviarInterfaz(key) && super.keyReleased(key, p_223281_2_, p_223281_3_);
 
         int correctedKey = getCorrectedKey(key);
 
         if (browser != null && (!consume || Arrays.stream(injectedKeys).anyMatch(i -> i == key))) {
+
+            if(correctedKey == 13){
+                browser.injectKeyReleasedByKeyCode(335, (char) 335, 0);
+                return true;
+            }
+
             browser.injectKeyReleasedByKeyCode(correctedKey, (char) correctedKey, getMask());
             return true;
         }
@@ -367,8 +379,7 @@ public class PantallaSmartRotom extends Screen {
     }
 
     private boolean enviarInterfaz(int key) {
-        if(Arrays.stream(injectedKeys).anyMatch(i -> i == key)) return true;
-        return false;
+        return Arrays.stream(injectedKeys).anyMatch(i -> i == key);
     }
 
 

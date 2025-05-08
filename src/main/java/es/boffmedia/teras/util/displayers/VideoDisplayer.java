@@ -1,7 +1,7 @@
 package es.boffmedia.teras.util.displayers;
 
 import com.mojang.blaze3d.platform.GlStateManager;
-import es.boffmedia.teras.util.MemoryTracker;
+import es.boffmedia.teras.util.performance.MemoryTracker;
 import es.boffmedia.teras.util.cache.TextureCache;
 import es.boffmedia.teras.util.math.vector.Vec3d;
 import me.lib720.watermod.safety.TryCore;

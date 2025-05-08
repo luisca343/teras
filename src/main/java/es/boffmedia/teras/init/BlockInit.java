@@ -3,7 +3,7 @@ package es.boffmedia.teras.init;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.*;
 import es.boffmedia.teras.items.TerasItemGroup;
-import es.boffmedia.teras.objects_old.ObjColocable;
+import es.boffmedia.teras.util.objects._old.ObjColocable;
 import net.minecraft.block.*;
 import net.minecraft.block.material.Material;
 import net.minecraft.item.BlockItem;
@@ -36,6 +36,8 @@ public class BlockInit {
     public static final RegistryObject<Block> BLUE_NETHER_BRICK_STAIRS = registerBlock("blue_nether_brick_stairs", () -> new StairsBlock(Blocks.OAK_PLANKS.defaultBlockState(),AbstractBlock.Properties.of(Material.STONE)));
 
     public static final RegistryObject<Block> BLUE_NETHER_BRICK_SLAB = registerBlock("blue_nether_brick_slab", () -> new SlabBlock(AbstractBlock.Properties.of(Material.STONE).requiresCorrectToolForDrops().harvestTool(ToolType.PICKAXE)));
+
+    public static final RegistryObject<Block> LAVENDER = registerBlock("lavender", () -> new LavenderFlower());
 
     public static void inicializarComidas(){
         ArrayList<ObjColocable> objetos = ComidasTeras.getComidas();

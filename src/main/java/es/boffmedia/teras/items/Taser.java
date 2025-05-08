@@ -2,8 +2,8 @@ package es.boffmedia.teras.items;
 
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import com.pixelmonmod.pixelmon.entities.pixelmon.StatueEntity;
-import es.boffmedia.teras.util.TerasDamageSource;
-import es.boffmedia.teras.util.music.TerasSoundEvents;
+import es.boffmedia.teras.util.game.TerasDamageSource;
+import es.boffmedia.teras.util.media.TerasSoundEvents;
 import es.boffmedia.teras.util.math.vector.RayTrace;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;

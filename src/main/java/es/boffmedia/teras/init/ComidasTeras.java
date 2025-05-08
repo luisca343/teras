@@ -1,7 +1,7 @@
 package es.boffmedia.teras.init;
 
 import es.boffmedia.teras.items.TerasItemGroup;
-import es.boffmedia.teras.objects_old.ObjColocable;
+import es.boffmedia.teras.util.objects._old.ObjColocable;
 import net.minecraft.block.Block;
 import net.minecraft.item.Food;
 import net.minecraft.item.Item;

@@ -1,9 +1,9 @@
 package es.boffmedia.teras.net.video;
 
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.objects_old.karts.Punto;
+import es.boffmedia.teras.util.objects._old.karts.Punto;
 import es.boffmedia.teras.tileentity.FrameBlockEntity;
-import es.boffmedia.teras.util.FileHelper;
+import es.boffmedia.teras.util.file.FileHelper;
 import io.leangen.geantyref.TypeToken;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;

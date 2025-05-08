@@ -5,7 +5,7 @@ import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
-import es.boffmedia.teras.objects_old.serverdata.GetUserData;
+import es.boffmedia.teras.util.objects._old.serverdata.GetUserData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
@@ -29,14 +29,13 @@ public class CMessageDatosServer implements Runnable{
         String uuid = Minecraft.getInstance().player.getStringUUID();
         String nombre = Minecraft.getInstance().player.getName().getString();
 
-        //System.out.println("Enviando datos de usuario: " + uuid + " " + nombre);
-
         GetUserData userData = new GetUserData();
         userData.setWorld(idServer);
         userData.setUuid(uuid);
         userData.setUsername(nombre);
-
-        //System.out.println("Enviando datos de usuario: " + userData.toString());
+        userData.setX(Minecraft.getInstance().player.getX());
+        userData.setY(Minecraft.getInstance().player.getY());
+        userData.setZ(Minecraft.getInstance().player.getZ());
 
         String respuesta = gson.toJson(userData);
 

@@ -81,15 +81,18 @@ public class TVBlockRenderer extends TileEntityRenderer<FrameBlockEntity> {
     public boolean shouldRenderOffScreen(FrameBlockEntity frame) {
         return frame.getSizeX() > 16 || frame.getSizeY() > 16;
     }
+
     private void renderTexture(FrameBlockEntity frame, IDisplay display, int texture, MatrixStack pose, boolean aspectRatio) {
         RenderSystem.enableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         RenderSystem.clearColor(1, 1, 1, 1);
 
-
         RenderSystem.bindTexture(texture);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+
+        // Disable face culling
+        RenderSystem.disableCull();
 
         Direction d = frame.getBlockState().getValue(TVBlock.FACING);
         if (d == Direction.NORTH) {
@@ -101,59 +104,41 @@ public class TVBlockRenderer extends TileEntityRenderer<FrameBlockEntity> {
         Facing facing = Facing.get(d);
         AlignedBox box = frame.getBox();
 
-
-
         float ancho = frame.getSizeX();
         float alto = frame.getSizeY();
 
-
-
-
-        /*
-        if (d == Direction.WEST) {
-            box = new AlignedBox(0, 0, 0, 1, alto, ancho );
-        }
-
-        if (d == Direction.SOUTH) { // NORTE, ta bug
-            box = new AlignedBox(0, 0, 0, ancho, alto, 1);
-        }
-
-        if (d == Direction.EAST) {
-            box = new AlignedBox(0, 0, -ancho + 1, 1, alto, 1 );
-        }
-
-        if (d == Direction.NORTH) {
-            box = new AlignedBox(-ancho +1, 0, 0, 1, alto, 0);
-        }*/
-
         box = CreateFrameBox.getBox(box, d, (int) ancho, (int) alto, frame.getPosX(), frame.getPosY());
-
 
         BoxFace face = BoxFace.get(facing);
         pose.pushPose();
 
+        // Render front side
+        renderSide(pose, d, face, box, false);
 
+        pose.popPose();
 
+        // Reset OpenGL state
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
+        RenderSystem.disableDepthTest();
+    }
+
+    private void renderSide(MatrixStack pose, Direction d, BoxFace face, AlignedBox box, boolean flip) {
         if (d == Direction.NORTH) {
             pose.translate(0, 0, 0.9375);
-        }
-
-        if (d == Direction.SOUTH) {
+        } else if (d == Direction.SOUTH) {
             pose.translate(0, 0, -0.9375);
-        }
-
-        if (d == Direction.WEST) {
+        } else if (d == Direction.WEST) {
             pose.translate(0.9375, 0, 0);
-        }
-
-        if (d == Direction.EAST) {
+        } else if (d == Direction.EAST) {
             pose.translate(-0.9375, 0, 0);
         }
 
-        //pose.translate(0.5, 0.5646, 0.5);
-        pose.mulPose(facing.rotation().rotation((float) Math.toRadians(0)));
+        if (flip) {
+            pose.scale(-1, 1, 1); // Apply horizontal flip
+        }
 
-        //pose.translate(-0.5, -0.5, -0.5);
+        pose.mulPose(Facing.get(d).rotation().rotation((float) Math.toRadians(0)));
 
         Tessellator tesselator = Tessellator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
@@ -168,11 +153,5 @@ public class TVBlockRenderer extends TileEntityRenderer<FrameBlockEntity> {
         tesselator.end();
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-
-        pose.popPose();
-
-        // Reset OpenGL state
-        RenderSystem.disableBlend();
-        RenderSystem.disableDepthTest();
     }
 }

@@ -3,7 +3,7 @@ package es.boffmedia.teras.blocks;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.tileentity.PantallaTE;
 import es.boffmedia.teras.util.math.BlockSide;
-import es.boffmedia.teras.util.MessageHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
 import es.boffmedia.teras.util.math.Multiblock;
 import es.boffmedia.teras.util.math.vector.Vector2i;
 import es.boffmedia.teras.util.math.vector.Vector3i;

@@ -1,6 +1,5 @@
 package es.boffmedia.teras.client;
 
-import com.mojang.blaze3d.matrix.MatrixStack;
 import com.mrcrayfish.obfuscate.client.event.RenderItemEvent;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.BloquePantalla;
@@ -11,24 +10,16 @@ import es.boffmedia.teras.client.renders.IItemRenderer;
 import es.boffmedia.teras.client.renders.SmartRotomRenderer;
 import es.boffmedia.teras.SharedProxy;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.serverOld.SMessagePadCtrl;
+import es.boffmedia.teras.net.server.serverOld.SMessagePadCtrl;
 import es.boffmedia.teras.tileentity.PantallaTE;
-import es.boffmedia.teras.util.MessageHelper;
-import es.boffmedia.teras.util.QueryHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
+import es.boffmedia.teras.util.data.QueryHelper;
 import es.boffmedia.teras.init.ItemInit;
-import moe.plushie.armourers_workshop.compatibility.api.AbstractItemTransformType;
-import moe.plushie.armourers_workshop.core.client.bake.BakedSkin;
-import moe.plushie.armourers_workshop.core.client.bake.SkinBakery;
-import moe.plushie.armourers_workshop.core.client.model.BakedModelStorage;
+import journeymap.client.api.IClientAPI;
 import moe.plushie.armourers_workshop.core.client.render.SkinItemRenderer;
-import moe.plushie.armourers_workshop.core.data.ticket.Tickets;
-import moe.plushie.armourers_workshop.core.item.SkinItem;
-import moe.plushie.armourers_workshop.core.skin.SkinDescriptor;
-import moe.plushie.armourers_workshop.init.platform.TransformationProvider;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.renderer.IRenderTypeBuffer;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -69,6 +60,8 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
     public static IJSQueryCallback callbackMCEF;
     public String idServidor;
 
+    private static IClientAPI jmAPI;
+
     private final ArrayList<PantallaTE> screenTracking = new ArrayList<>();
 
     private int lastTracked = 0;
@@ -86,14 +79,8 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
         private long lastURLSent;
 
     private PadData(String url, int id) {
-        System.out.println("PadData");
-        System.out.println("URL: "+url);
-        System.out.println("ID: "+id);
-        System.out.println("Teras.config.getHome(): "+Teras.config.getHome());
-        System.out.println("Teras.config: "+Teras.config);
         view = mcef.createBrowser(Teras.config.getHome());
-        view.resize(mc.getWindow().getWidth(), mc.getWindow().getHeight());
-        view.resize((int) 1280, (int)  720);
+        view.resize(1280, 720);
         isInHotbar = true;
         this.id = id;
     }
@@ -106,6 +93,7 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
     
     @SubscribeEvent
     public void renderItemInventory(RenderItemEvent ev){
+
         /*
         AbstractItemTransformType transformType = AbstractItemTransformType.valueOf(ev.getTransformType().toString());
         if(!transformType.equals(AbstractItemTransformType.GUI) && !transformType.equals(AbstractItemTransformType.GROUND) && !transformType.equals(AbstractItemTransformType.FIXED)){
@@ -161,6 +149,7 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
         mc = Minecraft.getInstance();
         mcef = Teras.getInstance().getAPI();
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(new VehicleDriftClient());
 
 
         iniciarPadMap();
@@ -449,6 +438,10 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
         }
         getPadByID(0).view.runJS(js,"");
         Minecraft.getInstance().setScreen(new PantallaSmartRotom(getPadByID(0)));
+    }
+
+    public void setjmAPI(IClientAPI api) {
+        jmAPI = api;
     }
 
 

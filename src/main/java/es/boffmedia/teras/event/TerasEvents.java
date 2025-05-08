@@ -7,25 +7,31 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.TestModeloFunko;
 import es.boffmedia.teras.commands.*;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.clientOld.CMessageConfigServer;
+import es.boffmedia.teras.net.client.CMessageConfigServer;
 import es.boffmedia.teras.net.video.ScreenManager;
-import es.boffmedia.teras.objects.karts.RaceManager;
-import es.boffmedia.teras.objects_old.serverdata.TerasConfig;
-import es.boffmedia.teras.objects_old.karts.CarreraManagerOld;
-import es.boffmedia.teras.objects_old.serverdata.UserData;
+import es.boffmedia.teras.util.data.PersistentDataFields;
+import es.boffmedia.teras.util.file.FileHelper;
+import es.boffmedia.teras.util.game.ShinyTracker;
+import es.boffmedia.teras.util.objects.karts.RaceManager;
+import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects._old.karts.CarreraManagerOld;
+import es.boffmedia.teras.util.objects._old.serverdata.UserData;
 import es.boffmedia.teras.particle.FakeParticle;
-import es.boffmedia.teras.util.*;
 import es.boffmedia.teras.util.cache.TextureCache;
 import es.boffmedia.teras.util.displayers.VideoDisplayer;
+import es.boffmedia.teras.util.performance.ClientScheduler;
+import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.renderer.culling.ClippingHelper;
 import net.minecraft.client.renderer.model.IBakedModel;
 import net.minecraft.client.renderer.model.ModelResourceLocation;
 import net.minecraft.client.renderer.texture.AtlasTexture;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.world.World;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.ModelBakeEvent;
@@ -48,21 +54,21 @@ import net.minecraftforge.server.permission.PermissionAPI;
 
 @Mod.EventBusSubscriber
 public class TerasEvents {
-        @OnlyIn(Dist.CLIENT)
-        @SubscribeEvent
-        public static void onPokemonSpawn(EntityJoinWorldEvent event) {
-            if (event.getEntity() instanceof PixelmonEntity && !event.isCanceled() && event.getResult() != Event.Result.DENY) {
-                ClientScheduler.schedule(1, () -> { //Wait a tick so the entity is fully loaded, so it isn't a bulbasaur
-                    PixelmonEntity entity = (PixelmonEntity) event.getEntity();
-                    if ((entity.getPokemon().isShiny() || entity.getPokemon().isPalette("shiny2")) && !entity.isBossPokemon()) {
-                        ShinyTracker tracker = ShinyTracker.INSTANCE;
-                        if (tracker.shouldTrackShiny(entity)) {
-                            tracker.track(entity);
-                        }
+    @OnlyIn(Dist.CLIENT)
+    @SubscribeEvent
+    public static void onPokemonSpawn(EntityJoinWorldEvent event) {
+        if (event.getEntity() instanceof PixelmonEntity && !event.isCanceled() && event.getResult() != Event.Result.DENY) {
+            ClientScheduler.schedule(1, () -> { //Wait a tick so the entity is fully loaded, so it isn't a bulbasaur
+                PixelmonEntity entity = (PixelmonEntity) event.getEntity();
+                if ((entity.getPokemon().isShiny() || entity.getPokemon().isPalette("shiny2")) && !entity.isBossPokemon()) {
+                    ShinyTracker tracker = ShinyTracker.INSTANCE;
+                    if (tracker.shouldTrackShiny(entity)) {
+                        tracker.track(entity);
                     }
-                });
-            }
+                }
+            });
         }
+    }
 
     @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
@@ -110,7 +116,7 @@ public class TerasEvents {
             VideoDisplayer.tick();
         }
 
-        if(!Minecraft.getInstance().isPaused()
+        if (!Minecraft.getInstance().isPaused()
                 && (Minecraft.getInstance().screen == null || Minecraft.getInstance().screen instanceof ChatScreen)) {
             ShinyTracker.INSTANCE.tick();
             ClientScheduler.tick();
@@ -136,23 +142,23 @@ public class TerasEvents {
                 event.player.addEffect(new net.minecraft.potion.EffectInstance(Effects.REGENERATION, 100, 1));
                 }
             }*/
-        }
+    }
 
     @SubscribeEvent
-    public static void onServerStarted(FMLServerStartedEvent event){
+    public static void onServerStarted(FMLServerStartedEvent event) {
         ScreenManager.loadScreens();
 
         try {
             Teras.carreraManager = new CarreraManagerOld();
             Teras.raceManager = new RaceManager();
-        }catch (NullPointerException e){
+        } catch (NullPointerException e) {
             Teras.LOGGER.error("ERROR AL CREAR EL CARRERA MANAGER");
         }
     }
 
 
     @SubscribeEvent
-    public static void onCommandsRegister(RegisterCommandsEvent event){
+    public static void onCommandsRegister(RegisterCommandsEvent event) {
         new TestCommand(event.getDispatcher());
         new DiscosCommand(event.getDispatcher());
         new CombateCommand(event.getDispatcher());
@@ -163,6 +169,8 @@ public class TerasEvents {
 
         new KartsCommand(event.getDispatcher());
         new FrenteBatallaCommand(event.getDispatcher());
+
+        new DungeonCommand(event.getDispatcher());
 
         // Client only commands
 
@@ -177,28 +185,57 @@ public class TerasEvents {
 
 
     @SubscribeEvent
-    public static void onTeleport(PlayerEvent.PlayerChangedDimensionEvent event){
-        if(event.getPlayer().getPersistentData().getBoolean(PersistentDataFields.FB_ACTIVO.label)){
+    public static void onTeleport(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getPlayer().getPersistentData().getBoolean(PersistentDataFields.FB_ACTIVO.label)) {
             event.setCanceled(true);
             MessageHelper.enviarMensaje(event.getPlayer(), "NO PUEDES TELETRANSPORTARTE EN ESTE MOMENTO");
         }
     }
 
     @SubscribeEvent
-    public static void interactuarBloque(PlayerInteractEvent.RightClickBlock event){
+    public static void interactuarBloque(PlayerInteractEvent.RightClickBlock event) {
         TileEntity block = event.getWorld().getBlockEntity(event.getPos());
         TileEntity blockDebajo = event.getWorld().getBlockEntity(event.getPos().below());
-        if(!event.getPlayer().getPersistentData().getBoolean(PersistentDataFields.FB_ACTIVO.label)) return;
+        if (!event.getPlayer().getPersistentData().getBoolean(PersistentDataFields.FB_ACTIVO.label)) return;
 
 
-        if(block instanceof PCTileEntity || blockDebajo instanceof PCTileEntity){
+        if (block instanceof PCTileEntity || blockDebajo instanceof PCTileEntity) {
             MessageHelper.enviarMensaje(event.getPlayer(), "NO PUEDES USAR EL PC EN ESTE MOMENTO");
             event.setCanceled(true);
         }
     }
+
     @SubscribeEvent
-    public static void onLogin(PlayerEvent.PlayerLoggedInEvent ev){
-        Teras.LOGGER.info("LOGIN");
+    public static void enterWorld(EntityJoinWorldEvent event) {
+        if (!(event.getEntity() instanceof PlayerEntity)) return;
+        PlayerEntity player = (PlayerEntity) event.getEntity();
+
+        World world = event.getWorld();
+        if (world.dimension().location().equals(World.OVERWORLD.location())) {
+            Teras.getLogger().info("ES EL OVERWORLD");
+
+            // API URL DOES NOT EXIST YET
+            //PolygonCreator.createPolygon();
+
+            if (player instanceof ServerPlayerEntity) {
+                Teras.getLogger().info("ES UN SERVERPLAYER");
+            } else {
+                Teras.getLogger().info("NO ES UN SERVERPLAYER");
+            }
+        } else {
+            Teras.getLogger().info("NO ES EL OVERWORLD");
+
+        }
+
+
+    }
+
+
+    @SubscribeEvent
+    public static void onLogin(PlayerEvent.PlayerLoggedInEvent ev) {
+
+        Teras.LOGGER.info("FUNCTIONANDO LOGIIIINN");
+
         Gson gson = new Gson();
         TerasConfig terasConfig = FileHelper.getConfig();
         String data = gson.toJson(terasConfig);

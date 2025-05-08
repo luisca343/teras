@@ -22,7 +22,7 @@ public class TVVideoScreen extends Screen {
 
 
     private static final ResourceLocation TEXTURE = new ResourceLocation(Teras.MOD_ID, "textures/gui/background.png");
-    private static final ResourceLocation BUTTONS = new ResourceLocation(Teras.MOD_ID, "textures/gui/frame1.png");
+    private static final ResourceLocation BUTTONS = new ResourceLocation(Teras.MOD_ID, "textures/gui/frame.png");
 
     private final TileEntity be;
     private String url;

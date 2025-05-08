@@ -2,7 +2,7 @@ package es.boffmedia.teras.items;
 
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
-import es.boffmedia.teras.util.music.TerasSoundEvents;
+import es.boffmedia.teras.util.media.TerasSoundEvents;
 import es.boffmedia.teras.util.math.vector.RayTrace;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;

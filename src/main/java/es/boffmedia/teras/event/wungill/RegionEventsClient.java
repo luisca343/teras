@@ -2,7 +2,6 @@ package es.boffmedia.teras.event.wungill;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.TerasConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
@@ -61,8 +60,16 @@ public class RegionEventsClient {
         }
 
         //get gui scale
+        /*
         int scaleFactor = (int) Minecraft.getInstance().getWindow().getGuiScale();
         float scale = scaleFactor == 1 ? 2 : 1.0f / (scaleFactor -1) * TerasConfig.ESCALA_CARTELES.get();
+        */
+
+        int size = 256;
+        int windowHeight = Minecraft.getInstance().getWindow().getGuiScaledHeight();
+        float scale = (float) windowHeight / 2 / size;
+
+
         RenderSystem.pushMatrix();
         RenderSystem.scalef(scale, scale, scale);
 

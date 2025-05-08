@@ -18,7 +18,7 @@ import com.sk89q.worldedit.session.SessionManager;
 import com.sk89q.worldedit.world.RegenOptions;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.world.biome.BiomeType;
-import es.boffmedia.teras.util.MessageHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.command.CommandSource;
 import net.minecraft.command.Commands;
 import net.minecraft.entity.player.ServerPlayerEntity;

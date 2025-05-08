@@ -1,8 +1,8 @@
 package es.boffmedia.teras.event;
 
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.objects_old.misiones.QuestData;
-import es.boffmedia.teras.util.FileHelper;
+import es.boffmedia.teras.util.objects._old.misiones.QuestData;
+import es.boffmedia.teras.util.file.FileHelper;
 import io.leangen.geantyref.TypeToken;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraftforge.api.distmarker.Dist;

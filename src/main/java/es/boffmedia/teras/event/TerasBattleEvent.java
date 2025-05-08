@@ -1,6 +1,5 @@
 package es.boffmedia.teras.event;
 
-import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.api.battles.BattleResults;
 import com.pixelmonmod.pixelmon.api.events.BeatTrainerEvent;
 import com.pixelmonmod.pixelmon.api.events.battles.BattleEndEvent;
@@ -8,13 +7,13 @@ import com.pixelmonmod.pixelmon.api.events.battles.BattleStartedEvent;
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
 import com.pixelmonmod.pixelmon.battles.controller.participants.BattleParticipant;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.objects.TrainerDefeatMoney;
-import es.boffmedia.teras.objects_old.logros.LogroCombate;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
+import es.boffmedia.teras.util.objects.TrainerDefeatMoney;
+import es.boffmedia.teras.util.objects.logros.LogroCombate;
 import es.boffmedia.teras.pixelmon.battle.*;
-import es.boffmedia.teras.util.FileHelper;
-import es.boffmedia.teras.util.MessageHelper;
-import es.boffmedia.teras.util.Scoreboard;
-import es.boffmedia.teras.util.WingullAPI;
+import es.boffmedia.teras.util.file.FileHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
+import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.text.*;
@@ -37,9 +36,7 @@ public class TerasBattleEvent {
         }
         
         TrainerDefeatMoney defeatMoney = new TrainerDefeatMoney(event.player.getStringUUID(), event.trainer.getWinMoney());
-
-        Gson gson = new Gson();
-        WingullAPI.wingullPOST("/starbank/trainerdefeat", gson.toJson(defeatMoney));
+        SmartRotomService.defeatTrainer(defeatMoney);
     }
 
     public void inicioCombateEntrenador(BattleStartedEvent event, TerasBattleOld combate){
@@ -63,8 +60,7 @@ public class TerasBattleEvent {
 
         if(combate instanceof NPCTerasBattle){
             LogroCombate logroCombate = getLogroCombate((NPCTerasBattle) combate, ganador);
-
-            WingullAPI.wingullPOST("/battle", Teras.GSON.toJson(logroCombate));
+            SmartRotomService.saveBattle(logroCombate);
         }
 
         Teras.getLogger().info(combate.getLogString());

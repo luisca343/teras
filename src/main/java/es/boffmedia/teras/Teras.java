@@ -4,19 +4,22 @@ package es.boffmedia.teras;
 import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.Pixelmon;
 import com.pixelmonmod.pixelmon.battles.attacks.EffectTypeAdapter;
+
+import es.boffmedia.teras.blocks.LavenderFlower;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.event.*;
 import es.boffmedia.teras.init.*;
 import es.boffmedia.teras.integration.Integrations;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.objects.karts.RaceManager;
-import es.boffmedia.teras.objects_old.serverdata.TerasConfig;
-import es.boffmedia.teras.objects_old.karts.CarreraManagerOld;
+import es.boffmedia.teras.util.PolygonCreator;
+import es.boffmedia.teras.util.objects.karts.RaceManager;
+import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects._old.karts.CarreraManagerOld;
 import es.boffmedia.teras.pixelmon.attacks.DesenvaineSubito;
 import es.boffmedia.teras.pixelmon.attacks.TestAttack;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.tileentity.PantallaRenderer;
-import es.boffmedia.teras.util.music.TerasSoundEvents;
+import es.boffmedia.teras.util.media.TerasSoundEvents;
 import es.boffmedia.teras.client.renders.TVBlockRenderer;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
@@ -34,6 +37,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.*;
 import net.minecraftforge.fml.event.server.FMLServerStartingEvent;
+import net.minecraftforge.fml.event.server.FMLServerStoppingEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.server.permission.DefaultPermissionLevel;
 import net.minecraftforge.server.permission.PermissionAPI;
@@ -48,16 +52,20 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.stream.Collectors;
 
 // The value here should match an entry in the META-INF/mods.toml file
-@Mod("teras")
+@Mod(Teras.MOD_ID)
 public class Teras
 {
     // Directly reference a log4j logger.
+    public static TerasConfig config;
+    public static List<PolygonCreator.Region> regions;
 
     // SmartRotom START
     public static final double PAD_RATIO = 59.0 / 30.0;
+    public static final String MOD_ID = "teras";
     public static Gson GSON = new Gson();
     //public  static final String SMARTROTOM_HOME = "http://teras.es/smartrotom";
     // public static final String SMARTROTOM_HOME = "http://localhost:3000/smartrotom";
@@ -75,7 +83,6 @@ public class Teras
     public static Teras INSTANCE = null;
     public static TerasBattleController lbc;
     private API api;
-    public static String MOD_ID = "teras";
     public static String HEADER_MENSAJE = TextFormatting.BLUE + "" + TextFormatting.BOLD+"[Teras]: ";
 
     public static SharedProxy PROXY = DistExecutor.<SharedProxy>safeRunForDist(() -> ClientProxy::new, () -> SharedProxy::new);
@@ -83,7 +90,6 @@ public class Teras
     public static CarreraManagerOld carreraManager;
     public static RaceManager raceManager;
 
-    public static TerasConfig config;
 
     public API getAPI() {
         return api;
@@ -171,6 +177,7 @@ public class Teras
         EffectTypeAdapter.EFFECTS.put("DesenvaineSubito", DesenvaineSubito.class);
 
 
+
         event.enqueueWork(CommonHandler::setup);
     }
 
@@ -208,6 +215,9 @@ public class Teras
         RenderTypeLookup.setRenderLayer(BlockInit.TVBLOCK.get(), RenderType.cutout());
         ClientRegistry.bindTileEntityRenderer(TileEntityInit.FRAME_TE.get(), TVBlockRenderer::new);
 
+        event.enqueueWork(() -> {
+            LavenderFlower.registerRenderType();
+        });
 
         LOGGER.info("Got game settings {}", event.getMinecraftSupplier().get().options);
     }
@@ -258,6 +268,11 @@ public class Teras
                 e.printStackTrace();
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(FMLServerStoppingEvent event) {
+
     }
 
 

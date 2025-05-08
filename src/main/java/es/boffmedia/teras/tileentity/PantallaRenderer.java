@@ -6,7 +6,7 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.math.BlockSide;
-import es.boffmedia.teras.util.MessageHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
 import es.boffmedia.teras.util.math.vector.Vector3f;
 import es.boffmedia.teras.util.math.vector.Vector3i;
 import net.minecraft.client.Minecraft;

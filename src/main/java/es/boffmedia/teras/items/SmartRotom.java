@@ -1,7 +1,6 @@
 package es.boffmedia.teras.items;
 
 
-import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.api.pokedex.PlayerPokedex;
 import com.pixelmonmod.pixelmon.api.pokedex.PokedexRegistrationStatus;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
@@ -9,17 +8,14 @@ import com.pixelmonmod.pixelmon.entities.pixelmon.StatueEntity;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.serverOld.SMessageUpdateDex;
-import es.boffmedia.teras.objects_old.dex.ActualizarDex;
-import es.boffmedia.teras.util.WingullAPI;
+import es.boffmedia.teras.net.server.serverOld.SMessageUpdateDex;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
+import es.boffmedia.teras.util.objects.dex.ActualizarDex;
 import es.boffmedia.teras.util.math.vector.RayTrace;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemUseContext;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.EntityRayTraceResult;
@@ -80,7 +76,7 @@ public class SmartRotom extends Item {
     public ActionResult<ItemStack> use(World world, PlayerEntity player, Hand hand) {
         ItemStack stack = player.getItemInHand(hand);
 
-        actualizarPad(stack);
+       if(!actualizarPad(stack)) return ActionResult.fail(stack);
 
         LivingEntity entity = getRayTracedEntities(world, player, hand, 50);
         assert entity != null;
@@ -123,15 +119,16 @@ public class SmartRotom extends Item {
         }
         if(!form.isEmpty() && !world.isClientSide()){
             ActualizarDex updateDex = new ActualizarDex(player.getUUID().toString(), dex, 1, form, palette);
-            Gson gson = new Gson();
-            WingullAPI.wingullPOST("/pokemon/registry", gson.toJson(updateDex));
+            SmartRotomService.postRegistry(updateDex);
         }
         return super.use(world, player, hand);
     }
 
+
+        /*
     @Override
     public ActionResultType onItemUseFirst(ItemStack stack, ItemUseContext context) {
-        checkPad(stack);
+        if(!checkPad(stack)) return ActionResultType.FAIL;
         World world = context.getLevel();
         assert Teras.PROXY.getPadByID(stack.getTag().getInt("PadID")).view.getURL() != null;
 
@@ -145,27 +142,18 @@ public class SmartRotom extends Item {
         if(url.toLowerCase().contains("rzap")){
             actualizarPad(stack);
             if(bloque.getBlock() == Blocks.JUKEBOX){
-                /*BlockState state = BlockInit.TOCADISCOS.get().defaultBlockState();
+                BlockState state = BlockInit.TOCADISCOS.get().defaultBlockState();
                 world.setBlock(context.getClickedPos(), state, 2);
-                world.playSound(context.getPlayer(), context.getClickedPos(), SoundEvents.ARMOR_EQUIP_LEATHER, SoundCategory.BLOCKS, 1.0F, 1.0F);*/
+                world.playSound(context.getPlayer(), context.getClickedPos(), SoundEvents.ARMOR_EQUIP_LEATHER, SoundCategory.BLOCKS, 1.0F, 1.0F);
             }
         }
 
         return super.onItemUseFirst(stack, context);
-    }
+    }*/
 
-    public static void checkPad(ItemStack stack){
-        if(!stack.hasTag() || !stack.getTag().contains("PadID")){
-            CompoundNBT nbt = new CompoundNBT();
-            int id = Teras.PROXY.getNextPadID();
-            nbt.putInt("PadID", id);
-            stack.setTag(nbt);
 
-            Teras.PROXY.updatePad(id, stack.getTag(), true);
-        }
-    }
 
-    public static void actualizarPad(ItemStack stack){
+    public static boolean actualizarPad(ItemStack stack){
         if(!stack.hasTag() || !stack.getTag().contains("PadID")){
             CompoundNBT nbt = new CompoundNBT();
             nbt.putString("PadURL", "http://www.google.es");
@@ -173,8 +161,12 @@ public class SmartRotom extends Item {
             nbt.putInt("PadID", id);
             stack.setTag(nbt);
 
+            Teras.getLogger().info("Se ha inicializado el PadID: " + id);
             Teras.PROXY.updatePad(id, stack.getTag(), true);
+            return false;
         }
+        Teras.getLogger().info("El PadID ya existe: " + stack.getTag().getInt("PadID"));
+        return true;
     }
 
 }

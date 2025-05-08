@@ -2,7 +2,7 @@
 
 import es.boffmedia.teras.init.ItemInit;
 import es.boffmedia.teras.tileentity.TocadiscosTE;
-import es.boffmedia.teras.util.MessageHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.HorizontalBlock;

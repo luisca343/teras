@@ -19,9 +19,9 @@ import com.pixelmonmod.pixelmon.battles.controller.participants.WildPixelmonPart
 import com.pixelmonmod.pixelmon.entities.npcs.NPCTrainer;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.objects.pixelmon.BattleConfig;
-import es.boffmedia.teras.objects_old.pixelmon.PosicionEquipo;
-import es.boffmedia.teras.util.Scoreboard;
+import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
+import es.boffmedia.teras.util.objects._old.pixelmon.PosicionEquipo;
+import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.entity.MobEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 

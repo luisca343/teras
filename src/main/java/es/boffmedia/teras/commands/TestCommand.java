@@ -26,21 +26,23 @@ import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.World;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.clientOld.CMessageVerVideo;
-import es.boffmedia.teras.net.clientOld.CMessageWaypoints;
+import es.boffmedia.teras.net.client.CMessageFindPath;
+import es.boffmedia.teras.net.client.clientOld.CMessageVerVideo;
+import es.boffmedia.teras.net.client.clientOld.CMessageWaypoints;
 import es.boffmedia.teras.net.video.ScreenManager;
-import es.boffmedia.teras.objects.quests.NpcData;
-import es.boffmedia.teras.objects.quests.UpdateNPCs;
-import es.boffmedia.teras.objects_old.WayPoint;
-import es.boffmedia.teras.objects_old.karts.Circuito;
+import es.boffmedia.teras.util.PokedexHelper;
+import es.boffmedia.teras.util.RouteCreator;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
+import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
+import es.boffmedia.teras.util.objects._old.WayPoint;
+import es.boffmedia.teras.util.objects._old.karts.Circuito;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.pixelmon.battle.TeamManager;
 import es.boffmedia.teras.pixelmon.frentebatalla.TorreBatallaController;
-import es.boffmedia.teras.util.FileHelper;
-import es.boffmedia.teras.util.MessageHelper;
-import es.boffmedia.teras.util.PersistentDataFields;
-import es.boffmedia.teras.util.WingullAPI;
-import es.boffmedia.teras.util.music.AudioManager;
+import es.boffmedia.teras.util.file.FileHelper;
+import es.boffmedia.teras.util.string.MessageHelper;
+import es.boffmedia.teras.util.data.PersistentDataFields;
+import es.boffmedia.teras.util.media.AudioManager;
 import moe.plushie.armourers_workshop.core.data.LocalDataService;
 import moe.plushie.armourers_workshop.core.skin.Skin;
 import moe.plushie.armourers_workshop.core.skin.SkinLoader;
@@ -53,18 +55,7 @@ import net.minecraft.command.arguments.EntityArgument;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.text.StringTextComponent;
-import net.minecraft.world.server.ServerWorld;
 import net.minecraftforge.fml.network.PacketDistributor;
-import net.minecraftforge.fml.server.ServerLifecycleHooks;
-import noppes.npcs.api.IWorld;
-import noppes.npcs.api.NpcAPI;
-import noppes.npcs.api.constants.EntitiesType;
-import noppes.npcs.api.entity.ICustomNpc;
-import noppes.npcs.api.entity.IEntity;
-import noppes.npcs.api.entity.IEntityLiving;
-import noppes.npcs.api.handler.data.IDialog;
-import noppes.npcs.controllers.data.Dialog;
-import noppes.npcs.controllers.data.DialogOption;
 
 import java.io.*;
 import java.util.*;
@@ -87,13 +78,37 @@ public class TestCommand {
                 .then(cargarEquipo())
                 .then(iniciarCombateFrenteBatalla())
                 .then(playVideo())
-                .requires((commandSource -> commandSource.hasPermission(3))
-                ).then(crearWaypoint())
+                .requires((commandSource -> commandSource.hasPermission(3)))
+                    .then(crearWaypoint())
                 .then(reproducirSonido())
-                .then(testset());
+                .then(testset())
+                .then(findPath())
+                .then(getPokedex())
+                ;
 
         dispatcher.register(literalBuilder);
 
+    }
+
+    private ArgumentBuilder<CommandSource, ?> getPokedex() {
+        return Commands.literal("pokedex")
+                .executes((command) -> {
+                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                    PokedexHelper.printPokedexStatusGroupedByStatus(player.getStringUUID());
+                    return 1;
+                });
+    }
+
+    private ArgumentBuilder<CommandSource, ?> findPath() {
+        return Commands.literal("findPath")
+                .executes((command) -> {
+                    RouteCreator.Point startPoint = new RouteCreator.Point(46, 14);
+                    RouteCreator.Point endPoint = new RouteCreator.Point(130, -9);
+                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                    System.out.println("Enviando mensaje de findPath");
+                    Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageFindPath(startPoint, endPoint));
+                    return 1;
+                });
     }
 
     private ArgumentBuilder<CommandSource,?> hitCar() {
@@ -112,9 +127,7 @@ public class TestCommand {
         return Commands.literal("npc")
                 .executes((command) -> {
                     UpdateNPCs updateNPCs = new UpdateNPCs();
-
-                    Gson gson = new Gson();
-                    WingullAPI.wingullPOST("/misiones/npcs", gson.toJson(updateNPCs));
+                    SmartRotomService.updateNPCs(updateNPCs);
 
                     return 1;
                 });
@@ -235,7 +248,6 @@ public class TestCommand {
                     try {
                         ClipboardReader reader = BuiltInClipboardFormat.SPONGE_SCHEMATIC.getReader(new FileInputStream(schem));
                         Clipboard clipboard = reader.read();
-
 
                         World world = ForgeAdapter.adapt(player.level);
                         EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(world, -1);

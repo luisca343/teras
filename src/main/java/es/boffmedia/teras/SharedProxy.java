@@ -2,8 +2,9 @@ package es.boffmedia.teras;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import es.boffmedia.teras.client.ClientProxy;
-import es.boffmedia.teras.objects_old.pixelmon.Recompensa;
+import es.boffmedia.teras.util.objects._old.pixelmon.Recompensa;
 import es.boffmedia.teras.tileentity.PantallaTE;
+import journeymap.client.api.IClientAPI;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
@@ -147,4 +148,7 @@ public class SharedProxy {
     public void runJS(String str) {
         Teras.LOGGER.warn("Esto en servidor no hace nada");
     }
+
+    public void setjmAPI(IClientAPI api) { Teras.LOGGER.warn("Esto en servidor no hace nada"); }
+
 }

@@ -7,14 +7,11 @@ import com.pixelmonmod.pixelmon.api.pokemon.boss.BossTierRegistry;
 import com.pixelmonmod.pixelmon.battles.BattleRegistry;
 import com.pixelmonmod.pixelmon.battles.api.rules.BattleRuleRegistry;
 import com.pixelmonmod.pixelmon.battles.api.rules.BattleRules;
-import com.pixelmonmod.pixelmon.battles.api.rules.teamselection.TeamSelectionRegistry;
 import com.pixelmonmod.pixelmon.battles.controller.participants.BattleParticipant;
-import com.pixelmonmod.pixelmon.battles.controller.participants.PixelmonWrapper;
-import com.pixelmonmod.pixelmon.battles.controller.participants.PlayerParticipant;
 import com.pixelmonmod.pixelmon.battles.controller.participants.TrainerParticipant;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.objects.pixelmon.BattleConfig;
-import es.boffmedia.teras.util.Scoreboard;
+import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
+import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.entity.player.ServerPlayerEntity;
 
 import java.awt.*;

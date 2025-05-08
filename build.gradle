@@ -18,7 +18,7 @@ apply plugin: 'java'
 
 compileJava.options.encoding = 'UTF-8'
 
-version = '0.1.4'
+version = '0.1.5'
 group = 'es.boffmedia' // http://maven.apache.org/guides/mini/guide-naming-conventions.html
 archivesBaseName = 'Teras-1.16.5'
 

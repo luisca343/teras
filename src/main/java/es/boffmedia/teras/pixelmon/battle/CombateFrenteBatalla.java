@@ -2,7 +2,7 @@ package es.boffmedia.teras.pixelmon.battle;
 
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
 import com.pixelmonmod.pixelmon.battles.controller.participants.PlayerParticipant;
-import es.boffmedia.teras.objects.pixelmon.BattleConfig;
+import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
 import net.minecraft.entity.player.ServerPlayerEntity;
 
 import java.util.List;

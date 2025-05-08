@@ -2,7 +2,7 @@ package es.boffmedia.teras.client.gui;
 import com.mojang.blaze3d.matrix.MatrixStack;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
-import es.boffmedia.teras.util.MemoryTracker;
+import es.boffmedia.teras.util.performance.MemoryTracker;
 import me.lib720.caprica.vlcj.player.base.State;
 import me.srrapero720.watermedia.api.WaterMediaAPI;
 import me.srrapero720.watermedia.api.player.SyncVideoPlayer;

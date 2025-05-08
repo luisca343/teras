@@ -5,6 +5,7 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
+import es.boffmedia.teras.client.gui.PantallaSmartRotom;
 import es.boffmedia.teras.init.ItemInit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BufferBuilder;
@@ -50,6 +51,7 @@ public final class SmartRotomRenderer implements IItemRenderer {
 
     @Override
     public final void render(MatrixStack stack, ItemStack is, float handSideSign, float swingProgress, float equipProgress, IRenderTypeBuffer buffer, int packedLight) {
+        if(mc.screen instanceof PantallaSmartRotom) return;
         //Pre-compute values
         float sqrtSwingProg = (float) Math.sqrt(swingProgress);
         sinSqrtSwingProg1 = (float) Math.sin(sqrtSwingProg * PI);

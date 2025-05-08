@@ -36,3 +36,5 @@ libs
 hs_err_pid*
 replay_pid*
 
+.vscode/tasks.json
+.vscode/launch.json
