@@ -1,46 +1,76 @@
+Teras
+Teras is a comprehensive Minecraft Forge mod for version 1.16.5 that enhances gameplay with various features, with a special focus on kart racing. The mod integrates with several popular Minecraft mods like Pixelmon, MrCrayfish's Vehicle Mod, and others to create a rich gaming experience.
 
-Source installation information for modders
--------------------------------------------
-This code follows the Minecraft Forge installation methodology. It will apply
-some small patches to the vanilla MCP source code, giving you and it access 
-to some of the data and functions you need to build a successful mod.
+🏁 Kart Racing System
+The heart of this mod is its fully-featured kart racing system, allowing players to compete in races around custom tracks.
 
-Note also that the patches are built against "un-renamed" MCP source code (aka
-SRG Names) - this means that you will not be able to read them directly against
-normal code.
+Features:
+Race Tracks with Checkpoints: Create and use custom race tracks with strategic checkpoints Race.java:158-179
 
-Setup Process:
-==============================
+Multiplayer Racing: Join races with other players and compete for the best time RaceManager.java:55-108
 
-Step 1: Open your command-line and browse to the folder where you extracted the zip file.
+Voting System: Players can vote to start races when enough participants are ready RaceManager.java:150-173
 
-Step 2: You're left with a choice.
-If you prefer to use Eclipse:
-1. Run the following command: `gradlew genEclipseRuns` (`./gradlew genEclipseRuns` if you are on Mac/Linux)
-2. Open Eclipse, Import > Existing Gradle Project > Select Folder 
-   or run `gradlew eclipse` to generate the project.
+Countdown and Race Management: Enjoy a professional racing experience with countdown timers Race.java:87-117
 
-If you prefer to use IntelliJ:
-1. Open IDEA, and import project.
-2. Select your build.gradle file and have it import.
-3. Run the following command: `gradlew genIntellijRuns` (`./gradlew genIntellijRuns` if you are on Mac/Linux)
-4. Refresh the Gradle Project in IDEA if required.
+Position Tracking: Real-time updates of your position in the race Race.java:137-156
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can 
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+Lap Counting: Race for multiple laps with automatic lap tracking Race.java:171-177
 
-Mapping Names:
-=============================
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license, if you do not agree with it you can change your mapping names to other crowdsourced names in your 
-build.gradle. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
+🧩 Additional Features
+Pixelmon Integration: Custom battle controllers and attacks for Pixelmon Teras.java:170-171
 
-Additional Resources: 
-=========================
-Community Documentation: http://mcforge.readthedocs.io/en/latest/gettingstarted/  
-LexManos' Install Video: https://www.youtube.com/watch?v=8VEdtQLuLO0  
-Forge Forum: https://forums.minecraftforge.net/  
-Forge Discord: https://discord.gg/UvedJ9m  
+Voice Chat Support: Integrated voice chat functionality Teras.java:23
+
+Custom Fluids: New fluids including thermal waters Teras.java:203-205
+
+Custom Blocks and Items: New content to enhance gameplay Teras.java:129-132
+
+Browser Integration: In-game web browser capabilities through MCEF Teras.java:151-162
+
+Custom NPCs Compatibility: Works with Custom NPCs mod Teras.java:116-118
+
+⚙️ Installation
+Install Minecraft Forge for version 1.16.5
+Download and install all required dependencies/mods
+Place the Teras mod JAR file in your Minecraft mods folder
+Launch Minecraft with Forge
+📋 Requirements
+Minecraft 1.16.5
+Forge 36.2.39+ build.gradle:138
+Required Mods
+MrCrayfish's Vehicle Mod build.gradle:150
+Pixelmon build.gradle:140
+MCEF (Minecraft Chromium Embedded Framework) build.gradle:139
+Simple Voice Chat build.gradle:141
+Custom NPCs build.gradle:158
+🎮 Usage
+Kart Racing Commands
+Join a race: /karts join [track] [laps]
+Leave a race: /karts salir
+Vote to start a race: /karts votar
+Cancel your vote: /karts cancelarvoto
+List available tracks: /karts list
+🏗️ Development
+Setup Process
+Clone the repository
+Setup your development environment:
+gradlew genEclipseRuns   # For Eclipse  
+gradlew genIntellijRuns  # For IntelliJ IDEA  
+Run gradlew --refresh-dependencies if missing libraries README.txt:12-31
+📝 License
+See LICENSE.txt for details.
+
+🙏 Credits
+This mod integrates with and depends on several other fantastic mods:
+
+MrCrayfish's Vehicle Mod
+Pixelmon
+Simple Voice Chat
+WorldEdit
+JourneyMap
+Traveler's Backpack
+And many others
+See CREDITS.txt for more information.
+
+Made with ❤️ by BoffMedia
