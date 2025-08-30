@@ -6,7 +6,6 @@ import com.pixelmonmod.pixelmon.api.pokedex.PlayerPokedex;
 import com.pixelmonmod.pixelmon.api.pokedex.PokedexRegistrationStatus;
 import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
 import com.pixelmonmod.pixelmon.api.storage.StorageProxy;
-import net.minecraft.entity.player.ServerPlayerEntity;
 
 import java.util.EnumMap;
 import java.util.List;

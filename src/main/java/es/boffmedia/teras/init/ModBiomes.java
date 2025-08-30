@@ -153,10 +153,10 @@ public class ModBiomes {
     public static final RegistryObject<Biome> PUEBLO_LAVANDA = getPueblo("pueblo_lavanda", Biome.RainType.RAIN, new BiomeAmbience.Builder()
             .fogColor(0xC0D8FF)
             .skyColor(0x6FA4FF)
-            .waterColor(0x3F76E4)
-            .waterFogColor(0x050533)
-            .grassColorOverride(0x91BD59)
-            .foliageColorOverride(0x77AB2F)
+            .waterColor(0x778491)
+            .waterFogColor(0x778491)
+            .grassColorOverride(0x70756e)
+            .foliageColorOverride(0x70756e)
             .build());
 
     public static final RegistryObject<Biome> PUEBLO_DENKI = getPueblo("pueblo_denki", Biome.RainType.RAIN, new BiomeAmbience.Builder()

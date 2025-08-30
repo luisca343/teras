@@ -34,11 +34,11 @@ public class QueryHelper {
         SET_CALL,
         LEAVE_CALL,
 
+        CHAT_MESSAGE,
+
         GET_PLAYERS,
         GET_MISIONES,
         DAR_CAJA,
-
-        CHAT_MESSAGE,
     }
 
     public static boolean handleQuery(IBrowser iBrowser, long l, String query, boolean b, IJSQueryCallback callback) {

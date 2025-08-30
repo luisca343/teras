@@ -1,4 +1,4 @@
-package es.boffmedia.teras.net.server.serverOld;
+package es.boffmedia.teras.net.server;
 
 import com.google.common.base.Charsets;
 import com.pixelmonmod.pixelmon.Pixelmon;

@@ -8,6 +8,7 @@ import com.pixelmonmod.pixelmon.api.storage.PCStorage;
 import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
 import com.pixelmonmod.pixelmon.api.storage.StorageProxy;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.StringTextComponent;
@@ -55,11 +56,9 @@ public class PokemonHelper {
             }
             
             if (success && sendMessage) {
-                player.sendMessage(
-                    new StringTextComponent(Teras.HEADER_MENSAJE + 
-                        "You received a " + TextFormatting.YELLOW + pokemon.getSpecies() + TextFormatting.BLUE + "!"),
-                    player.getUUID()
-                );
+                MessageHelper.enviarMensaje(
+                    player,
+                    Teras.HEADER_MENSAJE + "Has recibido " + TextFormatting.YELLOW + pokemon.getSpecies().getName() + TextFormatting.BLUE + "!");
             }
             
             return success;

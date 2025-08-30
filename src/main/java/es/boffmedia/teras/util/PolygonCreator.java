@@ -8,8 +8,6 @@ import journeymap.client.api.display.Waypoint;
 import journeymap.client.api.impl.ClientAPI;
 import journeymap.client.api.model.MapPolygon;
 import journeymap.client.api.model.ShapeProperties;
-import journeymap.client.waypoint.WaypointGroup;
-import journeymap.client.waypoint.WaypointGroupStore;
 import net.minecraft.util.RegistryKey;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;

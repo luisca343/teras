@@ -8,7 +8,7 @@ import com.pixelmonmod.pixelmon.entities.pixelmon.StatueEntity;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.server.serverOld.SMessageUpdateDex;
+import es.boffmedia.teras.net.server.SMessageUpdateDex;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.dex.ActualizarDex;
 import es.boffmedia.teras.util.math.vector.RayTrace;
