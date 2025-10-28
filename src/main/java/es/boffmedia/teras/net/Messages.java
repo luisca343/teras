@@ -53,6 +53,8 @@ public class Messages {
         INSTANCE.registerMessage(index++, CMessageDriftState.class, CMessageDriftState::encode, CMessageDriftState::decode, CMessageDriftState::handle);
         INSTANCE.registerMessage(index++, SMessageUpdateDex.class, SMessageUpdateDex::encode, SMessageUpdateDex::decode, SMessageUpdateDex::handle);
 
+        INSTANCE.registerMessage(index++, CMessageRunJS.class, CMessageRunJS::encode, CMessageRunJS::decode, CMessageRunJS::handle);
+
         //INSTANCE.registerMessage(index++, MessageCarTest.class, MessageCarTest::encode, MessageCarTest::decode, MessageCarTest::handle);
 
         /// OOLD
@@ -73,7 +75,6 @@ public class Messages {
         INSTANCE.registerMessage(index++, CMessagePrepararNavegador.class, CMessagePrepararNavegador::encode, CMessagePrepararNavegador::decode, CMessagePrepararNavegador::handle);
         INSTANCE.registerMessage(index++, SMessageTaxi.class, SMessageTaxi::encode, SMessageTaxi::decode, SMessageTaxi::handle);
 
-        INSTANCE.registerMessage(index++, CMessageRunJS.class, CMessageRunJS::encode, CMessageRunJS::decode, CMessageRunJS::handle);
 
 
         INSTANCE.registerMessage(index++, CMessageWaypoints.class, CMessageWaypoints::encode, CMessageWaypoints::decode, CMessageWaypoints::handle);

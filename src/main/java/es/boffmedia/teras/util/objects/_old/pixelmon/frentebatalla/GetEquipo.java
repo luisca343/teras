@@ -7,28 +7,6 @@ public class GetEquipo {
     List<PkmSlot> equipo;
     String tipo;
 
-
-    public class PkmSlot{
-        int caja;
-        int slot;
-
-        public int getCaja() {
-            return caja;
-        }
-
-        public void setCaja(int caja) {
-            this.caja = caja;
-        }
-
-        public int getSlot() {
-            return slot;
-        }
-
-        public void setSlot(int slot) {
-            this.slot = slot;
-        }
-    }
-
     public String getQuery() {
         return query;
     }

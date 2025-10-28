@@ -79,7 +79,12 @@ public class FileHelper {
 
     public static void writeNBT( String ruta, CompoundNBT nbt){
         try {
-            CompressedStreamTools.write(nbt, new File(ruta));
+            File file = new File(ruta);
+            File parentDir = file.getParentFile();
+            if(parentDir != null && !parentDir.exists()){
+                parentDir.mkdirs();
+            }
+            CompressedStreamTools.write(nbt, file);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

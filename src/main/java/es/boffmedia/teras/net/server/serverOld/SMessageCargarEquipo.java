@@ -6,6 +6,7 @@ import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.clientOld.CMessageReturn;
 import es.boffmedia.teras.util.objects._old.pixelmon.frentebatalla.GetEquipo;
 import es.boffmedia.teras.pixelmon.battle.TeamManager;
+import es.boffmedia.teras.util.objects._old.pixelmon.frentebatalla.PkmSlot;
 import es.boffmedia.teras.util.string.MessageHelper;
 import es.boffmedia.teras.util.data.PersistentDataFields;
 import net.minecraft.entity.player.ServerPlayerEntity;
@@ -33,7 +34,7 @@ public class SMessageCargarEquipo implements Runnable{
 
         //Teras.getLBC().guardarEquipo(player, "equipo");
 
-        List<GetEquipo.PkmSlot> slots = getEquipo.getEquipo();
+        List<PkmSlot> slots = getEquipo.getEquipo();
 
         TeamManager.loadFromSlots(player, slots);
 

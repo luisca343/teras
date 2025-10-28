@@ -1,6 +1,10 @@
 package es.boffmedia.teras.util.objects._old.pixelmon;
 
+import com.pixelmonmod.pixelmon.api.pokemon.Element;
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class PokemonData {
     private int dex;
@@ -12,10 +16,15 @@ public class PokemonData {
     private int level;
     private String item;
     private String ability;
-    private String[] moves;
+    private List<MoveData> moves;
     private int[] ivs;
     private int[] evs;
     private int[] stats;
+    private int hp;
+    private String gender;
+    private String ball;
+    private String[] types;
+    private String status;
 
     public PokemonData(Pokemon pokemon) {
         dex = pokemon.getSpecies().getDex();
@@ -24,14 +33,32 @@ public class PokemonData {
         palette = pokemon.getPalette().getName();
         name = pokemon.getDisplayName();
         level = pokemon.getPokemonLevel();
-        item = pokemon.getHeldItemAsItemHeld().getLocalizedName();
+        item = pokemon.getHeldItemAsItemHeld().getDescriptionId();
         ability = pokemon.getAbility().getLocalizedName();
         nature = pokemon.getNature().getLocalizedName();
-        moves = new String[4];
-        for (int i = 0; i < 4; i++) {
-            if(pokemon.getMoveset().get(i) == null) continue;
-            moves[i] = pokemon.getMoveset().get(i).getMove().getLocalizedName();
+        gender = pokemon.getGender().name();
+        status = pokemon.getStatus().type.name();
+
+        List<Element> types = pokemon.getSpecies().getForm(pokemon.getForm().getName()).getTypes();
+        this.types = new String[types.size()];
+        for (int i = 0; i < types.size(); i++) {
+            this.types[i] = types.get(i).getLocalizedName();
         }
+
+        ball = pokemon.getBall().getName();
+
+        moves = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            if (pokemon.getMoveset().get(i) == null) continue;
+            moves.add(new MoveData(
+                    pokemon.getMoveset().get(i).getMove().getLocalizedName(),
+                    pokemon.getMoveset().get(i).getMove().getAttackType().getName(),
+                    pokemon.getMoveset().get(i).getMove().getAttackCategory().name(),
+                    pokemon.getMoveset().get(i).getMove().getBasePower(),
+                    pokemon.getMoveset().get(i).getMove().getAccuracy()
+            ));
+        }
+
         ivs = new int[6];
         for (int i = 0; i < 6; i++) {
             if (pokemon.getIVs() == null) continue;
@@ -49,110 +76,65 @@ public class PokemonData {
         stats[3] = pokemon.getStats().getSpecialAttack();
         stats[4] = pokemon.getStats().getSpecialDefense();
         stats[5] = pokemon.getStats().getSpeed();
+
+        hp = pokemon.getHealth();
     }
 
-    public int getDex() {
-        return dex;
+    public static class MoveData {
+        private String name;
+        private String type;
+        private String category;
+        private int power;
+        private int accuracy;
+
+        public MoveData(String name, String type, String category, int power, int accuracy) {
+            this.name = name;
+            this.type = type;
+            this.category = category;
+            this.power = power;
+            this.accuracy = accuracy;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
+
+        public int getPower() {
+            return power;
+        }
+
+        public void setPower(int power) {
+            this.power = power;
+        }
+
+        public int getAccuracy() {
+            return accuracy;
+        }
+
+        public void setAccuracy(int accuracy) {
+            this.accuracy = accuracy;
+        }
+
+        public String getCategory() {
+            return category;
+        }
+
+        public void setCategory(String category) {
+            this.category = category;
+        }
     }
 
-    public void setDex(int dex) {
-        this.dex = dex;
-    }
-
-    public String getNature() {
-        return nature;
-    }
-
-    public void setNature(String nature) {
-        this.nature = nature;
-    }
-
-    public String getSpecies() {
-        return species;
-    }
-
-    public void setSpecies(String species) {
-        this.species = species;
-    }
-
-    public String getForm() {
-        return form;
-    }
-
-    public void setForm(String form) {
-        this.form = form;
-    }
-
-    public String getPalette() {
-        return palette;
-    }
-
-    public void setPalette(String palette) {
-        this.palette = palette;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public int getLevel() {
-        return level;
-    }
-
-    public void setLevel(int level) {
-        this.level = level;
-    }
-
-    public String getItem() {
-        return item;
-    }
-
-    public void setItem(String item) {
-        this.item = item;
-    }
-
-    public String getAbility() {
-        return ability;
-    }
-
-    public void setAbility(String ability) {
-        this.ability = ability;
-    }
-
-    public String[] getMoves() {
-        return moves;
-    }
-
-    public void setMoves(String[] moves) {
-        this.moves = moves;
-    }
-
-    public int[] getIvs() {
-        return ivs;
-    }
-
-    public void setIvs(int[] ivs) {
-        this.ivs = ivs;
-    }
-
-    public int[] getEvs() {
-        return evs;
-    }
-
-    public void setEvs(int[] evs) {
-        this.evs = evs;
-    }
-
-    public int[] getStats() {
-        return stats;
-    }
-
-    public void setStats(int[] stats) {
-        this.stats = stats;
-    }
+    // Getters and setters for other fields...
 }
-

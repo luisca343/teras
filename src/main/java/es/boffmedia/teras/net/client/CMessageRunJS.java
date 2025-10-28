@@ -1,4 +1,4 @@
-package es.boffmedia.teras.net.client.clientOld;
+package es.boffmedia.teras.net.client;
 
 
 import com.google.common.base.Charsets;

@@ -3,7 +3,7 @@ package es.boffmedia.teras.pixelmon.frentebatalla;
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
 import es.boffmedia.teras.api.PokePasteReader;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.client.clientOld.CMessageRunJS;
+import es.boffmedia.teras.net.client.CMessageRunJS;
 import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
 import es.boffmedia.teras.pixelmon.battle.CombateFrenteBatalla;
 import es.boffmedia.teras.pixelmon.battle.TeamManager;

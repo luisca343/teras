@@ -32,6 +32,7 @@ import es.boffmedia.teras.net.client.clientOld.CMessageWaypoints;
 import es.boffmedia.teras.net.video.ScreenManager;
 import es.boffmedia.teras.util.PokedexHelper;
 import es.boffmedia.teras.util.RouteCreator;
+import es.boffmedia.teras.util.data.PixelmonStorageHelper;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
 import es.boffmedia.teras.util.objects._old.WayPoint;
@@ -79,11 +80,14 @@ public class TestCommand {
                 .then(iniciarCombateFrenteBatalla())
                 .then(playVideo())
                 .requires((commandSource -> commandSource.hasPermission(3)))
-                    .then(crearWaypoint())
+                .then(crearWaypoint())
                 .then(reproducirSonido())
                 .then(testset())
                 .then(findPath())
                 .then(getPokedex())
+                .then(movePcToParty())
+                .then(movePartyToPc())
+                .then(swapPcWithParty())
                 ;
 
         dispatcher.register(literalBuilder);
@@ -115,12 +119,12 @@ public class TestCommand {
         return Commands.literal("hitcar")
                 .then(Commands.argument("player", EntityArgument.player())
                         .executes((command) -> {
-                            ServerPlayerEntity player = EntityArgument.getPlayer(command, "player");
-                            Teras.raceManager.hitCar(player);
-                            //target.getPersistentData().putBoolean(PersistentDataFields.CAR_HIT.label, true);
-                            return 1;
-                        }
-                ));
+                                    ServerPlayerEntity player = EntityArgument.getPlayer(command, "player");
+                                    Teras.raceManager.hitCar(player);
+                                    //target.getPersistentData().putBoolean(PersistentDataFields.CAR_HIT.label, true);
+                                    return 1;
+                                }
+                        ));
     }
 
     private ArgumentBuilder<CommandSource,?> npc() {
@@ -135,7 +139,7 @@ public class TestCommand {
 
     private ArgumentBuilder<CommandSource,?> armadura() {
         return Commands.literal("armadura")
-                        .executes((command) -> {
+                .executes((command) -> {
                             SkinLibrary lib = SkinLibraryManager.getServer().getLibrary();
                             System.out.println("=====================================");
                             System.out.println(lib.getRootPath());
@@ -169,50 +173,50 @@ public class TestCommand {
     private ArgumentBuilder<CommandSource,?> broadcast() {
         return Commands.literal("broadcast")
                 .then(Commands.argument("canal", IntegerArgumentType.integer())
-                 .then(Commands.argument("url", StringArgumentType.string())
-                .executes((command) -> {
-                    String url = StringArgumentType.getString(command, "url");
-                    int canal = IntegerArgumentType.getInteger(command, "canal");
+                        .then(Commands.argument("url", StringArgumentType.string())
+                                .executes((command) -> {
+                                    String url = StringArgumentType.getString(command, "url");
+                                    int canal = IntegerArgumentType.getInteger(command, "canal");
 
-                    ScreenManager.broadcastVideo(url, canal, command.getSource().getLevel());
-                    return 1;
-                })));
+                                    ScreenManager.broadcastVideo(url, canal, command.getSource().getLevel());
+                                    return 1;
+                                })));
     }
 
     private ArgumentBuilder<CommandSource,?> peluche() {
         return Commands.literal("peluche")
                 .then(Commands.argument("nombre", StringArgumentType.string())
-                .executes((command) -> {
-                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                    String nombre = StringArgumentType.getString(command, "nombre").toLowerCase(Locale.ROOT);
-                    StatueEntity entity = new StatueEntity(player.level);
-                    entity.setPos(player.getX(), player.getY(), player.getZ());
-                    
-                    if(!PixelmonSpecies.get(nombre).isPresent()) {
-                        MessageHelper.enviarMensaje(player, "No existe el pokemon " + nombre);
-                        return 1;
-                    };
+                        .executes((command) -> {
+                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                            String nombre = StringArgumentType.getString(command, "nombre").toLowerCase(Locale.ROOT);
+                            StatueEntity entity = new StatueEntity(player.level);
+                            entity.setPos(player.getX(), player.getY(), player.getZ());
 
-                    Species species = PixelmonSpecies.get(nombre).get().getValue().get();
-                    Dimensions dim = species.getDefaultForm().getDimensions();
-                    entity.setSpecies(species);
-                    entity.setForm(species.getDefaultForm());
-                    entity.setBoundingMode(EnumBoundingBoxMode.None);
+                            if(!PixelmonSpecies.get(nombre).isPresent()) {
+                                MessageHelper.enviarMensaje(player, "No existe el pokemon " + nombre);
+                                return 1;
+                            };
 
-                    double mayor = dim.getHeight();
-                    if(dim.getLength() > mayor){
-                        mayor = dim.getLength();
-                    }
+                            Species species = PixelmonSpecies.get(nombre).get().getValue().get();
+                            Dimensions dim = species.getDefaultForm().getDimensions();
+                            entity.setSpecies(species);
+                            entity.setForm(species.getDefaultForm());
+                            entity.setBoundingMode(EnumBoundingBoxMode.None);
 
-                    float escala = (float) (1 / mayor);
-                    entity.setPixelmonScale(escala);
+                            double mayor = dim.getHeight();
+                            if(dim.getLength() > mayor){
+                                mayor = dim.getLength();
+                            }
+
+                            float escala = (float) (1 / mayor);
+                            entity.setPixelmonScale(escala);
 
 
-                    player.level.addFreshEntity(entity);
-                    return 1;
-                }));
+                            player.level.addFreshEntity(entity);
+                            return 1;
+                        }));
     }
-    
+
     private ArgumentBuilder<CommandSource,?> testFB() {
         return Commands.literal("testFB")
                 .executes((command) -> {
@@ -230,11 +234,11 @@ public class TestCommand {
 
     private ArgumentBuilder<CommandSource,?> registrarEquipo() {
         return Commands.literal("registrarEquipo")
-                        .executes((command) -> {
-                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                            TorreBatallaController.registrarEquipo(TerasBattleController.TipoCombate.TB_INDIVIDUAL.label, player);
-                            return 1;
-                        });
+                .executes((command) -> {
+                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                    TorreBatallaController.registrarEquipo(TerasBattleController.TipoCombate.TB_INDIVIDUAL.label, player);
+                    return 1;
+                });
     }
 
     public int parcelasCreadas = 0;
@@ -277,7 +281,7 @@ public class TestCommand {
     private ArgumentBuilder<CommandSource,?> guardarBase() {
         return Commands.literal("guardarBase")
                 .executes((command) -> {
-                        PlayerEntity player = (PlayerEntity) command.getSource().getEntity();
+                    PlayerEntity player = (PlayerEntity) command.getSource().getEntity();
 
                     World world = ForgeAdapter.adapt(player.level);
                     BlockVector3 pos1 = BlockVector3.at(0, 0, 0);
@@ -331,44 +335,44 @@ public class TestCommand {
     private ArgumentBuilder<CommandSource,?> cargarEquipo() {
         return Commands.literal("cargarEquipo")
                 .then(Commands.argument("nombre", StringArgumentType.string())
-                .executes((command) -> {
-                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                    String nombre = StringArgumentType.getString(command, "nombre");
+                        .executes((command) -> {
+                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                            String nombre = StringArgumentType.getString(command, "nombre");
 
-                    TeamManager.loadTeam(player, "equipo");
-                    player.getPersistentData().putBoolean(PersistentDataFields.FB_ACTIVO.label, false);
+                            TeamManager.loadTeam(player, "equipo");
+                            player.getPersistentData().putBoolean(PersistentDataFields.FB_ACTIVO.label, false);
 
-                    return 1;
-                }));
+                            return 1;
+                        }));
     }
 
     private ArgumentBuilder<CommandSource,?> guardarEquipo() {
         return Commands.literal("guardarEquipo")
                 .then(Commands.argument("nombre", StringArgumentType.string())
-                .executes((command) -> {
-                       ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                       String nombre = StringArgumentType.getString(command, "nombre");
+                        .executes((command) -> {
+                                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                                    String nombre = StringArgumentType.getString(command, "nombre");
 
-                       TeamManager.saveTeam(player, nombre);
+                                    TeamManager.saveTeam(player, nombre);
 
-              return 1;
-           }
-           ));
+                                    return 1;
+                                }
+                        ));
     }
 
     private ArgumentBuilder<CommandSource,?> playVideo() {
         return Commands.literal("playvideo")
                 .then(Commands.argument("player", EntityArgument.player())
                         .then(Commands.argument("url", StringArgumentType.string())
-                        .executes((command) -> {
-                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                            String url = StringArgumentType.getString(command, "url");
-                            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageVerVideo(url));
+                                .executes((command) -> {
+                                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                                            String url = StringArgumentType.getString(command, "url");
+                                            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageVerVideo(url));
 
 
-                            return 1;
-                        }
-                )));
+                                            return 1;
+                                        }
+                                )));
     }
 
     private ArgumentBuilder<CommandSource,?> testset() {
@@ -376,14 +380,14 @@ public class TestCommand {
                 .then(Commands.argument("player", EntityArgument.player())
                         .executes((command) -> {
 
-                            return 1;
-                        }
-                ));
+                                    return 1;
+                                }
+                        ));
     }
 
     private ArgumentBuilder<CommandSource,?> reproducirSonido() {
         return Commands.literal("reproducir")
-                        .executes((command) -> {
+                .executes((command) -> {
                             ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
                             AudioManager audioManager = new AudioManager();
                             audioManager.playMp3(player);
@@ -395,24 +399,81 @@ public class TestCommand {
     private ArgumentBuilder<CommandSource, ?> crearWaypoint() {
         return Commands.literal("waypoint")
                 .then(Commands.argument("x", IntegerArgumentType.integer())
-                .then(Commands.argument("y", IntegerArgumentType.integer())
-                .then(Commands.argument("z", IntegerArgumentType.integer())
-                .then(Commands.argument("nombre", StringArgumentType.string())
-                .then(Commands.argument("color", StringArgumentType.string())
-                .executes((command) -> {
-                    command.getSource().getEntity().sendMessage(new StringTextComponent("ESTO ES UNA PRUEBA"), UUID.randomUUID());
-                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                    int x = IntegerArgumentType.getInteger(command, "x");
-                    int y = IntegerArgumentType.getInteger(command, "y");
-                    int z = IntegerArgumentType.getInteger(command, "z");
-                    String nombre = StringArgumentType.getString(command, "nombre");
-                    String color = StringArgumentType.getString(command, "color");
+                        .then(Commands.argument("y", IntegerArgumentType.integer())
+                                .then(Commands.argument("z", IntegerArgumentType.integer())
+                                        .then(Commands.argument("nombre", StringArgumentType.string())
+                                                .then(Commands.argument("color", StringArgumentType.string())
+                                                        .executes((command) -> {
+                                                            command.getSource().getEntity().sendMessage(new StringTextComponent("ESTO ES UNA PRUEBA"), UUID.randomUUID());
+                                                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                                                            int x = IntegerArgumentType.getInteger(command, "x");
+                                                            int y = IntegerArgumentType.getInteger(command, "y");
+                                                            int z = IntegerArgumentType.getInteger(command, "z");
+                                                            String nombre = StringArgumentType.getString(command, "nombre");
+                                                            String color = StringArgumentType.getString(command, "color");
 
-                    WayPoint waypoint = new WayPoint( x, y, z, "world",color, nombre);
-                    Gson gson = new Gson();
-                    Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageWaypoints(gson.toJson(waypoint)));
+                                                            WayPoint waypoint = new WayPoint( x, y, z, "world",color, nombre);
+                                                            Gson gson = new Gson();
+                                                            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageWaypoints(gson.toJson(waypoint)));
 
-                    return 1;
-                }))))));
+                                                            return 1;
+                                                        }))))));
+    }
+
+    private ArgumentBuilder<CommandSource, ?> movePcToParty() {
+        return Commands.literal("movePcToParty")
+                .then(Commands.argument("box", IntegerArgumentType.integer())
+                        .then(Commands.argument("slotInBox", IntegerArgumentType.integer())
+                                .executes((command) -> {
+                                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                                    int box = IntegerArgumentType.getInteger(command, "box");
+                                    int slotInBox = IntegerArgumentType.getInteger(command, "slotInBox");
+
+                                    boolean success = PixelmonStorageHelper.movePcToParty(player.getUUID(), box, slotInBox);
+                                    if (success) {
+                                        command.getSource().sendSuccess(new StringTextComponent("Moved Pokémon from PC to Party successfully."), true);
+                                    } else {
+                                        command.getSource().sendFailure(new StringTextComponent("Failed to move Pokémon from PC to Party."));
+                                    }
+                                    return success ? 1 : 0;
+                                })));
+    }
+
+    private ArgumentBuilder<CommandSource, ?> movePartyToPc() {
+        return Commands.literal("movePartyToPc")
+                .then(Commands.argument("partySlot", IntegerArgumentType.integer())
+                        .executes((command) -> {
+                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                            int partySlot = IntegerArgumentType.getInteger(command, "partySlot");
+
+                            boolean success = PixelmonStorageHelper.movePartyToPc(player.getUUID(), partySlot);
+                            if (success) {
+                                command.getSource().sendSuccess(new StringTextComponent("Moved Pokémon from Party to PC successfully."), true);
+                            } else {
+                                command.getSource().sendFailure(new StringTextComponent("Failed to move Pokémon from Party to PC."));
+                            }
+                            return success ? 1 : 0;
+                        }));
+    }
+
+    private ArgumentBuilder<CommandSource, ?> swapPcWithParty() {
+        return Commands.literal("swapPcWithParty")
+                .then(Commands.argument("box", IntegerArgumentType.integer())
+                        .then(Commands.argument("slotInBox", IntegerArgumentType.integer())
+                                .then(Commands.argument("partySlot", IntegerArgumentType.integer())
+                                        .executes((command) -> {
+                                            ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+                                            int box = IntegerArgumentType.getInteger(command, "box");
+                                            int slotInBox = IntegerArgumentType.getInteger(command, "slotInBox");
+                                            int partySlot = IntegerArgumentType.getInteger(command, "partySlot");
+
+                                            boolean success = PixelmonStorageHelper.swapPcWithParty(player.getUUID(), box, slotInBox, partySlot);
+                                            if (success) {
+                                                command.getSource().sendSuccess(new StringTextComponent("Swapped Pokémon between PC and Party successfully."), true);
+                                            } else {
+                                                command.getSource().sendFailure(new StringTextComponent("Failed to swap Pokémon between PC and Party."));
+                                            }
+                                            return success ? 1 : 0;
+                                        }))));
     }
 }
