@@ -22,6 +22,10 @@ import net.minecraft.util.math.EntityRayTraceResult;
 import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.world.World;
 import net.minecraft.util.*;
+import net.minecraft.entity.Entity;
+
+import java.util.List;
+import java.util.ArrayList;
 
 public class SmartRotom extends Item {
     public SmartRotom(Properties properties) {
@@ -50,6 +54,74 @@ public class SmartRotom extends Item {
         return ActionResultType.SUCCESS;
     }
 */
+
+    /**
+     * Detects all entities visible on the player's screen within a given range
+     */
+    public List<LivingEntity> getEntitiesInView(World world, PlayerEntity player, double range, double fov) {
+        List<LivingEntity> entitiesInView = new ArrayList<>();
+        
+        Vector3d eyePos = player.getEyePosition(1.0F);
+        Vector3d lookVec = player.getViewVector(1.0F);
+        
+        // Get all entities within range
+        AxisAlignedBB searchBox = new AxisAlignedBB(
+            eyePos.x - range, eyePos.y - range, eyePos.z - range,
+            eyePos.x + range, eyePos.y + range, eyePos.z + range
+        );
+        
+        List<Entity> nearbyEntities = world.getEntities(player, searchBox);
+        
+        for (Entity entity : nearbyEntities) {
+            if (!(entity instanceof LivingEntity)) continue;
+            if (entity == player) continue;
+            
+            LivingEntity livingEntity = (LivingEntity) entity;
+            
+            // Get vector from player to entity
+            Vector3d toEntity = entity.position().subtract(eyePos).normalize();
+            
+            // Calculate angle between look direction and entity direction
+            double dotProduct = lookVec.dot(toEntity);
+            double angle = Math.acos(dotProduct) * (180.0 / Math.PI);
+            
+            // Check if entity is within FOV (field of view)
+            // Default Minecraft FOV is ~70 degrees, so half FOV would be 35
+            if (angle <= fov) {
+                // Additional check: ensure entity is actually visible (no blocks in the way)
+                if (hasLineOfSight(world, player, eyePos, entity)) {
+                    entitiesInView.add(livingEntity);
+                }
+            }
+        }
+        
+        return entitiesInView;
+    }
+    
+    /**
+     * Checks if there's a clear line of sight from the player to the entity
+     */
+    private boolean hasLineOfSight(World world, PlayerEntity player, Vector3d eyePos, Entity entity) {
+        Vector3d entityPos = entity.position().add(0, entity.getBbHeight() / 2, 0);
+        Vector3d direction = entityPos.subtract(eyePos);
+        
+        AxisAlignedBB boundingBox = new AxisAlignedBB(
+            Math.min(eyePos.x, entityPos.x),
+            Math.min(eyePos.y, entityPos.y),
+            Math.min(eyePos.z, entityPos.z),
+            Math.max(eyePos.x, entityPos.x),
+            Math.max(eyePos.y, entityPos.y),
+            Math.max(eyePos.z, entityPos.z)
+        ).inflate(0.5);
+        
+        EntityRayTraceResult result = RayTrace.rayTraceEntities(
+            player, eyePos, entityPos, boundingBox, 
+            e -> e == entity, direction.lengthSqr()
+        );
+        
+        return result != null && result.getEntity() == entity;
+    }
+
     public LivingEntity getRayTracedEntities(World world, PlayerEntity player, Hand hand, int range){
         System.out.println("getRayTracedEntities");
         Vector3d startVec = player.getEyePosition(1.0F);
@@ -72,11 +144,47 @@ public class SmartRotom extends Item {
 
         return null;
     }
+    
     @Override
     public ActionResult<ItemStack> use(World world, PlayerEntity player, Hand hand) {
         ItemStack stack = player.getItemInHand(hand);
 
        if(!actualizarPad(stack)) return ActionResult.fail(stack);
+
+        if(player.isShiftKeyDown() && world.isClientSide()){
+            int smartRotomID = stack.getTag().getInt("PadID");
+            ClientProxy.PadData pad = Teras.PROXY.getPadByID(smartRotomID);
+            
+            if(pad.view.getURL().contains("camara")){
+                pad.view.runJS("takeScreenshot()", "");
+                
+                // NEW: Detect all entities on screen when taking a screenshot
+                List<LivingEntity> entitiesInView = getEntitiesInView(world, player, 50.0, 45.0);
+                
+                Teras.getLogger().info("=== ENTITIES DETECTED IN VIEW ===");
+                Teras.getLogger().info("Total entities found: " + entitiesInView.size());
+                
+                for (LivingEntity entity : entitiesInView) {
+                    if (entity instanceof PixelmonEntity) {
+                        PixelmonEntity pixelmon = (PixelmonEntity) entity;
+                        Teras.getLogger().info("Pokemon: " + pixelmon.getSpecies().getName() + 
+                            " (Dex: " + pixelmon.getSpecies().getDex() + 
+                            ", Form: " + pixelmon.getForm().getName() + 
+                            ", Palette: " + pixelmon.getPalette().getName() + ")");
+                    } else if (entity instanceof StatueEntity) {
+                        StatueEntity statue = (StatueEntity) entity;
+                        Teras.getLogger().info("Statue: " + statue.getSpecies().getName() + 
+                            " (Dex: " + statue.getSpecies().getDex() + ")");
+                    } else {
+                        Teras.getLogger().info("Other Entity: " + entity.getType().getDescription().getString() + 
+                            " at " + entity.position());
+                    }
+                }
+                Teras.getLogger().info("=================================");
+                
+                return super.use(world, player, hand);
+            }
+        }
 
         LivingEntity entity = getRayTracedEntities(world, player, hand, 50);
         assert entity != null;
