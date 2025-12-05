@@ -75,10 +75,6 @@ public class FrameBlockEntity extends TileEntity implements ITickableTileEntity 
         return url.isEmpty();
     }
 
-
-
-
-
     @Override
     public AxisAlignedBB getRenderBoundingBox() {
         return AABB;
