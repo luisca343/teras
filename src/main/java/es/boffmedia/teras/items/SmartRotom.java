@@ -18,21 +18,13 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockRayTraceResult;
 import net.minecraft.util.math.EntityRayTraceResult;
-import net.minecraft.util.math.RayTraceContext;
-import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.world.World;
 import net.minecraft.util.*;
-import net.minecraft.entity.Entity;
-
-import java.util.List;
-import java.util.ArrayList;
 
 public class SmartRotom extends Item {
     private static final double MAX_DETECTION_DISTANCE = 25.0;
-    private static final double DETECTION_FOV = 40.0;
     
     public SmartRotom(Properties properties) {
         super(properties);
@@ -60,132 +52,6 @@ public class SmartRotom extends Item {
         return ActionResultType.SUCCESS;
     }
 */
-
-    /**
-     * Detects all entities visible on the player's screen within a given range
-     * Prioritizes entities that are centered in the player's view
-     */
-    public List<LivingEntity> getEntitiesInView(World world, PlayerEntity player, double range, double fov) {
-        List<EntityWithScore> entitiesWithScores = new ArrayList<>();
-        
-        Vector3d eyePos = player.getEyePosition(1.0F);
-        Vector3d lookVec = player.getViewVector(1.0F);
-        
-        // Get all entities within range
-        AxisAlignedBB searchBox = new AxisAlignedBB(
-            eyePos.x - range, eyePos.y - range, eyePos.z - range,
-            eyePos.x + range, eyePos.y + range, eyePos.z + range
-        );
-        
-        List<Entity> nearbyEntities = world.getEntities(player, searchBox);
-        
-        for (Entity entity : nearbyEntities) {
-            if (!(entity instanceof LivingEntity)) continue;
-            if (entity == player) continue;
-            
-            LivingEntity livingEntity = (LivingEntity) entity;
-            
-            // Get vector from player to entity center
-            Vector3d entityCenter = entity.position().add(0, entity.getBbHeight() / 2, 0);
-            Vector3d toEntity = entityCenter.subtract(eyePos).normalize();
-            
-            // Calculate angle between look direction and entity direction
-            double dotProduct = lookVec.dot(toEntity);
-            double angle = Math.acos(Math.max(-1.0, Math.min(1.0, dotProduct))) * (180.0 / Math.PI);
-            
-            // Check if entity is within FOV
-            if (angle <= fov) {
-                // Check if entity is visible (not blocked)
-                if (hasLineOfSight(world, player, eyePos, entity)) {
-                    // Calculate score: lower angle = better (more centered)
-                    // Also factor in distance (closer is slightly better)
-                    double distance = eyePos.distanceTo(entityCenter);
-                    double score = angle + (distance / range) * 5.0; // Angle is primary, distance is secondary
-                    
-                    entitiesWithScores.add(new EntityWithScore(livingEntity, score));
-                }
-            }
-        }
-        
-        // Sort by score (lower is better = more centered)
-        entitiesWithScores.sort((a, b) -> Double.compare(a.score, b.score));
-        
-        // Extract entities in order of priority
-        List<LivingEntity> entitiesInView = new ArrayList<>();
-        for (EntityWithScore ews : entitiesWithScores) {
-            entitiesInView.add(ews.entity);
-        }
-        
-        return entitiesInView;
-    }
-    
-    /**
-     * Helper class to store entity with its centering score
-     */
-    private static class EntityWithScore {
-        final LivingEntity entity;
-        final double score;
-        
-        EntityWithScore(LivingEntity entity, double score) {
-            this.entity = entity;
-            this.score = score;
-        }
-    }
-    
-    /**
-     * Checks if there's a clear line of sight from the player to the entity
-     * Uses block raytrace to ensure no blocks are blocking the view
-     */
-    private boolean hasLineOfSight(World world, PlayerEntity player, Vector3d eyePos, Entity entity) {
-        // Check multiple points on the entity for better detection
-        double[] heightChecks = {
-            0.1,  // Near bottom
-            entity.getBbHeight() / 2,  // Middle (most important)
-            entity.getBbHeight() * 0.9  // Near top
-        };
-        
-        // Also check horizontal offsets for wider entities
-        double horizontalOffset = Math.min(entity.getBbWidth() / 4, 0.3);
-        Vector3d[] horizontalOffsets = {
-            new Vector3d(0, 0, 0),  // Center
-            new Vector3d(horizontalOffset, 0, 0),
-            new Vector3d(-horizontalOffset, 0, 0),
-            new Vector3d(0, 0, horizontalOffset),
-            new Vector3d(0, 0, -horizontalOffset)
-        };
-        
-        for (double heightOffset : heightChecks) {
-            for (Vector3d hOffset : horizontalOffsets) {
-                Vector3d entityPos = entity.position().add(hOffset.x, heightOffset, hOffset.z);
-                
-                // Check if there's a block in the way using block raytrace
-                BlockRayTraceResult blockHit = world.clip(
-                    new RayTraceContext(
-                        eyePos,
-                        entityPos,
-                        RayTraceContext.BlockMode.COLLIDER,
-                        RayTraceContext.FluidMode.NONE,
-                        player
-                    )
-                );
-                
-                // If no block was hit, or the hit position is past the entity, line of sight is clear
-                if (blockHit.getType() == RayTraceResult.Type.MISS) {
-                    return true;
-                }
-                
-                // Check if the block hit is closer than the entity
-                double distanceToBlock = eyePos.distanceToSqr(blockHit.getLocation());
-                double distanceToEntity = eyePos.distanceToSqr(entityPos);
-                
-                if (distanceToEntity < distanceToBlock) {
-                    return true;  // Entity is in front of the block
-                }
-            }
-        }
-        
-        return false;  // All raycasts were blocked
-    }
 
     public LivingEntity getRayTracedEntities(World world, PlayerEntity player, Hand hand, int range){
         System.out.println("getRayTracedEntities");
@@ -222,31 +88,6 @@ public class SmartRotom extends Item {
             
             if(pad.view.getURL().contains("camara")){
                 pad.view.runJS("takeScreenshot()", "");
-                
-                // NEW: Detect all entities on screen when taking a screenshot
-                List<LivingEntity> entitiesInView = getEntitiesInView(world, player, MAX_DETECTION_DISTANCE, DETECTION_FOV);
-                
-                Teras.getLogger().info("=== ENTITIES DETECTED IN VIEW ===");
-                Teras.getLogger().info("Total entities found: " + entitiesInView.size());
-                
-                for (LivingEntity entity : entitiesInView) {
-                    if (entity instanceof PixelmonEntity) {
-                        PixelmonEntity pixelmon = (PixelmonEntity) entity;
-                        Teras.getLogger().info("Pokemon: " + pixelmon.getSpecies().getName() + 
-                            " (Dex: " + pixelmon.getSpecies().getDex() + 
-                            ", Form: " + pixelmon.getForm().getName() + 
-                            ", Palette: " + pixelmon.getPalette().getName() + ")");
-                    } else if (entity instanceof StatueEntity) {
-                        StatueEntity statue = (StatueEntity) entity;
-                        Teras.getLogger().info("Statue: " + statue.getSpecies().getName() + 
-                            " (Dex: " + statue.getSpecies().getDex() + ")");
-                    } else {
-                        Teras.getLogger().info("Other Entity: " + entity.getType().getDescription().getString() + 
-                            " at " + entity.position());
-                    }
-                }
-                Teras.getLogger().info("=================================");
-                
                 return super.use(world, player, hand);
             }
         }

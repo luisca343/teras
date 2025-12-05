@@ -12,9 +12,7 @@ import es.boffmedia.teras.net.server.serverOld.SMessageFinalizarLlamada;
 import es.boffmedia.teras.net.server.serverOld.SMessageIniciarLlamada;
 import es.boffmedia.teras.net.server.serverOld.SMessageVerMisiones;
 import es.boffmedia.teras.util.objects.post.PokedexEventResponse;
-import es.boffmedia.teras.util.ImageConverter;
-import es.boffmedia.teras.util.ScreenshotCapture;
-import es.boffmedia.teras.util.objects.ScreenshotQuery;
+import es.boffmedia.teras.util.ScreenshotHandler;
 import es.boffmedia.teras.util.objects._old.serverdata.UserData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.ClientPlayerEntity;
@@ -25,8 +23,6 @@ import net.montoyo.mcef.api.IJSQueryCallback;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.*;
-
-import org.lwjgl.system.CallbackI.S;
 
 public class QueryHelper {
     private static final String SUCCESS = "{\"status\": \"ok\"}";
@@ -85,8 +81,9 @@ public class QueryHelper {
                     Teras.LOGGER.info("Handling chatMessage query");
                     Messages.INSTANCE.sendToServer(new SMessageChatMessage(query));
                     callback.success(SUCCESS);
+                    break;
                 case TAKE_SCREENSHOT:
-                    handleTakeScreenshot(query, callback);
+                    ScreenshotHandler.handleTakeScreenshot(query, callback);
                     break;
                 // Unused
                 case GET_PLAYERS:
@@ -169,41 +166,6 @@ public class QueryHelper {
     private static void handleLeaveCall(String query) {
         Teras.LOGGER.info("Handling leaveCall query");
         Messages.INSTANCE.sendToServer(new SMessageFinalizarLlamada(query));
-    }
-
-    private static void handleTakeScreenshot(String query, IJSQueryCallback callback) {
-        Teras.LOGGER.info("Handling takeScreenshot query");
-        try {
-            // Parse the query JSON into ScreenshotQuery object
-            ScreenshotQuery screenshotQuery = gson.fromJson(query, ScreenshotQuery.class);
-            
-            // Get options from the parsed object
-            boolean includeUI = screenshotQuery.isIncludeUI();
-            String format = screenshotQuery.getFormat();
-            int quality = screenshotQuery.getQuality();
-
-            Teras.LOGGER.info("Screenshot options - includeUI: {}, format: {}, quality: {}", includeUI, format, quality);
-            
-            // Capture the screenshot
-            java.awt.image.BufferedImage screenshot = ScreenshotCapture.captureMinecraftScreen(includeUI);
-            
-            // Convert to base64
-            String base64Image = ImageConverter.imageToBase64(screenshot, format, quality);
-
-            Teras.LOGGER.info("Screenshot captured and converted to Base64");
-            Teras.LOGGER.info("Base64 Image String (truncated): " + base64Image.substring(0, Math.min(100, base64Image.length())) + "...");
-            
-            // Send back to webapp with data URL prefix as JSON
-            String dataUrl = "data:image/" + format + ";base64," + base64Image;
-            JsonObject response = new JsonObject();
-            response.addProperty("status", "ok");
-            response.addProperty("data", dataUrl);
-            callback.success(gson.toJson(response));
-            
-        } catch (Exception e) {
-            Teras.LOGGER.error("Screenshot failed", e);
-            callback.failure(0, "Screenshot failed: " + e.getMessage());
-        }
     }
 
     public static void handlePOST(StringBuilder response, HttpURLConnection con) throws IOException {
