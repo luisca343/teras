@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import com.pixelmonmod.pixelmon.entities.pixelmon.StatueEntity;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.client.CameraZoomHandler;
 import noppes.npcs.entity.EntityNPCInterface;
 import es.boffmedia.teras.util.objects.ScreenshotQuery;
 import net.minecraft.client.Minecraft;
@@ -27,11 +28,11 @@ import java.util.List;
  */
 public class ScreenshotHandler {
     private static final Gson gson = new Gson();
-    private static final double MAX_DETECTION_DISTANCE = 25.0;
+    private static final double MAX_DETECTION_DISTANCE = 50.0;
     
     // Minimum screen coverage for entity to be considered "recognizable"
     // This represents the minimum percentage of screen height the entity should occupy
-    private static final double MIN_SCREEN_COVERAGE_PERCENT = 10.0;
+    private static final double MIN_SCREEN_COVERAGE_PERCENT = 0.0;
 
     /**
      * Handles the screenshot capture process with entity detection
@@ -93,7 +94,10 @@ public class ScreenshotHandler {
                 // Get player's actual FOV setting
                 double playerFov = Minecraft.getInstance().options.fov;
                 
-                List<LivingEntity> entitiesInView = getEntitiesInView(world, player, MAX_DETECTION_DISTANCE, playerFov);
+                // Apply zoom if camera zoom is active
+                double effectiveFov = CameraZoomHandler.getZoomedFOV(playerFov) * 1.5;
+                
+                List<LivingEntity> entitiesInView = getEntitiesInView(world, player, MAX_DETECTION_DISTANCE, effectiveFov);
                 
                 Teras.getLogger().info("=== ENTITIES DETECTED IN SCREENSHOT ===");
                 Teras.getLogger().info("Total entities found: " + entitiesInView.size());
@@ -103,7 +107,7 @@ public class ScreenshotHandler {
                     Vector3d entityPos = entity.position();
                     Vector3d entityCenter = entityPos.add(0, entity.getBbHeight() / 2, 0);
                     double distance = player.getEyePosition(1.0F).distanceTo(entityCenter);
-                    double coverage = calculateScreenCoverage(entity, distance, playerFov);
+                    double coverage = calculateScreenCoverage(entity, distance, effectiveFov);
                     
                     JsonObject entityData = new JsonObject();
                     entityData.addProperty("distance", Math.round(distance * 10.0) / 10.0);
@@ -197,6 +201,8 @@ public class ScreenshotHandler {
             response.add("location", locationData);
             response.add("entities", gson.toJsonTree(entitiesData));
             response.addProperty("image", dataUrl);
+            response.addProperty("zoomActive", CameraZoomHandler.isZoomActive());
+            response.addProperty("zoomMultiplier", CameraZoomHandler.getCurrentZoomMultiplier());
             callback.success(gson.toJson(response));
             
         } catch (Exception e) {

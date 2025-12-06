@@ -41,6 +41,8 @@ public class QueryHelper {
         GET_MISIONES,
         DAR_CAJA,
         TAKE_SCREENSHOT,
+        GET_ZOOM_LEVEL,
+        SET_ZOOM_LEVEL,
     }
 
     public static boolean handleQuery(IBrowser iBrowser, long l, String query, boolean b, IJSQueryCallback callback) {
@@ -84,6 +86,12 @@ public class QueryHelper {
                     break;
                 case TAKE_SCREENSHOT:
                     ScreenshotHandler.handleTakeScreenshot(query, callback);
+                    break;
+                case GET_ZOOM_LEVEL:
+                    handleGetZoomLevel(callback);
+                    break;
+                case SET_ZOOM_LEVEL:
+                    handleSetZoomLevel(query, callback);
                     break;
                 // Unused
                 case GET_PLAYERS:
@@ -166,6 +174,54 @@ public class QueryHelper {
     private static void handleLeaveCall(String query) {
         Teras.LOGGER.info("Handling leaveCall query");
         Messages.INSTANCE.sendToServer(new SMessageFinalizarLlamada(query));
+    }
+
+    private static void handleGetZoomLevel(IJSQueryCallback callback) {
+        Teras.LOGGER.info("Handling getZoomLevel query");
+        try {
+            JsonObject response = new JsonObject();
+            response.addProperty("status", "ok");
+            response.addProperty("zoomLevel", es.boffmedia.teras.client.CameraZoomHandler.getZoomLevel());
+            response.addProperty("zoomLevelCount", es.boffmedia.teras.client.CameraZoomHandler.getZoomLevelCount());
+            response.addProperty("zoomMultiplier", es.boffmedia.teras.client.CameraZoomHandler.getCurrentZoomMultiplier());
+            response.addProperty("zoomFactor", es.boffmedia.teras.client.CameraZoomHandler.getZoomFactorForLevel(
+                es.boffmedia.teras.client.CameraZoomHandler.getZoomLevel()));
+            
+            // Add all available zoom levels
+            JsonObject levels = new JsonObject();
+            for (int i = 0; i < es.boffmedia.teras.client.CameraZoomHandler.getZoomLevelCount(); i++) {
+                levels.addProperty(String.valueOf(i), 
+                    es.boffmedia.teras.client.CameraZoomHandler.getZoomFactorForLevel(i) + "x");
+            }
+            response.add("availableLevels", levels);
+            
+            callback.success(gson.toJson(response));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Error getting zoom level", e);
+            callback.failure(0, "Error getting zoom level: " + e.getMessage());
+        }
+    }
+
+    private static void handleSetZoomLevel(String query, IJSQueryCallback callback) {
+        Teras.LOGGER.info("Handling setZoomLevel query");
+        try {
+            JsonObject json = gson.fromJson(query, JsonObject.class);
+            int level = json.get("level").getAsInt();
+            
+            es.boffmedia.teras.client.CameraZoomHandler.setZoomLevel(level);
+            
+            JsonObject response = new JsonObject();
+            response.addProperty("status", "ok");
+            response.addProperty("zoomLevel", es.boffmedia.teras.client.CameraZoomHandler.getZoomLevel());
+            response.addProperty("zoomFactor", es.boffmedia.teras.client.CameraZoomHandler.getZoomFactorForLevel(
+                es.boffmedia.teras.client.CameraZoomHandler.getZoomLevel()));
+            
+            callback.success(gson.toJson(response));
+            Teras.LOGGER.info("Zoom level set to: " + level);
+        } catch (Exception e) {
+            Teras.LOGGER.error("Error setting zoom level", e);
+            callback.failure(0, "Error setting zoom level: " + e.getMessage());
+        }
     }
 
     public static void handlePOST(StringBuilder response, HttpURLConnection con) throws IOException {
