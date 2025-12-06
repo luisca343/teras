@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import com.pixelmonmod.pixelmon.entities.pixelmon.StatueEntity;
 import es.boffmedia.teras.Teras;
+import noppes.npcs.entity.EntityNPCInterface;
 import es.boffmedia.teras.util.objects.ScreenshotQuery;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.ClientPlayerEntity;
@@ -27,7 +28,6 @@ import java.util.List;
 public class ScreenshotHandler {
     private static final Gson gson = new Gson();
     private static final double MAX_DETECTION_DISTANCE = 25.0;
-    private static final double DETECTION_FOV = 40.0;
     
     // Minimum screen coverage for entity to be considered "recognizable"
     // This represents the minimum percentage of screen height the entity should occupy
@@ -53,46 +53,130 @@ public class ScreenshotHandler {
             ClientPlayerEntity player = Minecraft.getInstance().player;
             World world = Minecraft.getInstance().level;
             
+            JsonObject locationData = new JsonObject();
+            List<JsonObject> entitiesData = new ArrayList<>();
+            
             if (player != null && world != null) {
+                // Get player position
+                Vector3d playerPos = player.position();
+                Vector3d eyePos = player.getEyePosition(1.0F);
+                
+                JsonObject playerPosJson = new JsonObject();
+                playerPosJson.addProperty("x", Math.round(playerPos.x * 100.0) / 100.0);
+                playerPosJson.addProperty("y", Math.round(eyePos.y * 100.0) / 100.0);
+                playerPosJson.addProperty("z", Math.round(playerPos.z * 100.0) / 100.0);
+                locationData.add("playerPosition", playerPosJson);
+                
+                // Get block player is looking at
+                Vector3d lookVec = player.getViewVector(1.0F);
+                Vector3d endPos = eyePos.add(lookVec.scale(MAX_DETECTION_DISTANCE));
+                
+                BlockRayTraceResult blockHit = world.clip(
+                    new RayTraceContext(
+                        eyePos,
+                        endPos,
+                        RayTraceContext.BlockMode.OUTLINE,
+                        RayTraceContext.FluidMode.NONE,
+                        player
+                    )
+                );
+                
+                if (blockHit.getType() == RayTraceResult.Type.BLOCK) {
+                    JsonObject blockPosJson = new JsonObject();
+                    blockPosJson.addProperty("x", blockHit.getBlockPos().getX());
+                    blockPosJson.addProperty("y", blockHit.getBlockPos().getY());
+                    blockPosJson.addProperty("z", blockHit.getBlockPos().getZ());
+                    blockPosJson.addProperty("block", world.getBlockState(blockHit.getBlockPos()).getBlock().getDescriptionId());
+                    locationData.add("lookingAt", blockPosJson);
+                }
+                
                 // Get player's actual FOV setting
                 double playerFov = Minecraft.getInstance().options.fov;
                 
-                List<LivingEntity> entitiesInView = getEntitiesInView(world, player, MAX_DETECTION_DISTANCE, DETECTION_FOV, playerFov);
+                List<LivingEntity> entitiesInView = getEntitiesInView(world, player, MAX_DETECTION_DISTANCE, playerFov);
                 
                 Teras.getLogger().info("=== ENTITIES DETECTED IN SCREENSHOT ===");
                 Teras.getLogger().info("Total entities found: " + entitiesInView.size());
                 
                 for (int i = 0; i < entitiesInView.size(); i++) {
                     LivingEntity entity = entitiesInView.get(i);
-                    Vector3d entityCenter = entity.position().add(0, entity.getBbHeight() / 2, 0);
+                    Vector3d entityPos = entity.position();
+                    Vector3d entityCenter = entityPos.add(0, entity.getBbHeight() / 2, 0);
                     double distance = player.getEyePosition(1.0F).distanceTo(entityCenter);
                     double coverage = calculateScreenCoverage(entity, distance, playerFov);
                     
+                    JsonObject entityData = new JsonObject();
+                    entityData.addProperty("distance", Math.round(distance * 10.0) / 10.0);
+                    entityData.addProperty("coverage", Math.round(coverage * 10.0) / 10.0);
+                    
+                    JsonObject entityPosJson = new JsonObject();
+                    entityPosJson.addProperty("x", Math.round(entityPos.x * 100.0) / 100.0);
+                    entityPosJson.addProperty("y", Math.round(entityPos.y * 100.0) / 100.0);
+                    entityPosJson.addProperty("z", Math.round(entityPos.z * 100.0) / 100.0);
+                    entityData.add("position", entityPosJson);
+                    
                     if (entity instanceof PixelmonEntity) {
                         PixelmonEntity pixelmon = (PixelmonEntity) entity;
-                        Teras.getLogger().info(String.format("#%d Pokemon: %s (Dex: %d, Form: %s, Palette: %s) - Distance: %.1f blocks, Coverage: %.1f%%",
+                        entityData.addProperty("type", "pokemon");
+                        entityData.addProperty("species", pixelmon.getSpecies().getName());
+                        entityData.addProperty("dex", pixelmon.getSpecies().getDex());
+                        entityData.addProperty("form", pixelmon.getForm().getName());
+                        entityData.addProperty("palette", pixelmon.getPalette().getName());
+                        
+                        Teras.getLogger().info(String.format("#%d Pokemon: %s (Dex: %d, Form: %s, Palette: %s) - Distance: %.1f blocks, Coverage: %.1f%%, Position: (%.2f, %.2f, %.2f)",
                             i + 1,
                             pixelmon.getSpecies().getName(),
                             pixelmon.getSpecies().getDex(),
                             pixelmon.getForm().getName(),
                             pixelmon.getPalette().getName(),
                             distance,
-                            coverage));
+                            coverage,
+                            entityPos.x,
+                            entityPos.y,
+                            entityPos.z));
                     } else if (entity instanceof StatueEntity) {
                         StatueEntity statue = (StatueEntity) entity;
-                        Teras.getLogger().info(String.format("#%d Statue: %s (Dex: %d) - Distance: %.1f blocks, Coverage: %.1f%%",
+                        entityData.addProperty("type", "statue");
+                        entityData.addProperty("species", statue.getSpecies().getName());
+                        entityData.addProperty("dex", statue.getSpecies().getDex());
+                        
+                        Teras.getLogger().info(String.format("#%d Statue: %s (Dex: %d) - Distance: %.1f blocks, Coverage: %.1f%%, Position: (%.2f, %.2f, %.2f)",
                             i + 1,
                             statue.getSpecies().getName(),
                             statue.getSpecies().getDex(),
                             distance,
-                            coverage));
+                            coverage,
+                            entityPos.x,
+                            entityPos.y,
+                            entityPos.z));
+                    } else if (entity instanceof EntityNPCInterface) {
+                        EntityNPCInterface npc = (EntityNPCInterface) entity;
+                        entityData.addProperty("type", "npc");
+                        entityData.addProperty("name", npc.getName().getString());
+                        
+                        Teras.getLogger().info(String.format("#%d NPC: %s - Distance: %.1f blocks, Coverage: %.1f%%, Position: (%.2f, %.2f, %.2f)",
+                            i + 1,
+                            npc.getName().getString(),
+                            distance,
+                            coverage,
+                            entityPos.x,
+                            entityPos.y,
+                            entityPos.z));
                     } else {
-                        Teras.getLogger().info(String.format("#%d Other Entity: %s - Distance: %.1f blocks, Coverage: %.1f%%",
+                        entityData.addProperty("type", "other");
+                        entityData.addProperty("name", entity.getType().getDescription().getString());
+                        
+                        Teras.getLogger().info(String.format("#%d Other Entity: %s - Distance: %.1f blocks, Coverage: %.1f%%, Position: (%.2f, %.2f, %.2f)",
                             i + 1,
                             entity.getType().getDescription().getString(),
                             distance,
-                            coverage));
+                            coverage,
+                            entityPos.x,
+                            entityPos.y,
+                            entityPos.z));
                     }
+                    
+                    entitiesData.add(entityData);
                 }
                 Teras.getLogger().info("========================================");
             }
@@ -110,7 +194,9 @@ public class ScreenshotHandler {
             String dataUrl = "data:image/" + format + ";base64," + base64Image;
             JsonObject response = new JsonObject();
             response.addProperty("status", "ok");
-            response.addProperty("data", dataUrl);
+            response.add("location", locationData);
+            response.add("entities", gson.toJsonTree(entitiesData));
+            response.addProperty("image", dataUrl);
             callback.success(gson.toJson(response));
             
         } catch (Exception e) {
@@ -123,7 +209,7 @@ public class ScreenshotHandler {
      * Detects all entities visible on the player's screen within a given range
      * Prioritizes entities that are centered in the player's view
      */
-    private static List<LivingEntity> getEntitiesInView(World world, ClientPlayerEntity player, double range, double fov, double playerFov) {
+    private static List<LivingEntity> getEntitiesInView(World world, ClientPlayerEntity player, double range, double playerFov) {
         List<EntityWithScore> entitiesWithScores = new ArrayList<>();
         
         Vector3d eyePos = player.getEyePosition(1.0F);
@@ -151,8 +237,12 @@ public class ScreenshotHandler {
             double dotProduct = lookVec.dot(toEntity);
             double angle = Math.acos(Math.max(-1.0, Math.min(1.0, dotProduct))) * (180.0 / Math.PI);
             
+            // Calculate the actual FOV cone from player's FOV setting
+            // We use half the horizontal FOV as the cone angle
+            double fovConeAngle = playerFov / 2.0;
+            
             // Check if entity is within FOV
-            if (angle <= fov) {
+            if (angle <= fovConeAngle) {
                 // Check if entity is visible (not blocked)
                 if (hasLineOfSight(world, player, eyePos, entity)) {
                     double distance = eyePos.distanceTo(entityCenter);
