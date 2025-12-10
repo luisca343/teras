@@ -19,6 +19,9 @@ import net.minecraft.client.entity.player.ClientPlayerEntity;
 import net.minecraft.client.network.play.NetworkPlayerInfo;
 import net.montoyo.mcef.api.IBrowser;
 import net.montoyo.mcef.api.IJSQueryCallback;
+import journeymap.client.waypoint.Waypoint;
+import journeymap.client.waypoint.WaypointStore;
+import net.minecraft.util.math.BlockPos;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -30,6 +33,7 @@ public class QueryHelper {
 
     private enum QueryType {
         GET_USER_DATA,
+        GET_WAYPOINTS,
         OPEN_PC,
         GET_SPAWNS,
         SET_CALL,
@@ -64,6 +68,9 @@ public class QueryHelper {
         try {
             QueryType queryType = QueryType.valueOf(type.toUpperCase());
             switch (queryType) {
+                case GET_WAYPOINTS:
+                    handleGetWaypoints(callback);
+                    break;
                 case GET_USER_DATA:
                     handleGetUserData(callback);
                     break;
@@ -199,6 +206,102 @@ public class QueryHelper {
         } catch (Exception e) {
             Teras.LOGGER.error("Error getting zoom level", e);
             callback.failure(0, "Error getting zoom level: " + e.getMessage());
+        }
+    }
+
+    private static void handleGetWaypoints(IJSQueryCallback callback) {
+        Teras.LOGGER.info("Handling getWaypoints query");
+        try {
+            Collection<Waypoint> waypoints = WaypointStore.INSTANCE.getAll();
+            com.google.gson.JsonObject response = new com.google.gson.JsonObject();
+            response.addProperty("status", "ok");
+            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+
+            for (Waypoint wp : waypoints) {
+                try {
+                    com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                    // name
+
+                    try {
+                        obj.addProperty("name", (String) Waypoint.class.getMethod("getName").invoke(wp));
+                    } catch (Exception e) {
+                        obj.addProperty("name", "");
+                    }
+
+                    // coords: try getBlockPos(), getPos(), or getX/Y/Z
+                    Integer x = null, y = null, z = null;
+                    try {
+                        java.lang.reflect.Method m = Waypoint.class.getMethod("getBlockPos");
+                        Object blockPos = m.invoke(wp);
+                        if (blockPos instanceof BlockPos) {
+                            BlockPos bp = (BlockPos) blockPos;
+                            x = bp.getX(); y = bp.getY(); z = bp.getZ();
+                        }
+                    } catch (NoSuchMethodException ignored) {}
+
+                    if (x == null) {
+                        try {
+                            java.lang.reflect.Method m = Waypoint.class.getMethod("getPos");
+                            Object blockPos = m.invoke(wp);
+                            if (blockPos instanceof BlockPos) {
+                                BlockPos bp = (BlockPos) blockPos;
+                                x = bp.getX(); y = bp.getY(); z = bp.getZ();
+                            }
+                        } catch (NoSuchMethodException ignored) {}
+                    }
+
+                    if (x == null) {
+                        try {
+                            java.lang.reflect.Method mx = Waypoint.class.getMethod("getX");
+                            java.lang.reflect.Method my = Waypoint.class.getMethod("getY");
+                            java.lang.reflect.Method mz = Waypoint.class.getMethod("getZ");
+                            x = ((Number) mx.invoke(wp)).intValue();
+                            y = ((Number) my.invoke(wp)).intValue();
+                            z = ((Number) mz.invoke(wp)).intValue();
+                        } catch (NoSuchMethodException ignored) {}
+                    }
+
+                    obj.addProperty("x", x == null ? 0 : x);
+                    obj.addProperty("y", y == null ? 0 : y);
+                    obj.addProperty("z", z == null ? 0 : z);
+
+                    // color
+                    try {
+                        java.lang.reflect.Method mc = Waypoint.class.getMethod("getColor");
+                        Object color = mc.invoke(wp);
+                        if (color != null) {
+                            java.lang.reflect.Method mget = color.getClass().getMethod("getRGB");
+                            int rgb = (Integer) mget.invoke(color);
+                            String hex = String.format("#%06X", (0xFFFFFF & rgb));
+                            obj.addProperty("color", hex);
+                        }
+                    } catch (Exception ignored) {
+                    }
+
+                    // dimension/world - try several method names
+                    try {
+                        java.lang.reflect.Method md = Waypoint.class.getMethod("getDimName");
+                        Object dim = md.invoke(wp);
+                        if (dim != null) obj.addProperty("dimension", dim.toString());
+                    } catch (Exception e1) {
+                        try {
+                            java.lang.reflect.Method md2 = Waypoint.class.getMethod("getDimension");
+                            Object dim = md2.invoke(wp);
+                            if (dim != null) obj.addProperty("dimension", dim.toString());
+                        } catch (Exception ignored) {}
+                    }
+
+                    arr.add(obj);
+                } catch (Exception e) {
+                    Teras.LOGGER.warn("Failed to parse waypoint", e);
+                }
+            }
+
+            response.add("waypoints", arr);
+            callback.success(gson.toJson(response));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Error handling getWaypoints", e);
+            callback.failure(0, "Error handling getWaypoints: " + e.getMessage());
         }
     }
 
