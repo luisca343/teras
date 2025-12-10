@@ -21,6 +21,8 @@ import net.montoyo.mcef.api.IBrowser;
 import net.montoyo.mcef.api.IJSQueryCallback;
 import journeymap.client.waypoint.Waypoint;
 import journeymap.client.waypoint.WaypointStore;
+import journeymap.common.helper.DimensionHelper;
+import java.awt.Color;
 import net.minecraft.util.math.BlockPos;
 
 import java.io.IOException;
@@ -32,6 +34,7 @@ public class QueryHelper {
     private static final Gson gson = new Gson();
 
     private enum QueryType {
+        ADD_WAYPOINT,
         GET_USER_DATA,
         GET_WAYPOINTS,
         OPEN_PC,
@@ -70,6 +73,9 @@ public class QueryHelper {
             switch (queryType) {
                 case GET_WAYPOINTS:
                     handleGetWaypoints(callback);
+                    break;
+                case ADD_WAYPOINT:
+                    handleAddWaypoint(query, callback);
                     break;
                 case GET_USER_DATA:
                     handleGetUserData(callback);
@@ -216,12 +222,12 @@ public class QueryHelper {
             com.google.gson.JsonObject response = new com.google.gson.JsonObject();
             response.addProperty("status", "ok");
             com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+            
 
             for (Waypoint wp : waypoints) {
                 try {
                     com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
                     // name
-
                     try {
                         obj.addProperty("name", (String) Waypoint.class.getMethod("getName").invoke(wp));
                     } catch (Exception e) {
@@ -302,6 +308,72 @@ public class QueryHelper {
         } catch (Exception e) {
             Teras.LOGGER.error("Error handling getWaypoints", e);
             callback.failure(0, "Error handling getWaypoints: " + e.getMessage());
+        }
+    }
+
+    private static void handleAddWaypoint(String query, IJSQueryCallback callback) {
+        Teras.LOGGER.info("Handling addWaypoint query: {}", query);
+        try {
+            JsonObject json = gson.fromJson(query, JsonObject.class);
+
+            String name = json.has("name") ? json.get("name").getAsString() : "waypoint";
+            int x = json.has("x") ? json.get("x").getAsInt() : 0;
+            int y = json.has("y") ? json.get("y").getAsInt() : 64;
+            int z = json.has("z") ? json.get("z").getAsInt() : 0;
+            String colorStr = json.has("color") ? json.get("color").getAsString() : "#FFFFFF";
+
+            String dimension;
+            if (json.has("dimension")) {
+                dimension = json.get("dimension").getAsString();
+            } else {
+                // default to player's current dimension key
+                if (Minecraft.getInstance().player != null) {
+                    dimension = DimensionHelper.getDimKeyName(Minecraft.getInstance().player.level.dimension());
+                } else {
+                    dimension = "minecraft:overworld";
+                }
+            }
+
+            // Parse color safely
+            Color color;
+            try {
+                color = Color.decode(colorStr);
+            } catch (Exception e) {
+                color = Color.WHITE;
+            }
+
+            // Create BlockPos and Waypoint
+            BlockPos pos = new BlockPos(x, y, z);
+            Waypoint wp = new Waypoint(name, pos, color, Waypoint.Type.Normal, dimension, false);
+
+            // Avoid duplicates by name
+            Collection<Waypoint> existing = WaypointStore.INSTANCE.getAll();
+            boolean exists = existing.stream().anyMatch(w -> {
+                try { return w.getName().equals(wp.getName()); } catch (Exception ex) { return false; }
+            });
+
+            if (exists) {
+                JsonObject resp = new JsonObject();
+                resp.addProperty("status", "exists");
+                resp.addProperty("message", "Waypoint with that name already exists");
+                callback.success(gson.toJson(resp));
+                return;
+            }
+
+            WaypointStore.INSTANCE.add(wp);
+
+            JsonObject resp = new JsonObject();
+            resp.addProperty("status", "ok");
+            resp.addProperty("name", name);
+            resp.addProperty("x", x);
+            resp.addProperty("y", y);
+            resp.addProperty("z", z);
+            resp.addProperty("dimension", dimension);
+            callback.success(gson.toJson(resp));
+
+        } catch (Exception e) {
+            Teras.LOGGER.error("Error handling addWaypoint", e);
+            callback.failure(0, "Error handling addWaypoint: " + e.getMessage());
         }
     }
 
