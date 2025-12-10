@@ -2,14 +2,11 @@ package es.boffmedia.teras.net.server.serverOld;
 
 import com.google.common.base.Charsets;
 import com.google.gson.Gson;
-import de.maxhenkel.voicechat.api.Group;
-import de.maxhenkel.voicechat.api.VoicechatConnection;
-import de.maxhenkel.voicechat.api.VoicechatServerApi;
-import es.boffmedia.teras.TerasVoicechatPlugin;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageMCEFResponse;
 import es.boffmedia.teras.util.objects.SmartRotomResponse;
 import es.boffmedia.teras.util.objects._old.chatapp.CallData;
+import es.boffmedia.teras.util.voicechat.CallManager;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
 import net.minecraftforge.fml.network.NetworkEvent;
@@ -28,39 +25,39 @@ public class SMessageIniciarLlamada implements Runnable{
     
     @Override
     public void run() {
-        VoicechatServerApi api = TerasVoicechatPlugin.SERVER_API;
         Gson gson = new Gson();
         CallData datosLlamada = gson.fromJson(str, CallData.class);
-        System.out.println("Miembros: "+datosLlamada.getUsers());
-
-        /*
-        if(datosLlamada.getUsers().size() <= 1){
-            SmartRotomResponse response = new SmartRotomResponse();
-            response.setStatus(200);
-            response.setError("No hay suficientes miembros para iniciar la llamada");
-
-            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageMCEFResponse(new Gson().toJson(response)));
-        }*/
-
-        String idLlamada = datosLlamada.getCaller();
-        Group group;
-        if(player.getStringUUID().equals(idLlamada)){
-            group = api.createGroup(idLlamada, null);
-        } else {
-            VoicechatConnection conn = api.getConnectionOf(UUID.fromString(idLlamada));
-            group = conn.getGroup();
+        System.out.println("Iniciando llamada. Miembros: " + datosLlamada.getUsers());
+        if (player == null) {
+            System.err.println("SMessageIniciarLlamada.run: player is null, aborting call start.");
+            return;
         }
 
-        VoicechatConnection conn = api.getConnectionOf(player.getUUID());
-        conn.setGroup(group);
+        String callId = datosLlamada == null ? null : datosLlamada.getCallId();
+        if (callId == null || callId.isEmpty()) {
+            System.err.println("SMessageIniciarLlamada.run: callId is null or empty, aborting call start.");
+            return;
+        }
+
+        // Add current player to the call
+        CallManager.joinCall(callId, player.getUUID());
+        
+        // Add all other participants to the call
+        for (CallData.User user : datosLlamada.getUsers()) {
+            try {
+                UUID userUUID = UUID.fromString(user.getUuid());
+                CallManager.joinCall(callId, userUUID);
+            } catch (IllegalArgumentException e) {
+                System.err.println("Invalid UUID for user: " + user.getUuid());
+            }
+        }
 
         SmartRotomResponse response = new SmartRotomResponse();
         response.setStatus(201);
-        response.setMessage("Llamada iniciada");
+        response.setMessage("Llamada iniciada - Puedes escuchar a los participantes y también a personas cercanas");
         response.setData(datosLlamada.getUsers().toString());
 
         Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageMCEFResponse(new Gson().toJson(response)));
-
     }
 
     public static SMessageIniciarLlamada decode(PacketBuffer buf) {

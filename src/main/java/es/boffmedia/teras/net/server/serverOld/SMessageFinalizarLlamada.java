@@ -2,12 +2,10 @@ package es.boffmedia.teras.net.server.serverOld;
 
 import com.google.common.base.Charsets;
 import com.google.gson.Gson;
-import de.maxhenkel.voicechat.api.VoicechatConnection;
-import de.maxhenkel.voicechat.api.VoicechatServerApi;
-import es.boffmedia.teras.TerasVoicechatPlugin;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageMCEFResponse;
 import es.boffmedia.teras.util.objects.SmartRotomResponse;
+import es.boffmedia.teras.util.voicechat.CallManager;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
 import net.minecraftforge.fml.network.NetworkEvent;
@@ -25,17 +23,14 @@ public class SMessageFinalizarLlamada implements Runnable{
     
     @Override
     public void run() {
-        VoicechatServerApi SERVER_API = TerasVoicechatPlugin.SERVER_API;
-        VoicechatConnection conn = SERVER_API.getConnectionOf(player.getUUID());
-
-        conn.setGroup(null);
+        // Remove player from all active calls
+        CallManager.leaveAllCalls(player.getUUID());
 
         SmartRotomResponse response = new SmartRotomResponse();
         response.setStatus(200);
         response.setMessage("Llamada finalizada");
 
         Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageMCEFResponse(new Gson().toJson(response)));
-
     }
 
     public static SMessageFinalizarLlamada decode(PacketBuffer buf) {
