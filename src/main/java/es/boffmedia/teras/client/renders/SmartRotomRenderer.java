@@ -73,9 +73,9 @@ public final class SmartRotomRenderer implements IItemRenderer {
         stack.translate(handSideSign * 0.56f, -0.52f - equipProgress * 0.6f, -0.72f);
 
         if(handSideSign >= 0.0f)
-            renderModel(stack, buffer, packedLight,  ItemCameraTransforms.TransformType.FIRST_PERSON_RIGHT_HAND);
+            renderModel(stack, is, buffer, packedLight,  ItemCameraTransforms.TransformType.FIRST_PERSON_RIGHT_HAND);
         else
-            renderModel(stack, buffer, packedLight,  ItemCameraTransforms.TransformType.FIRST_PERSON_LEFT_HAND);
+            renderModel(stack, is, buffer, packedLight,  ItemCameraTransforms.TransformType.FIRST_PERSON_LEFT_HAND);
 
         //Prepare minePad transform
         stack.mulPose(Vector3f.YP.rotationDegrees(handSideSign * (45.0f - sinSwingProg2 * 20.0f)));
@@ -138,17 +138,10 @@ public final class SmartRotomRenderer implements IItemRenderer {
 
     }
 
-    private void renderModel(MatrixStack stack, IRenderTypeBuffer buffer, int packedLight, ItemCameraTransforms.TransformType transform) {
+    private void renderModel(MatrixStack stack, ItemStack is, IRenderTypeBuffer buffer, int packedLight, ItemCameraTransforms.TransformType transform) {
+        // Let Minecraft choose the correct model/texture based on the ItemStack's NBT (CustomModelData/overrides)
         stack.clear();
-        Minecraft.getInstance().getTextureManager().bind(new ResourceLocation("teras:textures/item/smartrotom.png"));
-        Item smart = ItemInit.SMARTROTOM.get();
-
-        mc.getItemInHandRenderer().renderItem(mc.player, smart.getDefaultInstance(), transform , false, stack, buffer, packedLight);
-
-
-
-        stack.pushPose();
-        stack.popPose();
+        mc.getItemInHandRenderer().renderItem(mc.player, is, transform , false, stack, buffer, packedLight);
     }
 
     private void renderArmFirstPerson(MatrixStack stack , int combinedLight, float equipProgress, IRenderTypeBuffer buffer, float handSideSign) {

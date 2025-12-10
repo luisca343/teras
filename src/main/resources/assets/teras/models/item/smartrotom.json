@@ -1,9 +1,13 @@
 {
+	"format_version": "1.21.6",
 	"credit": "Made with Blockbench",
 	"textures": {
 		"0": "teras:item/smartrotom",
 		"particle": "teras:item/smartrotom"
 	},
+	"overrides": [
+		{"predicate": {"custom_model_data": 1}, "model": "teras:item/smartrotom_sprigatito"}
+	],
 	"elements": [
 		{
 			"from": [3, 1.125, 7.5],
