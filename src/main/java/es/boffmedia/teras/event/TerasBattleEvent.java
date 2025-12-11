@@ -35,6 +35,7 @@ public class TerasBattleEvent {
             return;
         }
         
+        
         TrainerDefeatMoney defeatMoney = new TrainerDefeatMoney(event.player.getStringUUID(), event.trainer.getWinMoney());
         SmartRotomService.defeatTrainer(defeatMoney);
     }

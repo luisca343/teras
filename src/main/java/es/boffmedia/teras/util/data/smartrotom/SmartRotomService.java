@@ -12,30 +12,36 @@ public class SmartRotomService {
     static Gson gson = new Gson();
 
     public static void postRegistry(ActualizarDex updateDex) {
-        SmartRotomAPI.wingullPOST("/pokemon/registry", gson.toJson(updateDex));
+        SmartRotomAPI.wingullPOST("/smartrotom/pokemon/register", gson.toJson(updateDex));
     }
 
+    // TODO: ADAPT TO NEW ENDPOINT
     public static void postCarrera(ResultadoCarrera carrera) {
-        SmartRotomAPI.wingullPOST("/karts/carrera", gson.toJson(carrera));
+        SmartRotomAPI.wingullPOST("/smartrotom/karts/carrera", gson.toJson(carrera));
     }
 
+    // TODO: ADAPT TO NEW ENDPOINT
     public static String getRegions() {
-        return SmartRotomAPI.wingullGET("/regions");
+        return SmartRotomAPI.wingullGET("/smartrotom/regions");
     }
 
+    // TODO: ADAPT TO NEW ENDPOINT
     public static void updateNPCs(UpdateNPCs npcs) {
-        SmartRotomAPI.wingullPOST("/misiones/npcs", gson.toJson(npcs));
+        SmartRotomAPI.wingullPOST("/smartrotom/misiones/npcs", gson.toJson(npcs));
     }
 
+    // TODO: ADAPT TO NEW ENDPOINT
     public static void saveBattle(LogroCombate battle) {
         SmartRotomAPI.wingullPOST("/smartrotom/achievements/battle", gson.toJson(battle));
     }
 
+    // TODO: ADAPT TO NEW ENDPOINT
     public static void saveShopTransaction(ShopTransaction shopTransaction) {
-        SmartRotomAPI.wingullPOST("/starbank/shop", gson.toJson(shopTransaction));
+        SmartRotomAPI.wingullPOST("/smartrotom/starbank/shop", gson.toJson(shopTransaction));
     }
 
+    // TODO: ADAPT TO NEW ENDPOINT
     public static void defeatTrainer(TrainerDefeatMoney defeatMoney) {
-        SmartRotomAPI.wingullPOST("/starbank/trainerdefeat", gson.toJson(defeatMoney));
+        SmartRotomAPI.wingullPOST("/smartrotom/starbank/trainerdefeat", gson.toJson(defeatMoney));
     }
 }
