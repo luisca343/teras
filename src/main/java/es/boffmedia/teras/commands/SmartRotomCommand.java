@@ -11,13 +11,10 @@ public class SmartRotomCommand {
         LiteralArgumentBuilder<CommandSource> literalBuilder = Commands.literal("smartrotom")
                 .then(unlockApp());
         dispatcher.register(literalBuilder);
-
     }
 
     private ArgumentBuilder<CommandSource, ?> unlockApp() {
         return Commands.literal("unlockApp")
-                .executes((command) -> {
-                    return 1;
-                });
+                .executes((command) -> 1);
     }
 }

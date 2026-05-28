@@ -1,7 +1,9 @@
 package es.boffmedia.teras.util.objects.quests;
 
-import es.boffmedia.teras.Teras;
+import com.mojang.authlib.GameProfile;
 import net.minecraft.entity.player.ServerPlayerEntity;
+import net.minecraft.world.server.ServerWorld;
+import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.fml.server.ServerLifecycleHooks;
 import noppes.npcs.api.NpcAPI;
 import noppes.npcs.api.handler.IDialogHandler;
@@ -16,47 +18,64 @@ public class PlayerQuests {
     HashMap<Integer, QuestDataBase> quests;
     HashMap<Integer, String> categories;
 
-
-    transient IQuest[] mActivas;
-    transient IQuest[] mCompletadas;
-    public PlayerQuests(UUID uuid){
+    public PlayerQuests(UUID uuid) {
         NpcAPI npcApi = NpcAPI.Instance();
-
-        ServerPlayerEntity player = ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayer(uuid);
-        PlayerWrapper wrapper = new PlayerWrapper(player);
-
         quests = new HashMap<>();
         categories = new HashMap<>();
 
-        mActivas = wrapper.getActiveQuests();
-        mCompletadas = wrapper.getFinishedQuests();
-        IDialogHandler dialogHandler = npcApi.getDialogs();
+        PlayerWrapper wrapper = buildWrapper(uuid);
 
+        IQuest[] activas = wrapper.getActiveQuests();
+        IQuest[] completadas = wrapper.getFinishedQuests();
+
+        Set<Integer> activeIds = new HashSet<>();
+        for (IQuest q : activas) activeIds.add(q.getId());
+        Set<Integer> completedIds = new HashSet<>();
+        for (IQuest q : completadas) completedIds.add(q.getId());
+
+        IDialogHandler dialogHandler = npcApi.getDialogs();
         dialogHandler.categories().forEach(category -> {
-            Teras.getLogger().info("Category: " + category.getName());
             category.dialogs().forEach(dialog -> {
-                if(dialog.getQuest() !=null){
-                    IQuest quest = dialog.getQuest();
-                    addPlayerQuest(quest, wrapper, dialog);
-                } else {
-                    Teras.getLogger().info("Skipping Dialog: " + dialog.getText());
+                if (dialog.getQuest() != null) {
+                    addPlayerQuest(dialog.getQuest(), wrapper, dialog, activeIds, completedIds, category.getName());
                 }
             });
         });
     }
 
-    public void addPlayerQuest(IQuest quest, PlayerWrapper wrapper, IDialog dialog) {
+    // Builds a PlayerWrapper for online or offline players.
+    // For offline players, a FakePlayer is created and loaded from disk so that
+    // CustomNPCs can read saved quest progress without a live connection.
+    private PlayerWrapper buildWrapper(UUID uuid) {
+        ServerPlayerEntity online = ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayer(uuid);
+        if (online != null) {
+            return new PlayerWrapper(online);
+        }
+        ServerWorld world = ServerLifecycleHooks.getCurrentServer().overworld();
+        FakePlayer fake = new FakePlayer(world, new GameProfile(uuid, ""));
+        ServerLifecycleHooks.getCurrentServer().getPlayerList().load(fake);
+        return new PlayerWrapper(fake);
+    }
+
+    public void addPlayerQuest(IQuest quest, PlayerWrapper wrapper, IDialog dialog,
+                               Set<Integer> activeIds, Set<Integer> completedIds, String categoryName) {
         QuestDataBase questData = new QuestDataBase(quest);
         questData.setDialogId(dialog.getId());
+        questData.setNpcName(quest.getNpcName());
 
-        Availability availability = (Availability) dialog.getAvailability();
-        boolean available = availability.isAvailable(wrapper);
+        boolean available;
+        try {
+            Availability availability = (Availability) dialog.getAvailability();
+            available = availability.isAvailable(wrapper);
+        } catch (Exception e) {
+            available = false;
+        }
 
-        if(Arrays.stream(mActivas).anyMatch(mActiva -> mActiva.getId() == quest.getId())) {
+        if (activeIds.contains(quest.getId())) {
             questData.setStatus(QuestStatus.ACTIVE);
-        } else if(Arrays.stream(mCompletadas).anyMatch(mCompleta -> mCompleta.getId() == quest.getId())) {
+        } else if (completedIds.contains(quest.getId())) {
             questData.setStatus(QuestStatus.COMPLETED);
-        } else if(available){
+        } else if (available) {
             questData.setStatus(QuestStatus.AVAILABLE);
         } else {
             questData.setStatus(QuestStatus.LOCKED);
@@ -64,9 +83,9 @@ public class PlayerQuests {
 
         questData.setObjectives(quest, wrapper);
         questData.setRewards(quest.getRewards().getItems());
+
         quests.put(questData.getId(), questData);
-
-
+        categories.put(questData.getId(), categoryName);
     }
 
     public HashMap<Integer, QuestDataBase> getQuests() {

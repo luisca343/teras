@@ -9,6 +9,7 @@ import es.boffmedia.teras.blocks.LavenderFlower;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.event.*;
 import es.boffmedia.teras.init.*;
+import es.boffmedia.teras.util.objects.quests.NpcCatalog;
 import es.boffmedia.teras.integration.Integrations;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.util.PolygonCreator;
@@ -272,7 +273,7 @@ public class Teras
 
     @SubscribeEvent
     public void onServerStopping(FMLServerStoppingEvent event) {
-
+        NpcCatalog.saveIfDirty();
     }
 
 

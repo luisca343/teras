@@ -7,6 +7,7 @@ import noppes.npcs.api.handler.data.IQuest;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class QuestList {
@@ -26,11 +27,11 @@ public class QuestList {
             category.dialogs().forEach(dialog -> {
                 DialogData dialogData = new DialogData(dialog);
                 dialogs.put(dialogData.getId(), dialogData);
-                if(dialog.getQuest() !=null){
+                if (dialog.getQuest() != null) {
                     IQuest quest = dialog.getQuest();
                     QuestData questData = new QuestData(quest, dialog);
                     quests.put(questData.getId(), questData);
-                    if(categories.containsKey(questData.getCategory())){
+                    if (categories.containsKey(questData.getCategory())) {
                         categories.get(questData.getCategory()).add(questData.getId());
                     } else {
                         ArrayList<Integer> list = new ArrayList<>();
@@ -43,15 +44,13 @@ public class QuestList {
             });
         });
 
-
-        /*
-        quests.categories().forEach(category -> {
-            category.quests().forEach(quest -> {
-                QuestData questData = new QuestData(quest, dialog);
-                questDataList.add(questData);
-                categories.put(questData.getId(), questData.getCategory());
-            });
-        });*/
-
+        // Enrich each dialog with its NPC locations from the persisted catalog.
+        Map<Integer, List<NpcData>> npcCatalog = NpcCatalog.getCatalog();
+        dialogs.forEach((id, dialogData) -> {
+            List<NpcData> locations = npcCatalog.get(id);
+            if (locations != null && !locations.isEmpty()) {
+                dialogData.setNpcLocations(new ArrayList<>(locations));
+            }
+        });
     }
 }

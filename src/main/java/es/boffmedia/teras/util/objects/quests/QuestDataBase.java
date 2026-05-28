@@ -11,6 +11,7 @@ import java.util.ArrayList;
 public class QuestDataBase {
     private int id;
     private QuestStatus status;
+    private String npcName;
 
     private ArrayList<QuestObjective> objectives;
     private ArrayList<QuestReward>  rewards;
@@ -86,5 +87,13 @@ public class QuestDataBase {
 
     public void setDialogId(int dialogId) {
         this.dialogId = dialogId;
+    }
+
+    public String getNpcName() {
+        return npcName;
+    }
+
+    public void setNpcName(String npcName) {
+        this.npcName = npcName;
     }
 }
