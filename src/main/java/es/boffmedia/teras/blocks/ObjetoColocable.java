@@ -1,6 +1,6 @@
 package es.boffmedia.teras.blocks;
 
-import es.boffmedia.teras.util.objects._old.ObjColocable;
+import es.boffmedia.teras.util.objects.legacy.ObjColocable;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.item.BlockItem;
@@ -30,3 +30,4 @@ public class ObjetoColocable extends BlockItem {
 
 
 }
+

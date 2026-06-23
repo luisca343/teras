@@ -1,7 +1,7 @@
 package es.boffmedia.teras.init;
 
 import es.boffmedia.teras.items.TerasItemGroup;
-import es.boffmedia.teras.util.objects._old.ObjColocable;
+import es.boffmedia.teras.util.objects.legacy.ObjColocable;
 import net.minecraft.block.Block;
 import net.minecraft.item.Food;
 import net.minecraft.item.Item;
@@ -41,3 +41,4 @@ public class ComidasTeras {
         return new Item.Properties().tab(TerasItemGroup.LIZARDON_GROUP).food(builder.build());
     }
 }
+

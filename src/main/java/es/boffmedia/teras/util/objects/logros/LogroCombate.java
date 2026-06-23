@@ -1,7 +1,7 @@
 package es.boffmedia.teras.util.objects.logros;
 
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
-import es.boffmedia.teras.util.objects._old.pixelmon.PokemonData;
+import es.boffmedia.teras.util.objects.legacy.pixelmon.PokemonData;
 import es.boffmedia.teras.util.objects.post.SmartRotomPost;
 
 import java.util.ArrayList;
@@ -87,3 +87,4 @@ public class LogroCombate extends SmartRotomPost {
         }
     }
 }
+

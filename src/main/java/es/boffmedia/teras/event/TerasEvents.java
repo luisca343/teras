@@ -13,9 +13,8 @@ import es.boffmedia.teras.util.data.PersistentDataFields;
 import es.boffmedia.teras.util.file.FileHelper;
 import es.boffmedia.teras.util.game.ShinyTracker;
 import es.boffmedia.teras.util.objects.karts.RaceManager;
-import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
-import es.boffmedia.teras.util.objects._old.karts.CarreraManagerOld;
-import es.boffmedia.teras.util.objects._old.serverdata.UserData;
+import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects.legacy.karts.CarreraManagerOld;
 import es.boffmedia.teras.particle.FakeParticle;
 import es.boffmedia.teras.util.cache.TextureCache;
 import es.boffmedia.teras.util.displayers.VideoDisplayer;
@@ -31,7 +30,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ResourceLocation;
-import net.minecraft.world.World;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.ModelBakeEvent;
@@ -49,7 +47,6 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.server.FMLServerStartedEvent;
 import net.minecraftforge.fml.network.PacketDistributor;
 import net.minecraftforge.server.command.ConfigCommand;
-import net.minecraftforge.server.permission.PermissionAPI;
 
 
 @Mod.EventBusSubscriber
@@ -209,55 +206,20 @@ public class TerasEvents {
     @SubscribeEvent
     public static void enterWorld(EntityJoinWorldEvent event) {
         if (!(event.getEntity() instanceof PlayerEntity)) return;
-        PlayerEntity player = (PlayerEntity) event.getEntity();
-
-        World world = event.getWorld();
-        if (world.dimension().location().equals(World.OVERWORLD.location())) {
-            Teras.getLogger().info("ES EL OVERWORLD");
-
-            // API URL DOES NOT EXIST YET
-            //PolygonCreator.createPolygon();
-
-            if (player instanceof ServerPlayerEntity) {
-                Teras.getLogger().info("ES UN SERVERPLAYER");
-            } else {
-                Teras.getLogger().info("NO ES UN SERVERPLAYER");
-            }
-        } else {
-            Teras.getLogger().info("NO ES EL OVERWORLD");
-
-        }
-
-
+        // API URL DOES NOT EXIST YET
+        //PolygonCreator.createPolygon();
     }
 
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent ev) {
-
-        Teras.LOGGER.info("FUNCTIONANDO LOGIIIINN");
-
         Gson gson = new Gson();
         TerasConfig terasConfig = FileHelper.getConfig();
         String data = gson.toJson(terasConfig);
 
-        Teras.LOGGER.info(PermissionAPI.hasPermission(ev.getPlayer(), "admin"));
-        PermissionAPI.getPermissionHandler().getRegisteredNodes().forEach(Teras.LOGGER::info);
-
-        UserData userData = new UserData(ev.getPlayer());
-
-        // Cancel loginw
-        //WingullAPI.wingullPOST("/loginw", gson.toJson(userData));
-
-        ServerPlayerEntity serverPlayer = (ServerPlayerEntity) ev.getPlayer();
-
-        boolean inicio = serverPlayer.getPersistentData().getBoolean("inicio");
-
-
-        //((ServerPlayerEntity) ev.getPlayer()).sendMessage(new StringTextComponent(TerasConfig.test.get()), UUID.randomUUID());
         ev.getPlayer().getPersistentData().putBoolean("frentebatalla", false);
 
         Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> (ServerPlayerEntity) ev.getPlayer()), new CMessageConfigServer(data));
-
     }
 }
+

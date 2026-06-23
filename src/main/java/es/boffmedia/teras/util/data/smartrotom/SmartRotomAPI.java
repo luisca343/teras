@@ -6,62 +6,81 @@ import es.boffmedia.teras.util.data.QueryHelper;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.FutureTask;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class SmartRotomAPI {
     // private static String WINGULL_URL = "http://79.116.9.120:34301/";
 
+    /** Connection/read timeout (ms) so a slow or dead endpoint can never hang the calling thread indefinitely. */
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+    private static final int READ_TIMEOUT_MS = 5_000;
 
+    /** Shared, daemon-threaded pool for all outbound HTTP so we never spawn unbounded raw threads. */
+    private static final ExecutorService HTTP_EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "Teras-SmartRotom-HTTP");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * Performs a blocking GET on a background thread. The result is bounded by {@link #CONNECT_TIMEOUT_MS}/
+     * {@link #READ_TIMEOUT_MS}, so the caller can never stall for longer than the timeout even if the API is down.
+     * NOTE: callers should prefer {@link #wingullGETAsync(String)} and avoid calling this on the server thread.
+     */
     public static String wingullGET(String str) {
-        FutureTask<String> futureTask = new FutureTask<>(() -> {
+        try {
+            return wingullGETAsync(str).get(CONNECT_TIMEOUT_MS + READ_TIMEOUT_MS + 1_000L, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Teras.LOGGER.error("WingullAPI GET interrupted: " + str);
+            return null;
+        } catch (ExecutionException | TimeoutException e) {
+            Teras.LOGGER.error("WingullAPI GET failed for " + str + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** Non-blocking GET. Result resolves on the shared HTTP executor; never touch MC state from the callback thread. */
+    public static CompletableFuture<String> wingullGETAsync(String str) {
+        return CompletableFuture.supplyAsync(() -> {
+            HttpURLConnection con = null;
             try {
                 String apiUrl = Teras.config.getAPI_URL();
                 if (apiUrl == null) {
                     Teras.LOGGER.error("API URL is null");
-                    throw new NullPointerException("API URL is null");
+                    return null;
                 }
 
                 URL url = new URL(apiUrl + str);
-                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con = (HttpURLConnection) url.openConnection();
                 con.setRequestMethod("GET");
-
-                con.setDoOutput(true);
+                con.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                con.setReadTimeout(READ_TIMEOUT_MS);
                 con.addRequestProperty("User-Agent", "Mozilla/4.0");
                 con.setRequestProperty("Content-Type", "application/json");
 
-                InputStream inputStream = getConnectionStream(url);
-                if (inputStream == null) {
-                    Teras.LOGGER.error("InputStream is null for URL: " + url);
-                    throw new NullPointerException("InputStream is null for URL: " + url);
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    StringBuilder response = new StringBuilder();
+                    while ((line = br.readLine()) != null) {
+                        response.append(line);
+                    }
+                    Teras.LOGGER.info("WingullAPI GET " + str + " -> " + con.getResponseCode());
+                    return response.toString();
                 }
-
-                BufferedReader br = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-                String line;
-                StringBuilder response = new StringBuilder();
-                while ((line = br.readLine()) != null) {
-                    response.append(line);
-                }
-                br.close();
-                Teras.LOGGER.info(response.toString());
-                Teras.LOGGER.info("WingullAPI: " + con.getResponseCode());
-                return response.toString();
-            } catch (ProtocolException e) {
-                throw new RuntimeException(e);
-            } catch (MalformedURLException e) {
-                throw new RuntimeException(e);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                Teras.LOGGER.error("WingullAPI GET error for " + str + ": " + e.getMessage());
+                return null;
+            } finally {
+                if (con != null) con.disconnect();
             }
-        });
-
-        new Thread(futureTask).start();
-
-        try {
-            return futureTask.get();
-        } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException(e);
-        }
+        }, HTTP_EXECUTOR);
     }
 
     public static void wingullPOST( String str, String json) {
@@ -69,60 +88,46 @@ public class SmartRotomAPI {
     }
 
 
-    // SSend post request
+    // Send post request
     public static void post(String str, String json) {
         Teras.LOGGER.info("WingullAPI: " + str + " " + json);
-        new Thread(() -> {
+        HTTP_EXECUTOR.execute(() -> {
+            HttpURLConnection con = null;
             try {
                 URL url = new URL(str);
-                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con = (HttpURLConnection) url.openConnection();
                 con.setRequestMethod("POST");
-
+                con.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                con.setReadTimeout(READ_TIMEOUT_MS);
                 con.setDoOutput(true);
                 con.addRequestProperty("User-Agent", "Mozilla/4.0");
                 con.setRequestProperty("Content-Type", "application/json");
 
-                OutputStream os = con.getOutputStream();
-                os.write(json.getBytes());
-                os.flush();
-                os.close();
-
-                InputStream inputStream = con.getInputStream();
-                BufferedReader br = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-                String line;
-                StringBuilder response = new StringBuilder();
-                while ((line = br.readLine()) != null) {
-                    response.append(line);
+                try (OutputStream os = con.getOutputStream()) {
+                    os.write(json.getBytes(StandardCharsets.UTF_8));
+                    os.flush();
                 }
-                br.close();
+
+                StringBuilder response = new StringBuilder();
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        response.append(line);
+                    }
+                }
                 QueryHelper.handlePOST(response, con);
 
-            } catch (ProtocolException e) {
-                throw new RuntimeException(e);
-            } catch (MalformedURLException e) {
-                throw new RuntimeException(e);
             } catch (IOException e) {
                 Teras.LOGGER.info("WingullAPI: " + e.getMessage());
+            } finally {
+                if (con != null) con.disconnect();
             }
-        }).start();
+        });
     }
 
 
 
-
-
-    private static InputStream getConnectionStream(URL url) {
-        try {
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.addRequestProperty("User-Agent", "Mozilla/4.0");
-
-            return con.getInputStream();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        return null;
-    }
 
 
 }

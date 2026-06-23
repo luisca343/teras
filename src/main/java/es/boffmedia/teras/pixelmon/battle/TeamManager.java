@@ -8,7 +8,7 @@ import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
 import com.pixelmonmod.pixelmon.api.storage.StorageProxy;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.file.FileHelper;
-import es.boffmedia.teras.util.objects._old.pixelmon.frentebatalla.PkmSlot;
+import es.boffmedia.teras.util.objects.legacy.pixelmon.frentebatalla.PkmSlot;
 import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.nbt.CompoundNBT;
@@ -69,7 +69,7 @@ public class TeamManager {
      * Saves a team from specific slots (party or PC) to a file
      * @param uuid Player UUID
      * @param teamName Name of the team file to save
-     * @param slots List of PkmSlot indicating where each Pokémon is located
+     * @param slots List of PkmSlot indicating where each PokÃ©mon is located
      */
     public static void saveTeamFromSlots(UUID uuid, String teamName, List<PkmSlot> slots) {
         Teras.LOGGER.info("Guardando equipo personalizado de " + uuid + " en " + teamName + ".dat con " + slots.size() + " slots");
@@ -104,7 +104,7 @@ public class TeamManager {
                 nbt.put(i+"", pknbt);
                 Teras.LOGGER.info("  - Slot " + i + ": " + pokemon.getSpecies().getName() + " desde caja=" + slot.getCaja() + ", slot=" + slot.getSlot());
             } else {
-                Teras.LOGGER.warn("  - Slot " + i + ": No se encontró Pokémon en caja=" + slot.getCaja() + ", slot=" + slot.getSlot());
+                Teras.LOGGER.warn("  - Slot " + i + ": No se encontrÃ³ PokÃ©mon en caja=" + slot.getCaja() + ", slot=" + slot.getSlot());
             }
         }
 
@@ -147,9 +147,9 @@ public class TeamManager {
     }
 
     /**
-     * Loads Pokémon from slots into party storage, supporting both party and PC sources
+     * Loads PokÃ©mon from slots into party storage, supporting both party and PC sources
      * @param uuid Player UUID
-     * @param slots List of PkmSlot indicating where each Pokémon is located
+     * @param slots List of PkmSlot indicating where each PokÃ©mon is located
      */
     public static void loadFromSlotsWithPC(UUID uuid, List<PkmSlot> slots) {
         PlayerPartyStorage partyStorage = StorageProxy.getParty(uuid);
@@ -234,7 +234,7 @@ public class TeamManager {
         }
 
         if(pokemon == null) {
-            Teras.LOGGER.warn("No se encontró Pokémon en caja=" + sourceBox + ", slot=" + sourceSlot);
+            Teras.LOGGER.warn("No se encontrÃ³ PokÃ©mon en caja=" + sourceBox + ", slot=" + sourceSlot);
             return;
         }
 
@@ -273,7 +273,7 @@ public class TeamManager {
         java.io.File playerFolder = new java.io.File(playerDataPath);
         
         if(!playerFolder.exists() || !playerFolder.isDirectory()) {
-            Teras.LOGGER.info("No se encontró carpeta de datos para el jugador " + uuid);
+            Teras.LOGGER.info("No se encontrÃ³ carpeta de datos para el jugador " + uuid);
             return teams;
         }
         
@@ -306,7 +306,7 @@ public class TeamManager {
                 
                 if(!team.isEmpty()) {
                     teams.put(teamName, team);
-                    Teras.LOGGER.info("  - Equipo '" + teamName + "' cargado con " + team.size() + " Pokémon");
+                    Teras.LOGGER.info("  - Equipo '" + teamName + "' cargado con " + team.size() + " PokÃ©mon");
                 }
             } catch (Exception e) {
                 Teras.LOGGER.warn("Error leyendo equipo " + file.getName() + ": " + e.getMessage());
@@ -317,3 +317,4 @@ public class TeamManager {
         return teams;
     }
 }
+

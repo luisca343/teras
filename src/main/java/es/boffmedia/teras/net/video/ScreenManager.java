@@ -1,7 +1,7 @@
 package es.boffmedia.teras.net.video;
 
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects._old.karts.Punto;
+import es.boffmedia.teras.util.objects.legacy.karts.Punto;
 import es.boffmedia.teras.tileentity.FrameBlockEntity;
 import es.boffmedia.teras.util.file.FileHelper;
 import io.leangen.geantyref.TypeToken;
@@ -30,7 +30,7 @@ public class ScreenManager {
         }
 
         FileHelper.writeFile("teras/pantallas.json", pantallas);
-        Teras.LOGGER.info("Pantalla añadida: " + pos);
+        Teras.LOGGER.info("Pantalla aÃ±adida: " + pos);
     }
 
     public static void loadScreens() {
@@ -93,3 +93,4 @@ public class ScreenManager {
         return false;
     }
 }
+

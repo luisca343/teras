@@ -3,15 +3,18 @@ package es.boffmedia.teras.util.file;
 import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.nbt.CompressedStreamTools;
 import org.apache.commons.lang3.RandomStringUtils;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -37,15 +40,10 @@ public class FileHelper {
 
     public static boolean writeStringFile(File file, String o) {
         try {
-            if(!file.exists()){
-                file.createNewFile();
-            }
-
-            Files.write(file.toPath(), o.getBytes(Charsets.UTF_8));
+            atomicWrite(file, o.getBytes(Charsets.UTF_8));
             return true;
-
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.LOGGER.error("Failed to write file " + file.getPath(), e);
             return false;
         }
     }
@@ -53,19 +51,38 @@ public class FileHelper {
     public static boolean writeFile(File file, Object o) {
         Gson gson = new Gson();
         try {
-            if(!file.exists()){
-                file.createNewFile();
-            }
-            BufferedWriter writer = Files.newBufferedWriter(file.toPath(), Charsets.UTF_8);
-            gson.toJson(o, writer);
-            writer.flush();
-            writer.close();
-
+            atomicWrite(file, gson.toJson(o).getBytes(Charsets.UTF_8));
             return true;
-
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.LOGGER.error("Failed to write file " + file.getPath(), e);
             return false;
+        }
+    }
+
+    /**
+     * Writes {@code data} to {@code target} atomically: serialize to a sibling temp file, then move it into
+     * place. A crash mid-write leaves the original file intact rather than truncated/corrupted.
+     */
+    private static void atomicWrite(File target, byte[] data) throws IOException {
+        File parent = target.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        Path targetPath = target.toPath();
+        Path tempPath = Files.createTempFile(
+                parent != null ? parent.toPath() : targetPath.getParent(),
+                target.getName() + ".", ".tmp");
+        try {
+            Files.write(tempPath, data);
+            try {
+                Files.move(tempPath, targetPath,
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                // Fall back to a non-atomic replace if the filesystem can't do an atomic move.
+                Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tempPath);
         }
     }
 
@@ -114,16 +131,17 @@ public class FileHelper {
         Gson gson = new Gson();
         try {
             if(!file.exists()){
-                file.createNewFile();
-                Object o = token.getClass().newInstance();
-                writeFile(file, o);
-                return (T) o;
+                // Seed an empty JSON object and deserialize it through the token so callers get a
+                // correctly-typed (empty) instance instead of a bogus TypeToken object.
+                atomicWrite(file, "{}".getBytes(Charsets.UTF_8));
+                return gson.fromJson("{}", token);
             } else{
-                BufferedReader reader = Files.newBufferedReader(Paths.get(file.getPath()));
-                return gson.fromJson(reader, token);
+                try (BufferedReader reader = Files.newBufferedReader(Paths.get(file.getPath()))) {
+                    return gson.fromJson(reader, token);
+                }
             }
-        } catch (IOException | IllegalAccessException | InstantiationException e) {
-            e.printStackTrace();
+        } catch (IOException e) {
+            Teras.LOGGER.error("Failed to read file " + file.getPath(), e);
             return null;
         }
     }
@@ -136,16 +154,16 @@ public class FileHelper {
         Gson gson = new Gson();
         try {
             if(!file.exists()){
-                file.createNewFile();
                 Object o = clazz.newInstance();
                 writeFile(file, o);
                 return o;
             } else{
-                BufferedReader reader = Files.newBufferedReader(Paths.get(file.getPath()));
-                return gson.fromJson(reader, clazz);
+                try (BufferedReader reader = Files.newBufferedReader(Paths.get(file.getPath()))) {
+                    return gson.fromJson(reader, clazz);
+                }
             }
         } catch (IOException | IllegalAccessException | InstantiationException e) {
-            e.printStackTrace();
+            Teras.LOGGER.error("Failed to read file " + file.getPath(), e);
             return null;
         }
     }
@@ -186,3 +204,4 @@ public class FileHelper {
     }
 
 }
+

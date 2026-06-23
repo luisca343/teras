@@ -1,7 +1,7 @@
 package es.boffmedia.teras.event;
 
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects._old.misiones.QuestData;
+import es.boffmedia.teras.util.objects.legacy.misiones.QuestData;
 import es.boffmedia.teras.util.file.FileHelper;
 import es.boffmedia.teras.util.objects.quests.NpcCatalog;
 import es.boffmedia.teras.util.objects.quests.NpcData;
@@ -120,3 +120,4 @@ public class CustomNPCsEvents {
         });
     }
 }
+

@@ -14,24 +14,20 @@ import es.boffmedia.teras.integration.Integrations;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.util.PolygonCreator;
 import es.boffmedia.teras.util.objects.karts.RaceManager;
-import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
-import es.boffmedia.teras.util.objects._old.karts.CarreraManagerOld;
+import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects.legacy.karts.CarreraManagerOld;
 import es.boffmedia.teras.pixelmon.attacks.DesenvaineSubito;
 import es.boffmedia.teras.pixelmon.attacks.TestAttack;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.tileentity.PantallaRenderer;
 import es.boffmedia.teras.util.media.TerasSoundEvents;
 import es.boffmedia.teras.client.renders.TVBlockRenderer;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.RenderTypeLookup;
 import net.minecraft.util.text.TextFormatting;
-import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.InterModComms;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.Mod;
@@ -121,7 +117,6 @@ public class Teras
         padResX = padResY * PAD_RATIO;
 
         NpcAPI npcAPI = NpcAPI.Instance();
-        Teras.getLogger().info("TESTES");
         npcAPI.events().register(CustomNPCsEvents.class);
 
         // Register ourselves for server and other game events we are interested in
@@ -147,10 +142,6 @@ public class Teras
         Pixelmon.EVENT_BUS.register(new PixelmonEvents());
         Pixelmon.EVENT_BUS.register(new TerasBattleEvent());
         Pixelmon.EVENT_BUS.register(new TerasBattleLogEvent());
-        // some preinit code
-        //PROXY.es.boffmedia.teras.init();
-        LOGGER.info("HELLO FROM PREINIT");
-        LOGGER.info("DIRT BLOCK >> {}", Blocks.DIRT.getRegistryName());
         Teras.PROXY.crearArchivo("config.json");
 
 
@@ -159,10 +150,8 @@ public class Teras
         api = MCEFApi.getAPI();
 
         if(api == null){
-            Teras.LOGGER.error("API NO FUNKA");
+            Teras.LOGGER.error("MCEF API unavailable; SmartRotom browser features disabled");
             return;
-        }else{
-            Teras.LOGGER.info("API FUNKA");
         }
 
         api.registerScheme("teras", ModScheme.class, true, false, false, true, true, false, false);
@@ -243,8 +232,6 @@ public class Teras
             InterModComms.sendTo("curios", SlotTypeMessage.REGISTER_TYPE,
                     ()->message);
         }*/
-
-        InterModComms.sendTo("examplemod", "helloworld", () -> { LOGGER.info("Hello world from the MDK"); return "Hello world";});
     }
 
     private void processIMC(final InterModProcessEvent event)
@@ -280,17 +267,6 @@ public class Teras
     public void setBackup() {
     }
 
-    // You can use EventBusSubscriber to automatically subscribe events on the contained class (this is subscribing to the MOD
-    // Event bus for receiving Registry Events)
-    @Mod.EventBusSubscriber(bus=Mod.EventBusSubscriber.Bus.MOD)
-    public static class RegistryEvents {
-        @SubscribeEvent
-        public static void onBlocksRegistry(final RegistryEvent.Register<Block> blockRegistryEvent) {
-            // register a new block here
-            LOGGER.info("HELLO from Register Block");
-
-        }
-    }
     /* Pantallas */
 
     public static String applyBlacklist(String url) {
@@ -309,3 +285,4 @@ public class Teras
 
 
 }
+

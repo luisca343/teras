@@ -10,7 +10,6 @@ import es.boffmedia.teras.client.renders.IItemRenderer;
 import es.boffmedia.teras.client.renders.SmartRotomRenderer;
 import es.boffmedia.teras.SharedProxy;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.server.serverOld.SMessagePadCtrl;
 import es.boffmedia.teras.tileentity.PantallaTE;
 import es.boffmedia.teras.util.string.MessageHelper;
 import es.boffmedia.teras.util.data.QueryHelper;
@@ -317,8 +316,8 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
                     if(Teras.isSiteBlacklisted(url))
                         pd.view.loadURL(Teras.config.getHome());
                     else {
-                        pd.lastURLSent = t; //Avoid spamming the server with porn URLs
-                        Messages.INSTANCE.sendToServer(new SMessagePadCtrl(pd.id, url));
+                        pd.lastURLSent = t;
+                        // SMessagePadCtrl removed (was unregistered, never reached server)
                     }
 
                     break;

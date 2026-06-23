@@ -18,6 +18,9 @@ import net.minecraftforge.fml.network.PacketDistributor;
 import net.minecraftforge.fml.server.ServerLifecycleHooks;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Race {
     private RaceTrack track;
@@ -29,6 +32,14 @@ public class Race {
     private long startTime;
     private long endTime;
     private SplineTrackPath trackPath;
+    /** Position map updated by the ranking thread; read-only from the game thread. 1 = first place. */
+    private final ConcurrentHashMap<UUID, Integer> positionMap = new ConcurrentHashMap<>();
+    /** Single daemon thread for position recalculation, scoped to this race instance. */
+    private final ExecutorService rankingExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "Teras-Race-Ranking");
+        t.setDaemon(true);
+        return t;
+    });
 
     public Race(RaceTrack track, int laps){
         this.track = track;
@@ -101,14 +112,13 @@ public class Race {
             i++;
         }
 
-        new Thread(() -> {
+        rankingExecutor.execute(() -> {
             try {
                 status = RaceStatus.STARTING;
                 for (int j = 3; j > 0; j--) {
                     for (RaceParticipant participant : participants) {
                         ServerPlayerEntity player = participant.getPlayer();
                         MessageHelper.enviarTitulo(player, j + "");
-                        // Play high-pitched note sound for countdown
                         player.level.playSound(null, player.getX(), player.getY(), player.getZ(),
                                 SoundEvents.NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0F, 2.0F);
                     }
@@ -118,16 +128,16 @@ public class Race {
                 for (RaceParticipant participant : participants) {
                     ServerPlayerEntity player = participant.getPlayer();
                     MessageHelper.enviarTitulo(player, "GO!");
-                    // Play lower-pitched, louder note for "GO!"
                     player.level.playSound(null, player.getX(), player.getY(), player.getZ(),
                             SoundEvents.NOTE_BLOCK_PLING, SoundCategory.PLAYERS, 1.0F, 0.5F);
                     allowMove(participant.getPlayer().getUUID(), true);
                 }
                 start();
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                Thread.currentThread().interrupt();
+                Teras.LOGGER.warn("Race countdown interrupted");
             }
-        }).start();
+        });
     }
 
     public static void allowMove(UUID uuid, boolean move) {
@@ -149,31 +159,38 @@ public class Race {
     }
 
     public void calculatePositions() {
-        new Thread(() -> {
+        // Run on the shared HTTP executor (daemon threads, bounded pool) rather than a raw new Thread.
+        // Never sort the shared `participants` list in-place from a background thread — that races
+        // with the game thread. Instead compute a sorted snapshot and push the results into positionMap.
+        rankingExecutor.execute(() -> {
             try {
                 while (status == RaceStatus.IN_PROGRESS) {
-                    // Sort participants based on lap and progress along spline
-                    Collections.sort(participants, (p1, p2) -> {
-                        // First compare laps
+                    // Snapshot the list to avoid ConcurrentModificationException while sorting.
+                    List<RaceParticipant> snapshot = new ArrayList<>(participants);
+
+                    snapshot.sort((p1, p2) -> {
                         int lapCompare = Integer.compare(p2.getCurrentLap(), p1.getCurrentLap());
                         if (lapCompare != 0) return lapCompare;
 
-                        // If on same lap, compare progress along spline
                         Vector3d pos1 = getParticipantPosition(p1);
                         Vector3d pos2 = getParticipantPosition(p2);
-
                         double progress1 = trackPath.calculateProgress(pos1);
                         double progress2 = trackPath.calculateProgress(pos2);
-
                         return Double.compare(progress2, progress1);
                     });
 
-                    // Update positions
-                    for (RaceParticipant participant : participants) {
+                    // Write computed positions into the thread-safe map.
+                    for (int i = 0; i < snapshot.size(); i++) {
+                        positionMap.put(snapshot.get(i).getPlayer().getUUID(), i + 1);
+                    }
+
+                    // Send position update to each unfinished participant.
+                    for (RaceParticipant participant : snapshot) {
                         if (participant.getFinishTime() == 0) {
+                            int pos = positionMap.getOrDefault(participant.getPlayer().getUUID(), 0);
                             Messages.INSTANCE.send(
                                     PacketDistributor.PLAYER.with(() -> participant.getPlayer()),
-                                    new CMessageRacePositionChange(participants.indexOf(participant) + 1)
+                                    new CMessageRacePositionChange(pos)
                             );
                         }
                     }
@@ -181,16 +198,15 @@ public class Race {
                     Thread.sleep(1000);
                 }
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                Thread.currentThread().interrupt();
+                Teras.LOGGER.warn("Race position calculator interrupted");
             }
-        }).start();
+        });
     }
 
+    /** Returns this player's current race position (1 = first) from the computed ranking map. */
     public int getParticipantPosition(ServerPlayerEntity player) {
-        return participants.indexOf(participants.stream()
-                .filter(p -> p.getPlayer().getUUID().equals(player.getUUID()))
-                .findFirst()
-                .orElse(null)) + 1;
+        return positionMap.getOrDefault(player.getUUID(), 0);
     }
 
     public Vector3d getParticipantPosition(RaceParticipant participant) {
@@ -312,6 +328,7 @@ public class Race {
     public void end() {
         this.status = RaceStatus.FINISHED;
         this.endTime = System.currentTimeMillis();
+        rankingExecutor.shutdownNow();
         Teras.raceManager.activeRaces.remove(this);
 
 

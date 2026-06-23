@@ -18,8 +18,8 @@ import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.session.SessionManager;
 import com.sk89q.worldedit.world.World;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects._old.karts.Circuito;
-import es.boffmedia.teras.util.objects._old.karts.Punto;
+import es.boffmedia.teras.util.objects.legacy.karts.Circuito;
+import es.boffmedia.teras.util.objects.legacy.karts.Punto;
 import es.boffmedia.teras.util.objects.karts.Checkpoint;
 import es.boffmedia.teras.util.objects.karts.CoordinatePoint;
 import es.boffmedia.teras.util.objects.karts.RaceTrack;
@@ -272,11 +272,11 @@ public class KartsCommand {
                         Checkpoint checkpoint = new Checkpoint(start, end);
                         currentTrack.addCheckpoint(checkpoint);
 
-                        source.sendSuccess(new StringTextComponent("Checkpoint añadido"), false);
+                        source.sendSuccess(new StringTextComponent("Checkpoint aÃ±adido"), false);
                         source.sendSuccess(new StringTextComponent("Checkpoints totales: " + currentTrack.getCheckpoints().size()), false);
 
                     } catch (IncompleteRegionException e) {
-                        source.sendFailure(new StringTextComponent("Selecciona una región primero"));
+                        source.sendFailure(new StringTextComponent("Selecciona una regiÃ³n primero"));
                         e.printStackTrace();
                     }
                     return 1;
@@ -303,12 +303,12 @@ public class KartsCommand {
                         CoordinatePoint startPoint = new CoordinatePoint(v1.getX(), v1.getY(), v1.getZ());
                         currentTrack.addStartingPoint(startPoint);
 
-                        source.sendSuccess(new StringTextComponent("Punto de inicio añadido"), false);
+                        source.sendSuccess(new StringTextComponent("Punto de inicio aÃ±adido"), false);
                         source.sendSuccess(new StringTextComponent("Puntos de inicio totales: " +
                                 currentTrack.getStartingPoints().size()), false);
 
                     } catch (IncompleteRegionException e) {
-                        source.sendFailure(new StringTextComponent("Selecciona una región primero"));
+                        source.sendFailure(new StringTextComponent("Selecciona una regiÃ³n primero"));
                         e.printStackTrace();
                     }
                     return 1;
@@ -382,7 +382,7 @@ public class KartsCommand {
                 .executes((command) -> {
                     CommandSource source = command.getSource();
                     if (currentTrack == null) {
-                        source.sendFailure(new StringTextComponent("No hay circuito en edición"));
+                        source.sendFailure(new StringTextComponent("No hay circuito en ediciÃ³n"));
                         return 0;
                     }
 
@@ -419,7 +419,7 @@ public class KartsCommand {
         RaceTrack track = Teras.raceManager.tracks.get(trackName);
 
         if (track == null) {
-            context.getSource().sendFailure(new StringTextComponent("No se encontró el circuito: " + trackName));
+            context.getSource().sendFailure(new StringTextComponent("No se encontrÃ³ el circuito: " + trackName));
             return 0;
         }
 
@@ -433,11 +433,11 @@ public class KartsCommand {
 
     private int listCheckpoints(CommandContext<CommandSource> context) {
         if (currentTrack == null) {
-            context.getSource().sendFailure(new StringTextComponent("No hay circuito en edición"));
+            context.getSource().sendFailure(new StringTextComponent("No hay circuito en ediciÃ³n"));
             return 0;
         }
 
-        context.getSource().sendSuccess(new StringTextComponent("§6=== Checkpoints del circuito " + currentTrack.getName() + " ==="), false);
+        context.getSource().sendSuccess(new StringTextComponent("Â§6=== Checkpoints del circuito " + currentTrack.getName() + " ==="), false);
 
         ArrayList<Checkpoint> checkpoints = currentTrack.getCheckpoints();
         for (int i = 0; i < checkpoints.size(); i++) {
@@ -445,26 +445,26 @@ public class KartsCommand {
 
             // Create the main text component
             StringTextComponent mainText = new StringTextComponent(String.format(
-                    "§7#%d: §fdesde %s hasta %s ",
+                    "Â§7#%d: Â§fdesde %s hasta %s ",
                     i + 1,
                     formatPoint(cp.getStart()),
                     formatPoint(cp.getEnd())
             ));
 
             // Create action buttons
-            StringTextComponent deleteButton = new StringTextComponent("§c[X] ");
+            StringTextComponent deleteButton = new StringTextComponent("Â§c[X] ");
             deleteButton.setStyle(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/karts circuito remove checkpoint " + (i + 1)))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new StringTextComponent("Eliminar checkpoint")))
             );
 
-            StringTextComponent previewButton = new StringTextComponent("§e[👁] ");
+            StringTextComponent previewButton = new StringTextComponent("Â§e[ðŸ‘] ");
             previewButton.setStyle(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/karts circuito preview checkpoint " + (i + 1)))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new StringTextComponent("Previsualizar checkpoint")))
             );
 
-            StringTextComponent editButton = new StringTextComponent("§a[✎]");
+            StringTextComponent editButton = new StringTextComponent("Â§a[âœŽ]");
             editButton.setStyle(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/karts circuito edit checkpoint " + (i + 1)))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new StringTextComponent("Editar en WorldEdit")))
@@ -479,11 +479,11 @@ public class KartsCommand {
 
     private int listStartPoints(CommandContext<CommandSource> context) {
         if (currentTrack == null) {
-            context.getSource().sendFailure(new StringTextComponent("No hay circuito en edición"));
+            context.getSource().sendFailure(new StringTextComponent("No hay circuito en ediciÃ³n"));
             return 0;
         }
 
-        context.getSource().sendSuccess(new StringTextComponent("§6=== Puntos de inicio del circuito " + currentTrack.getName() + " ==="), false);
+        context.getSource().sendSuccess(new StringTextComponent("Â§6=== Puntos de inicio del circuito " + currentTrack.getName() + " ==="), false);
 
         LinkedList<CoordinatePoint> starts = currentTrack.getStartingPoints();
         for (int i = 0; i < starts.size(); i++) {
@@ -491,25 +491,25 @@ public class KartsCommand {
 
             // Create the main text component
             StringTextComponent mainText = new StringTextComponent(String.format(
-                    "§7#%d: §f%s ",
+                    "Â§7#%d: Â§f%s ",
                     i + 1,
                     formatPoint(point)
             ));
 
             // Create action buttons
-            StringTextComponent deleteButton = new StringTextComponent("§c[X] ");
+            StringTextComponent deleteButton = new StringTextComponent("Â§c[X] ");
             deleteButton.setStyle(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/karts circuito remove start " + (i + 1)))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new StringTextComponent("Eliminar punto de inicio")))
             );
 
-            StringTextComponent previewButton = new StringTextComponent("§e[👁] ");
+            StringTextComponent previewButton = new StringTextComponent("Â§e[ðŸ‘] ");
             previewButton.setStyle(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/karts circuito preview start " + (i + 1)))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new StringTextComponent("Previsualizar punto de inicio")))
             );
 
-            StringTextComponent editButton = new StringTextComponent("§a[✎]");
+            StringTextComponent editButton = new StringTextComponent("Â§a[âœŽ]");
             editButton.setStyle(Style.EMPTY
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/karts circuito edit start " + (i + 1)))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new StringTextComponent("Editar en WorldEdit")))
@@ -524,7 +524,7 @@ public class KartsCommand {
 
     private int removeCheckpoint(CommandContext<CommandSource> context) {
         if (currentTrack == null) {
-            context.getSource().sendFailure(new StringTextComponent("No hay circuito en edición"));
+            context.getSource().sendFailure(new StringTextComponent("No hay circuito en ediciÃ³n"));
             return 0;
         }
 
@@ -532,7 +532,7 @@ public class KartsCommand {
         ArrayList<Checkpoint> checkpoints = currentTrack.getCheckpoints();
 
         if (index < 0 || index >= checkpoints.size()) {
-            context.getSource().sendFailure(new StringTextComponent("Índice de checkpoint inválido"));
+            context.getSource().sendFailure(new StringTextComponent("Ãndice de checkpoint invÃ¡lido"));
             return 0;
         }
 
@@ -543,7 +543,7 @@ public class KartsCommand {
 
     private int removeStartPoint(CommandContext<CommandSource> context) {
         if (currentTrack == null) {
-            context.getSource().sendFailure(new StringTextComponent("No hay circuito en edición"));
+            context.getSource().sendFailure(new StringTextComponent("No hay circuito en ediciÃ³n"));
             return 0;
         }
 
@@ -551,7 +551,7 @@ public class KartsCommand {
         LinkedList<CoordinatePoint> starts = currentTrack.getStartingPoints();
 
         if (index < 0 || index >= starts.size()) {
-            context.getSource().sendFailure(new StringTextComponent("Índice de punto de inicio inválido"));
+            context.getSource().sendFailure(new StringTextComponent("Ãndice de punto de inicio invÃ¡lido"));
             return 0;
         }
 
@@ -562,7 +562,7 @@ public class KartsCommand {
 
     private int setDirection(CommandContext<CommandSource> context) {
         if (currentTrack == null) {
-            context.getSource().sendFailure(new StringTextComponent("No hay circuito en edición"));
+            context.getSource().sendFailure(new StringTextComponent("No hay circuito en ediciÃ³n"));
             return 0;
         }
 
@@ -570,18 +570,18 @@ public class KartsCommand {
         try {
             StartingDirection direction = StartingDirection.valueOf(dirStr.toUpperCase());
             currentTrack.setStartingDirection(direction);
-            context.getSource().sendSuccess(new StringTextComponent("Dirección inicial establecida a: " + direction), false);
+            context.getSource().sendSuccess(new StringTextComponent("DirecciÃ³n inicial establecida a: " + direction), false);
             return 1;
         } catch (IllegalArgumentException e) {
-            context.getSource().sendFailure(new StringTextComponent("Dirección inválida. Usa: NORTH, SOUTH, EAST, o WEST"));
+            context.getSource().sendFailure(new StringTextComponent("DirecciÃ³n invÃ¡lida. Usa: NORTH, SOUTH, EAST, o WEST"));
             return 0;
         }
     }
 
     private void listTrackInfo(CommandContext<CommandSource> context) {
-        context.getSource().sendSuccess(new StringTextComponent("=== Información del Circuito ==="), false);
+        context.getSource().sendSuccess(new StringTextComponent("=== InformaciÃ³n del Circuito ==="), false);
         context.getSource().sendSuccess(new StringTextComponent("Nombre: " + currentTrack.getName()), false);
-        context.getSource().sendSuccess(new StringTextComponent("Dirección: " + currentTrack.getStartingDirection()), false);
+        context.getSource().sendSuccess(new StringTextComponent("DirecciÃ³n: " + currentTrack.getStartingDirection()), false);
         context.getSource().sendSuccess(new StringTextComponent("Checkpoints: " + currentTrack.getCheckpoints().size()), false);
         context.getSource().sendSuccess(new StringTextComponent("Puntos de inicio: " + currentTrack.getStartingPoints().size()), false);
     }
@@ -599,7 +599,7 @@ public class KartsCommand {
         ArrayList<Checkpoint> checkpoints = currentTrack.getCheckpoints();
 
         if (index < 0 || index >= checkpoints.size()) {
-            context.getSource().sendFailure(new StringTextComponent("Índice de checkpoint inválido"));
+            context.getSource().sendFailure(new StringTextComponent("Ãndice de checkpoint invÃ¡lido"));
             return 0;
         }
 
@@ -619,7 +619,7 @@ public class KartsCommand {
         LinkedList<CoordinatePoint> starts = currentTrack.getStartingPoints();
 
         if (index < 0 || index >= starts.size()) {
-            context.getSource().sendFailure(new StringTextComponent("Índice de punto de inicio inválido"));
+            context.getSource().sendFailure(new StringTextComponent("Ãndice de punto de inicio invÃ¡lido"));
             return 0;
         }
 
@@ -639,7 +639,7 @@ public class KartsCommand {
         ArrayList<Checkpoint> checkpoints = currentTrack.getCheckpoints();
 
         if (index < 0 || index >= checkpoints.size()) {
-            context.getSource().sendFailure(new StringTextComponent("Índice de checkpoint inválido"));
+            context.getSource().sendFailure(new StringTextComponent("Ãndice de checkpoint invÃ¡lido"));
             return 0;
         }
 
@@ -662,10 +662,10 @@ public class KartsCommand {
                     null
             );
 
-            context.getSource().sendSuccess(new StringTextComponent("Selección de WorldEdit actualizada al checkpoint " + (index + 1)), false);
+            context.getSource().sendSuccess(new StringTextComponent("SelecciÃ³n de WorldEdit actualizada al checkpoint " + (index + 1)), false);
             return 1;
         } catch (Exception e) {
-            context.getSource().sendFailure(new StringTextComponent("Error al establecer la selección de WorldEdit"));
+            context.getSource().sendFailure(new StringTextComponent("Error al establecer la selecciÃ³n de WorldEdit"));
             e.printStackTrace();
             return 0;
         }
@@ -681,7 +681,7 @@ public class KartsCommand {
         LinkedList<CoordinatePoint> starts = currentTrack.getStartingPoints();
 
         if (index < 0 || index >= starts.size()) {
-            context.getSource().sendFailure(new StringTextComponent("Índice de punto de inicio inválido"));
+            context.getSource().sendFailure(new StringTextComponent("Ãndice de punto de inicio invÃ¡lido"));
             return 0;
         }
 
@@ -699,14 +699,15 @@ public class KartsCommand {
             session.getRegionSelector(ForgeAdapter.adapt(player.level)).selectPrimary(pos, null);
             session.getRegionSelector(ForgeAdapter.adapt(player.level)).selectSecondary(pos, null);
 
-            context.getSource().sendSuccess(new StringTextComponent("Selección de WorldEdit actualizada al punto de inicio " + (index + 1)), false);
+            context.getSource().sendSuccess(new StringTextComponent("SelecciÃ³n de WorldEdit actualizada al punto de inicio " + (index + 1)), false);
             return 1;
         } catch (Exception e) {
-            context.getSource().sendFailure(new StringTextComponent("Error al establecer la selección de WorldEdit"));
+            context.getSource().sendFailure(new StringTextComponent("Error al establecer la selecciÃ³n de WorldEdit"));
             e.printStackTrace();
             return 0;
         }
     }
 
 }
+
 

@@ -10,10 +10,9 @@ import es.boffmedia.teras.net.server.*;
 import es.boffmedia.teras.net.server.SMessageEncenderPC;
 import es.boffmedia.teras.net.server.serverOld.SMessageFinalizarLlamada;
 import es.boffmedia.teras.net.server.serverOld.SMessageIniciarLlamada;
-import es.boffmedia.teras.net.server.serverOld.SMessageVerMisiones;
 import es.boffmedia.teras.util.objects.post.PokedexEventResponse;
 import es.boffmedia.teras.util.ScreenshotHandler;
-import es.boffmedia.teras.util.objects._old.serverdata.UserData;
+import es.boffmedia.teras.util.objects.legacy.serverdata.UserData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.ClientPlayerEntity;
 import net.minecraft.client.network.play.NetworkPlayerInfo;
@@ -170,7 +169,7 @@ public class QueryHelper {
     private static void handleGetMisiones(String query, IJSQueryCallback callback) {
         Teras.LOGGER.info("Handling getMisiones query");
         ClientProxy.callbackMisiones = callback;
-        Messages.INSTANCE.sendToServer(new SMessageVerMisiones(query));
+        // SMessageVerMisiones removed (was unregistered, never reached server)
     }
 
     private static void handleDarCaja(String query, IJSQueryCallback callback) {
@@ -417,3 +416,4 @@ public class QueryHelper {
         }
     }
 }
+

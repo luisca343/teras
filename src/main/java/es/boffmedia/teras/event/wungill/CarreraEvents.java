@@ -5,7 +5,6 @@ import com.mrcrayfish.vehicle.entity.vehicle.GoKartEntity;
 import com.mrcrayfish.vehicle.init.ModEntities;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.client.clientOld.CMessageCambioPosicion;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.util.math.MathHelper;
@@ -48,7 +47,7 @@ public class CarreraEvents {
     public static void setPosicion(UUID uuid, int posicion){
         ServerPlayerEntity player = ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayer(uuid);
         if(player == null) return;
-        Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageCambioPosicion(posicion+""));
+        // Position sync via CMessageCambioPosicion removed (packet was unregistered)
     }
 
     public static void golpearCoche(UUID uuid){

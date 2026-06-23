@@ -5,7 +5,7 @@ import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.util.PolygonCreator;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
 import journeymap.client.waypoint.WaypointGroup;
 import journeymap.client.waypoint.WaypointGroupStore;
 import net.minecraft.entity.player.ServerPlayerEntity;
@@ -54,3 +54,4 @@ public class CMessageConfigServer implements Runnable{
         contextSupplier.get().setPacketHandled(true);
     }
 }
+

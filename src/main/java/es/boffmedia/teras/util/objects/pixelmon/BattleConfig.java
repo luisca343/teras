@@ -7,7 +7,7 @@ import com.pixelmonmod.pixelmon.api.pokemon.boss.BossTiers;
 import com.pixelmonmod.pixelmon.battles.api.rules.clauses.BattleClause;
 import com.pixelmonmod.pixelmon.battles.api.rules.clauses.BattleClauseRegistry;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects._old.pixelmon.Recompensa;
+import es.boffmedia.teras.util.objects.legacy.pixelmon.Recompensa;
 import noppes.npcs.api.entity.ICustomNpc;
 
 import java.util.ArrayList;
@@ -17,24 +17,24 @@ import java.util.UUID;
 
 public class BattleConfig {
     private String nombre; // Nombre del entrenador / evento
-    private String nivel; // Nivel de los Pokémon del entrenador
+    private String nivel; // Nivel de los PokÃ©mon del entrenador
     private int dinero; // Dinero que se obtiene al vencer al entrenador
     private String modalidad; // Modalidad de combate (1vs1, 2vs2, 3vs3, etc)
-    private String tamanoEquipos; // Cantidad de Pokémon de cada equipo (3vs3, 4vs4, 3vs6, etc)
+    private String tamanoEquipos; // Cantidad de PokÃ©mon de cada equipo (3vs3, 4vs4, 3vs6, etc)
     private String frecuencia; // Frecuencia de combate (DIA, DIA_MC, SEMANA, MES)
     private ArrayList<Recompensa> recompensas; // Recompensas que se obtienen al vencer al entrenador
     private ArrayList<String> normas; // Normas de combate (No usar objetos, sleep clause, etc)
     private ArrayList<String> gimmick; // Gimmick generacional permitida (Mega, Z, etc)
     private String IA; // Modo de la IA (AGGRESSIVE, ADVANCED, TACTICAL)
-    private boolean curar; // Curar a los Pokémon antes de la batalla
+    private boolean curar; // Curar a los PokÃ©mon antes de la batalla
     private boolean preview; // Mostrar el equipo del entrenador antes de la batalla
     private String logro; // Logro que se obtiene al vencer al entrenador
     private boolean exp; // Exp que se obtiene al vencer al entrenador
     private int[] equipos; // Equipos disponibles para el entrenador / evento
 
     // Atributos no serializables
-    private transient String nombreArchivo; // Nombre del archivo de configuración (no hay que escribirlo)
-    private transient String carpeta; // Carpeta donde se encuentra el archivo de configuración (no hay que escribirlo)
+    private transient String nombreArchivo; // Nombre del archivo de configuraciÃ³n (no hay que escribirlo)
+    private transient String carpeta; // Carpeta donde se encuentra el archivo de configuraciÃ³n (no hay que escribirlo)
     private transient ICustomNpc npc; // NPC asociado al entrenador / evento
     private transient List<Pokemon> equipo; // Equipo del entrenador / evento
 
@@ -42,7 +42,7 @@ public class BattleConfig {
         this.dinero = 0;
         this.nivel = "0";
         this.modalidad = "doble";
-        this.IA = "TÁCTICA";
+        this.IA = "TÃCTICA";
         this.exp = false;
         this.curar = false;
         this.preview = false;
@@ -339,3 +339,4 @@ public class BattleConfig {
         return tamanoEquipos;
     }
 }
+

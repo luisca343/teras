@@ -13,7 +13,7 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageMCEFResponse;
 import es.boffmedia.teras.util.objects.post.PokedexSpawnChance;
-import es.boffmedia.teras.util.objects._old.serverdata.TerasConfig;
+import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
 import es.boffmedia.teras.util.file.FileHelper;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
@@ -170,3 +170,4 @@ public class SMessageCheckSpawns implements Runnable{
         contextSupplier.get().setPacketHandled(true);
     }
 }
+

@@ -56,36 +56,5 @@ public class Messages {
 
         INSTANCE.registerMessage(index++, CMessageRunJS.class, CMessageRunJS::encode, CMessageRunJS::decode, CMessageRunJS::handle);
 
-        //INSTANCE.registerMessage(index++, MessageCarTest.class, MessageCarTest::encode, MessageCarTest::decode, MessageCarTest::handle);
-
-        /// OOLD
-        /*
-        INSTANCE.registerMessage(index++, SMessageSetPC.class, SMessageSetPC::encode, SMessageSetPC::decode, SMessageSetPC::handle);
-
-        INSTANCE.registerMessage(index++, SMessagePadCtrl.class, SMessagePadCtrl::encode, SMessagePadCtrl::decode, SMessagePadCtrl::handle);
-        INSTANCE.registerMessage(index++, SMessageDarObjetos.class, SMessageDarObjetos::encode, SMessageDarObjetos::decode, SMessageDarObjetos::handle);
-        INSTANCE.registerMessage(index++, SMessageVerMisiones.class, SMessageVerMisiones::encode, SMessageVerMisiones::decode, SMessageVerMisiones::handle);
-
-        INSTANCE.registerMessage(index++, SMessageGetPC.class, SMessageGetPC::encode, SMessageGetPC::decode, SMessageGetPC::handle);
-        INSTANCE.registerMessage(index++, CMessageGetPC.class, CMessageGetPC::encode, CMessageGetPC::decode, CMessageGetPC::handle);
-        INSTANCE.registerMessage(index++, SMessageGetEquipo.class, SMessageGetEquipo::encode, SMessageGetEquipo::decode, SMessageGetEquipo::handle);
-        INSTANCE.registerMessage(index++, SMessageCargarEquipo.class, SMessageCargarEquipo::encode, SMessageCargarEquipo::decode, SMessageCargarEquipo::handle);
-        INSTANCE.registerMessage(index++, CMessageReturn.class, CMessageReturn::encode, CMessageReturn::decode, CMessageReturn::handle);
-        INSTANCE.registerMessage(index++, CMessageCambioPosicion.class, CMessageCambioPosicion::encode, CMessageCambioPosicion::decode, CMessageCambioPosicion::handle);
-        INSTANCE.registerMessage(index++, CMessageVerVideo.class, CMessageVerVideo::encode, CMessageVerVideo::decode, CMessageVerVideo::handle);
-        INSTANCE.registerMessage(index++, CMessagePrepararNavegador.class, CMessagePrepararNavegador::encode, CMessagePrepararNavegador::decode, CMessagePrepararNavegador::handle);
-        INSTANCE.registerMessage(index++, SMessageTaxi.class, SMessageTaxi::encode, SMessageTaxi::decode, SMessageTaxi::handle);
-
-
-
-        INSTANCE.registerMessage(index++, CMessageWaypoints.class, CMessageWaypoints::encode, CMessageWaypoints::decode, CMessageWaypoints::handle);
-*/
-
-        /*
-        INSTANCE.registerMessage(index++, FrameVideoMessage.class, FrameVideoMessage::encode, FrameVideoMessage::decode, FrameVideoMessage::handle);
-        INSTANCE.registerMessage(index++, OpenVideoManagerScreen.class, OpenVideoManagerScreen::encode, OpenVideoManagerScreen::decode, OpenVideoManagerScreen::handle);
-        INSTANCE.registerMessage(index++, UploadVideoUpdateMessage.class, UploadVideoUpdateMessage::encode, UploadVideoUpdateMessage::decode, UploadVideoUpdateMessage::handle);
-
-*/
     }
 }

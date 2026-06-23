@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import es.boffmedia.teras.util.objects.ShopTransaction;
 import es.boffmedia.teras.util.objects.TrainerDefeatMoney;
 import es.boffmedia.teras.util.objects.dex.ActualizarDex;
-import es.boffmedia.teras.util.objects._old.karts.ResultadoCarrera;
+import es.boffmedia.teras.util.objects.legacy.karts.ResultadoCarrera;
 import es.boffmedia.teras.util.objects.logros.LogroCombate;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
 
@@ -45,3 +45,4 @@ public class SmartRotomService {
         SmartRotomAPI.wingullPOST("/smartrotom/starbank/trainerdefeat", gson.toJson(defeatMoney));
     }
 }
+

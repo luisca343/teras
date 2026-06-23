@@ -26,15 +26,13 @@ import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.World;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.client.clientOld.CMessageVerVideo;
-import es.boffmedia.teras.net.client.clientOld.CMessageWaypoints;
 import es.boffmedia.teras.net.video.ScreenManager;
 import es.boffmedia.teras.util.PokedexHelper;
 import es.boffmedia.teras.util.data.PixelmonStorageHelper;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
-import es.boffmedia.teras.util.objects._old.WayPoint;
-import es.boffmedia.teras.util.objects._old.karts.Circuito;
+import es.boffmedia.teras.util.objects.legacy.WayPoint;
+import es.boffmedia.teras.util.objects.legacy.karts.Circuito;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.pixelmon.battle.TeamManager;
 import es.boffmedia.teras.pixelmon.frentebatalla.TorreBatallaController;
@@ -352,7 +350,7 @@ public class TestCommand {
                                 .executes((command) -> {
                                             ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
                                             String url = StringArgumentType.getString(command, "url");
-                                            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageVerVideo(url));
+                                            // CMessageVerVideo removed (packet was unregistered)
 
 
                                             return 1;
@@ -399,7 +397,7 @@ public class TestCommand {
 
                                                             WayPoint waypoint = new WayPoint( x, y, z, "world",color, nombre);
                                                             Gson gson = new Gson();
-                                                            Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageWaypoints(gson.toJson(waypoint)));
+                                                            // CMessageWaypoints removed (packet was unregistered)
 
                                                             return 1;
                                                         }))))));
@@ -416,9 +414,9 @@ public class TestCommand {
 
                                     boolean success = PixelmonStorageHelper.movePcToParty(player.getUUID(), box, slotInBox);
                                     if (success) {
-                                        command.getSource().sendSuccess(new StringTextComponent("Moved Pokémon from PC to Party successfully."), true);
+                                        command.getSource().sendSuccess(new StringTextComponent("Moved PokÃ©mon from PC to Party successfully."), true);
                                     } else {
-                                        command.getSource().sendFailure(new StringTextComponent("Failed to move Pokémon from PC to Party."));
+                                        command.getSource().sendFailure(new StringTextComponent("Failed to move PokÃ©mon from PC to Party."));
                                     }
                                     return success ? 1 : 0;
                                 })));
@@ -433,9 +431,9 @@ public class TestCommand {
 
                             boolean success = PixelmonStorageHelper.movePartyToPc(player.getUUID(), partySlot);
                             if (success) {
-                                command.getSource().sendSuccess(new StringTextComponent("Moved Pokémon from Party to PC successfully."), true);
+                                command.getSource().sendSuccess(new StringTextComponent("Moved PokÃ©mon from Party to PC successfully."), true);
                             } else {
-                                command.getSource().sendFailure(new StringTextComponent("Failed to move Pokémon from Party to PC."));
+                                command.getSource().sendFailure(new StringTextComponent("Failed to move PokÃ©mon from Party to PC."));
                             }
                             return success ? 1 : 0;
                         }));
@@ -454,9 +452,9 @@ public class TestCommand {
 
                                             boolean success = PixelmonStorageHelper.swapPcWithParty(player.getUUID(), box, slotInBox, partySlot);
                                             if (success) {
-                                                command.getSource().sendSuccess(new StringTextComponent("Swapped Pokémon between PC and Party successfully."), true);
+                                                command.getSource().sendSuccess(new StringTextComponent("Swapped PokÃ©mon between PC and Party successfully."), true);
                                             } else {
-                                                command.getSource().sendFailure(new StringTextComponent("Failed to swap Pokémon between PC and Party."));
+                                                command.getSource().sendFailure(new StringTextComponent("Failed to swap PokÃ©mon between PC and Party."));
                                             }
                                             return success ? 1 : 0;
                                         }))));

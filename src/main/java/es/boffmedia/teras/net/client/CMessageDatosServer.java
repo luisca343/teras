@@ -5,7 +5,7 @@ import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
-import es.boffmedia.teras.util.objects._old.serverdata.GetUserData;
+import es.boffmedia.teras.util.objects.legacy.serverdata.GetUserData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
@@ -45,7 +45,7 @@ public class CMessageDatosServer implements Runnable{
 
 
         // Hacer el sistema de necesitar medallas para hacer misiones
-        // Y el sistema de misiones que se activen en días concretos
+        // Y el sistema de misiones que se activen en dÃ­as concretos
     }
 
     public static CMessageDatosServer decode(PacketBuffer buf) {
@@ -63,3 +63,4 @@ public class CMessageDatosServer implements Runnable{
         contextSupplier.get().setPacketHandled(true);
     }
 }
+

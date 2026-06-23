@@ -21,34 +21,46 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 public class SMessageChatMessage implements Runnable{
+    /** Hard cap on the inbound payload to avoid memory-amplification DoS. */
+    private static final int MAX_LEN = 4096;
+    /** Permission level required to broadcast a server-wide system message (2 = OP/gamemaster). */
+    private static final int REQUIRED_PERMISSION_LEVEL = 2;
+
     private String str;
     private ServerPlayerEntity player;
 
     public SMessageChatMessage(String str){
         this.str = str;
     }
-    
+
     @Override
     public void run() {
-        if (player != null) {
-            try {
-                JsonObject jsonObject = new Gson().fromJson(str, JsonObject.class);
-                String message = jsonObject.get("message").getAsString();
-                player.getServer().getPlayerList().broadcastMessage(new StringTextComponent(message), ChatType.SYSTEM, Util.NIL_UUID);
-            } catch (Exception e) {
-                player.sendMessage(new StringTextComponent("Error parsing message"), Util.NIL_UUID);
-                Teras.getLogger().error("Error parsing message: " + e.getMessage());
-            }
+        if (player == null) {
+            return;
+        }
+        // AUTHORITY CHECK: only privileged players may broadcast a server-wide system message.
+        // Without this, any modded client could spoof server announcements / spam every player.
+        if (!player.hasPermissions(REQUIRED_PERMISSION_LEVEL)) {
+            Teras.getLogger().warn("Player " + player.getGameProfile().getName()
+                    + " attempted to broadcast a chat message without permission");
+            return;
+        }
+        try {
+            JsonObject jsonObject = new Gson().fromJson(str, JsonObject.class);
+            String message = jsonObject.get("message").getAsString();
+            player.getServer().getPlayerList().broadcastMessage(new StringTextComponent(message), ChatType.SYSTEM, Util.NIL_UUID);
+        } catch (Exception e) {
+            player.sendMessage(new StringTextComponent("Error parsing message"), Util.NIL_UUID);
+            Teras.getLogger().error("Error parsing message: " + e.getMessage());
         }
     }
 
     public static SMessageChatMessage decode(PacketBuffer buf) {
-        SMessageChatMessage message = new SMessageChatMessage(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageChatMessage(buf.readUtf(MAX_LEN));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, MAX_LEN);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

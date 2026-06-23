@@ -144,9 +144,6 @@ public class RaceManager {
 
 
     public void voteStart(ServerPlayerEntity jugador) {
-        System.out.println("Votando inicio");
-        System.out.println(jugador.getUUID());
-        System.out.println(participants);
         if (!participants.containsKey(jugador.getUUID())) {
             MessageHelper.enviarMensaje(jugador, "No estás en ninguna carrera");
             return;
@@ -204,9 +201,7 @@ public class RaceManager {
         }
         RaceParticipant participant = participants.get(player.getUUID());
         participant.tick();
-
-        // Add vehicle tick
-        tickVehicles();
+        // Vehicle handlers are ticked once per server tick in CarreraEvent.onServerTick, not per player.
     }
 
     public void handleDriftInput(ServerPlayerEntity player, boolean startDrift, boolean driftRight, float vehicleYaw) {
@@ -302,7 +297,7 @@ public class RaceManager {
                 race.laps,
                 participant.getCurrentCheckpointIndex() + 1,
                 race.getCheckpoints().size(),
-                race.getParticipants().indexOf(participant) + 1,
+                race.getParticipantPosition(player),
                 race.getParticipants().size(),
                 MessageHelper.formatearTiempo(race.getRemainingTime()));
 

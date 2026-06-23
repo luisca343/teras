@@ -4,10 +4,10 @@ package es.boffmedia.teras.net.client;
 import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.client.ClientProxy;
-import es.boffmedia.teras.util.objects._old.misiones.QuestData;
-import es.boffmedia.teras.util.objects._old.misiones.DatosNPC;
-import es.boffmedia.teras.util.objects._old.misiones.Mision;
-import es.boffmedia.teras.util.objects._old.misiones.MisionesJugador;
+import es.boffmedia.teras.util.objects.legacy.misiones.QuestData;
+import es.boffmedia.teras.util.objects.legacy.misiones.DatosNPC;
+import es.boffmedia.teras.util.objects.legacy.misiones.Mision;
+import es.boffmedia.teras.util.objects.legacy.misiones.MisionesJugador;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
 import net.minecraftforge.fml.network.NetworkEvent;
@@ -67,3 +67,4 @@ public class CMessageVerMisiones implements Runnable{
         contextSupplier.get().setPacketHandled(true);
     }
 }
+

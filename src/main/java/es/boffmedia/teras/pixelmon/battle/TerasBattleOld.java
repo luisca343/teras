@@ -20,7 +20,7 @@ import com.pixelmonmod.pixelmon.entities.npcs.NPCTrainer;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
-import es.boffmedia.teras.util.objects._old.pixelmon.PosicionEquipo;
+import es.boffmedia.teras.util.objects.legacy.pixelmon.PosicionEquipo;
 import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.entity.MobEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
@@ -283,7 +283,7 @@ public class TerasBattleOld {
 
     public boolean swapv2(int team, int position, PixelmonWrapper newPokemon) {
         if(activePkm.containsValue(newPokemon)){
-            Teras.LOGGER.info("El pokemon ya esta en el equipo, no se puede añadir.");
+            Teras.LOGGER.info("El pokemon ya esta en el equipo, no se puede aÃ±adir.");
             return false;
         }
 
@@ -311,7 +311,7 @@ public class TerasBattleOld {
 
         /*
         if(activePokemon.get(team).containsValue(newPokemon)){
-            Teras.LOGGER.error("El pokemon ya esta en el equipo, no se puede añadir.");
+            Teras.LOGGER.error("El pokemon ya esta en el equipo, no se puede aÃ±adir.");
             return false;
         }
 
@@ -479,5 +479,6 @@ public class TerasBattleOld {
         this.playerTeam = playerTeam;
     }
 }
+
 
 
