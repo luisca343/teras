@@ -26,12 +26,10 @@ import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.World;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.net.Messages;
-import es.boffmedia.teras.net.client.CMessageFindPath;
 import es.boffmedia.teras.net.client.clientOld.CMessageVerVideo;
 import es.boffmedia.teras.net.client.clientOld.CMessageWaypoints;
 import es.boffmedia.teras.net.video.ScreenManager;
 import es.boffmedia.teras.util.PokedexHelper;
-import es.boffmedia.teras.util.RouteCreator;
 import es.boffmedia.teras.util.data.PixelmonStorageHelper;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
@@ -83,7 +81,6 @@ public class TestCommand {
                 .then(crearWaypoint())
                 .then(reproducirSonido())
                 .then(testset())
-                .then(findPath())
                 .then(getPokedex())
                 .then(movePcToParty())
                 .then(movePartyToPc())
@@ -101,24 +98,6 @@ public class TestCommand {
                     PokedexHelper.printPokedexStatusGroupedByStatus(player.getStringUUID());
                     return 1;
                 });
-    }
-
-    private ArgumentBuilder<CommandSource, ?> findPath() {
-        return Commands.literal("findPath")
-                .then(Commands.argument("x", IntegerArgumentType.integer())
-                        .then(Commands.argument("z", IntegerArgumentType.integer())
-                                .executes((command) -> {
-                                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-
-                                    RouteCreator.Point startPoint = new RouteCreator.Point(
-                                            player.blockPosition().getX(), player.blockPosition().getZ());
-                                    RouteCreator.Point endPoint = new RouteCreator.Point(
-                                            IntegerArgumentType.getInteger(command, "x"),
-                                            IntegerArgumentType.getInteger(command, "z"));
-
-                                    Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageFindPath(startPoint, endPoint));
-                                    return 1;
-                                })));
     }
 
     private ArgumentBuilder<CommandSource,?> hitCar() {

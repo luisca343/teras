@@ -150,6 +150,7 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
         mcef = Teras.getInstance().getAPI();
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.register(new VehicleDriftClient());
+        MinecraftForge.EVENT_BUS.register(es.boffmedia.teras.client.gps.GpsClient.INSTANCE);
 
 
         iniciarPadMap();

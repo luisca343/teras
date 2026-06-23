@@ -45,6 +45,7 @@ public class Messages {
         INSTANCE.registerMessage(index++, CMessageCambioRegion.class, CMessageCambioRegion::encode, CMessageCambioRegion::decode, CMessageCambioRegion::handle);
 
         INSTANCE.registerMessage(index++, CMessageFindPath.class, CMessageFindPath::encode, CMessageFindPath::decode, CMessageFindPath::handle);
+        INSTANCE.registerMessage(index++, CMessageGps.class, CMessageGps::encode, CMessageGps::decode, CMessageGps::handle);
         INSTANCE.registerMessage(index++, SMessageChatMessage.class, SMessageChatMessage::encode, SMessageChatMessage::decode, SMessageChatMessage::handle);
 
         INSTANCE.registerMessage(index++, SMessageIniciarLlamada.class, SMessageIniciarLlamada::encode, SMessageIniciarLlamada::decode, SMessageIniciarLlamada::handle);

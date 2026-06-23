@@ -34,6 +34,8 @@ public class RouteCreator {
     private static final int DRAW_Y = 64;
     /** Half-width, in blocks, of the drawn route band. */
     private static final double ROUTE_HALF_WIDTH = 4.0;
+    /** Long segments are split into points at most this many blocks apart. */
+    private static final double ROUTE_POINT_SPACING = 16.0;
     private static final int ROUTE_COLOR = 0x00B0FF;
     private static final String MOD_ID = "journeymap";
     private static final String ROUTE_DISPLAY_ID = "teras_route";
@@ -41,8 +43,20 @@ public class RouteCreator {
     /** The last route we drew, kept so we can clear it before drawing a new one. */
     private static PolygonOverlay currentRoute;
 
+    /** Removes the currently drawn route overlay, if any. */
+    public static void clearRoute() {
+        IClientAPI jmAPI = ClientAPI.INSTANCE;
+        if (jmAPI != null && currentRoute != null) {
+            try {
+                jmAPI.remove(currentRoute);
+            } catch (Exception ignored) {
+            }
+        }
+        currentRoute = null;
+    }
+
     public static void createRoute(Point start, Point end) {
-        Teras.getLogger().info("Creating route from " + start + " to " + end);
+        Teras.getLogger().debug("Creating route from " + start + " to " + end);
 
         IClientAPI jmAPI = ClientAPI.INSTANCE;
         if (jmAPI == null) {
@@ -135,7 +149,7 @@ public class RouteCreator {
             roads.add(new Road(minX, minZ, maxX, maxZ));
         }
 
-        Teras.getLogger().info("Built road network with " + roads.size() + " road(s)"
+        Teras.getLogger().debug("Built road network with " + roads.size() + " road(s)"
                 + (skipped > 0 ? " (" + skipped + " road region(s) skipped for missing geometry)" : ""));
         return roads;
     }
@@ -184,15 +198,22 @@ public class RouteCreator {
             }
         }
 
-        // Snap start/end to the road that contains them, else the nearest road, and
-        // connect them to that road's junctions.
+        // Snap start/end to the road that contains them, else the nearest road.
         int startRoad = snapToRoad(roads, start.getX(), start.getZ());
         int endRoad = snapToRoad(roads, end.getX(), end.getZ());
         if (startRoad < 0 || endRoad < 0) return Collections.emptyList();
-        for (int turn : roadJunctions.get(startRoad)) link(nodePos, adj, startNode, turn);
-        for (int turn : roadJunctions.get(endRoad)) link(nodePos, adj, endNode, turn);
-        // Same road: a direct hop, no junction needed.
-        if (startRoad == endRoad) link(nodePos, adj, startNode, endNode);
+
+        // Enter/leave each road at its nearest point (a short perpendicular hop), then
+        // travel along the road to its junctions. This keeps off-road approaches natural
+        // instead of shooting a long diagonal straight at a distant junction.
+        int startEntry = addEntryNode(nodePos, adj, roads.get(startRoad), start.getX(), start.getZ());
+        int endEntry = addEntryNode(nodePos, adj, roads.get(endRoad), end.getX(), end.getZ());
+        link(nodePos, adj, startNode, startEntry);
+        link(nodePos, adj, endNode, endEntry);
+        for (int turn : roadJunctions.get(startRoad)) link(nodePos, adj, startEntry, turn);
+        for (int turn : roadJunctions.get(endRoad)) link(nodePos, adj, endEntry, turn);
+        // Same road: a direct hop along it, no junction needed.
+        if (startRoad == endRoad) link(nodePos, adj, startEntry, endEntry);
 
         return dijkstra(nodePos, adj, startNode, endNode);
     }
@@ -201,6 +222,13 @@ public class RouteCreator {
         pos.add(new double[]{x, z});
         adj.add(new ArrayList<>());
         return pos.size() - 1;
+    }
+
+    /** Adds a node at the point on {@code road} nearest to (x, z) — the road entry point. */
+    private static int addEntryNode(List<double[]> pos, List<List<double[]>> adj, Road road, double x, double z) {
+        double ex = Math.max(road.minX, Math.min(x, road.maxX));
+        double ez = Math.max(road.minZ, Math.min(z, road.maxZ));
+        return addNode(pos, adj, ex, ez);
     }
 
     private static void link(List<double[]> pos, List<List<double[]>> adj, int a, int b) {
@@ -282,11 +310,15 @@ public class RouteCreator {
             currentRoute = null;
         }
 
+        // Split long straight segments into intermediate points so the route has dense
+        // vertices along its length (smoother corners, better minimap coverage).
+        List<double[]> dense = subdivide(path, ROUTE_POINT_SPACING);
+
         // JourneyMap 1.16.5 has no polyline overlay, only closed polygons that it
         // triangulates to fill. A zero-area "line" triangulates to nothing and never
         // renders, so we expand the path into a real-area ribbon (a band of constant
         // width following the path) and draw that as a filled, stroked polygon.
-        List<BlockPos> outline = buildRibbon(path, ROUTE_HALF_WIDTH);
+        List<BlockPos> outline = buildRibbon(dense, ROUTE_HALF_WIDTH);
 
         ShapeProperties props = new ShapeProperties()
                 .setStrokeColor(ROUTE_COLOR)
@@ -304,11 +336,39 @@ public class RouteCreator {
         try {
             jmAPI.show(overlay);
             currentRoute = overlay;
-            Teras.getLogger().info("Route drawn with " + path.size() + " waypoint(s)");
+            Teras.getLogger().debug("Route drawn with " + path.size() + " waypoint(s)");
         } catch (Exception e) {
             Teras.getLogger().error("Error drawing route on map: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Inserts intermediate points so no two consecutive points are more than
+     * {@code maxSpacing} blocks apart. Straight segments stay straight; they just gain
+     * vertices along the way.
+     */
+    private static List<double[]> subdivide(List<double[]> path, double maxSpacing) {
+        if (path.size() < 2) return path;
+
+        List<double[]> out = new ArrayList<>();
+        for (int i = 0; i < path.size() - 1; i++) {
+            double[] a = path.get(i);
+            double[] b = path.get(i + 1);
+            out.add(a);
+
+            double dx = b[0] - a[0];
+            double dz = b[1] - a[1];
+            double len = Math.sqrt(dx * dx + dz * dz);
+            int steps = (int) (len / maxSpacing);
+            for (int s = 1; s <= steps; s++) {
+                double t = (s * maxSpacing) / len;
+                if (t >= 1.0) break;
+                out.add(new double[]{a[0] + dx * t, a[1] + dz * t});
+            }
+        }
+        out.add(path.get(path.size() - 1));
+        return out;
     }
 
     /**

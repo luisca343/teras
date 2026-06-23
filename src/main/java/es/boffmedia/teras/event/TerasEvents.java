@@ -160,6 +160,7 @@ public class TerasEvents {
     @SubscribeEvent
     public static void onCommandsRegister(RegisterCommandsEvent event) {
         new TestCommand(event.getDispatcher());
+        new GpsCommand(event.getDispatcher());
         new DiscosCommand(event.getDispatcher());
         new CombateCommand(event.getDispatcher());
         new WECommand(event.getDispatcher());
