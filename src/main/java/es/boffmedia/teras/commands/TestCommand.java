@@ -105,14 +105,20 @@ public class TestCommand {
 
     private ArgumentBuilder<CommandSource, ?> findPath() {
         return Commands.literal("findPath")
-                .executes((command) -> {
-                    RouteCreator.Point startPoint = new RouteCreator.Point(46, 14);
-                    RouteCreator.Point endPoint = new RouteCreator.Point(130, -9);
-                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
-                    System.out.println("Enviando mensaje de findPath");
-                    Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageFindPath(startPoint, endPoint));
-                    return 1;
-                });
+                .then(Commands.argument("x", IntegerArgumentType.integer())
+                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                                .executes((command) -> {
+                                    ServerPlayerEntity player = (ServerPlayerEntity) command.getSource().getEntity();
+
+                                    RouteCreator.Point startPoint = new RouteCreator.Point(
+                                            player.blockPosition().getX(), player.blockPosition().getZ());
+                                    RouteCreator.Point endPoint = new RouteCreator.Point(
+                                            IntegerArgumentType.getInteger(command, "x"),
+                                            IntegerArgumentType.getInteger(command, "z"));
+
+                                    Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageFindPath(startPoint, endPoint));
+                                    return 1;
+                                })));
     }
 
     private ArgumentBuilder<CommandSource,?> hitCar() {

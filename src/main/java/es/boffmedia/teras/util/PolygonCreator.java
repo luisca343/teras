@@ -1,6 +1,11 @@
 package es.boffmedia.teras.util;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import journeymap.client.api.IClientAPI;
 import journeymap.client.api.display.Context;
 import journeymap.client.api.display.PolygonOverlay;
@@ -12,10 +17,57 @@ import net.minecraft.util.RegistryKey;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
+import java.lang.reflect.Type;
 import java.util.*;
 
 public class PolygonCreator {
     private static final Map<String, PolygonOverlay> polygonMap = new HashMap<>();
+
+    /**
+     * Fetches the region list from SmartRotom and stores it in {@link Teras#regions}.
+     *
+     * <p>Tolerant of both response shapes seen across the API migration: a bare JSON
+     * array, or an {@code ApiResponse} envelope ({@code {status,message,error,data}})
+     * whose {@code data} holds the array (possibly as a nested JSON-encoded string).
+     *
+     * @return the loaded regions, or {@code null} if the request/parse failed.
+     */
+    public static List<Region> loadRegions() {
+        try {
+            String raw = SmartRotomService.getRegions();
+            if (raw == null || raw.trim().isEmpty()) {
+                Teras.getLogger().error("getRegions() returned an empty response");
+                return null;
+            }
+
+            JsonParser parser = new JsonParser();
+            JsonElement root = parser.parse(raw);
+
+            // Unwrap the ApiResponse envelope if present.
+            if (root.isJsonObject() && root.getAsJsonObject().has("data")) {
+                root = root.getAsJsonObject().get("data");
+                // data may itself be a JSON-encoded string rather than a nested array.
+                if (root.isJsonPrimitive() && root.getAsJsonPrimitive().isString()) {
+                    root = parser.parse(root.getAsString());
+                }
+            }
+
+            if (!root.isJsonArray()) {
+                Teras.getLogger().error("Region response was not a JSON array: " + raw);
+                return null;
+            }
+
+            Type listType = new TypeToken<List<Region>>() {}.getType();
+            List<Region> regions = new Gson().fromJson(root, listType);
+            Teras.regions = regions;
+            Teras.getLogger().info("Loaded " + (regions == null ? 0 : regions.size()) + " region(s)");
+            return regions;
+        } catch (Exception e) {
+            Teras.getLogger().error("Failed to load regions: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
 
     public static void createPolygon() {
         IClientAPI jmAPI = ClientAPI.INSTANCE;

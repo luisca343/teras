@@ -22,7 +22,7 @@ public class SmartRotomService {
 
     // TODO: ADAPT TO NEW ENDPOINT
     public static String getRegions() {
-        return SmartRotomAPI.wingullGET("/smartrotom/regions");
+        return SmartRotomAPI.wingullGET("/wingull/regions");
     }
 
     // TODO: ADAPT TO NEW ENDPOINT
