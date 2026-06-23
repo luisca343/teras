@@ -1,10 +1,8 @@
 package es.boffmedia.teras;
 
-import es.boffmedia.teras.net.PacketHandler;
-
 
 public class CommonHandler {
     public static void setup() {
-        PacketHandler.init();
+        // Network packets are registered via Messages.registryNetworkPackets() on the mod event bus.
     }
 }

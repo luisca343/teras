@@ -16,7 +16,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.util.text.TranslationTextComponent;
-import es.boffmedia.teras.net.PacketHandler;
+import es.boffmedia.teras.net.Messages;
 
 public class TVVideoScreen extends Screen {
 
@@ -116,13 +116,13 @@ public class TVVideoScreen extends Screen {
                 BUTTONS,
                 256,
                 256, button -> {
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, true, true, getValueX() ,getValueY(), posX, posY, getCanal()));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, true, true, getValueX() ,getValueY(), posX, posY, getCanal()));
         }));
 
         /*
         // Play button
         addButton(new Button(leftPos + 10, topPos + 80, imageWidth - 24, 20, new TranslationTextComponent("gui.frame.play"), button -> {
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, true, true, getValueX() ,getValueY(), posX, posY));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, true, true, getValueX() ,getValueY(), posX, posY));
         }));*/
 
         // new pause
@@ -137,7 +137,7 @@ public class TVVideoScreen extends Screen {
                 BUTTONS,
                 256,
                 256, button -> {
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, false, getValueX() ,getValueY(), posX, posY, getCanal()));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, false, getValueX() ,getValueY(), posX, posY, getCanal()));
         }));
 
         // new stop
@@ -153,20 +153,20 @@ public class TVVideoScreen extends Screen {
                 BUTTONS,
                 256,
                 256, button -> {
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, true, getValueX() ,getValueY(), posX, posY, getCanal()));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, true, getValueX() ,getValueY(), posX, posY, getCanal()));
         }));
 
 
         // Pause button
         /*
         addButton(new Button(leftPos + 10, topPos + 105, imageWidth - 24, 20, new TranslationTextComponent("gui.frame.pause"), button -> {
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, false, getValueX() ,getValueY(), posX, posY));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, false, getValueX() ,getValueY(), posX, posY));
         }));*/
 
         // Stop button
         /*
         addButton(new Button(leftPos + 10, topPos + 130, imageWidth - 24, 20, new TranslationTextComponent("gui.frame.stop"), button -> {
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, true, getValueX() ,getValueY(), posX, posY));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, volume, true, false, true, getValueX() ,getValueY(), posX, posY));
         }));*/
 
 
@@ -199,7 +199,7 @@ public class TVVideoScreen extends Screen {
             // Cast the block entity to the correct type and set the volume
 
             changed = true;
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), tempUrl, volume, true, true, false, getValueX() ,getValueY(), posX, posY, getCanal()));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), tempUrl, volume, true, true, false, getValueX() ,getValueY(), posX, posY, getCanal()));
         }));
 
 
@@ -240,7 +240,7 @@ public class TVVideoScreen extends Screen {
 
             changed = true;
             Teras.LOGGER.info("ENVIANDO DATOS: " + tempUrl + " " + tempVolume + " " + getValueX() + " " + getValueY());
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), tempUrl, tempVolume, true, true, false, getValueX() ,getValueY(), posX, posY));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), tempUrl, tempVolume, true, true, false, getValueX() ,getValueY(), posX, posY));
         }));*/
 
         // Cast the block entity to the correct type and set the volume
@@ -337,7 +337,7 @@ public class TVVideoScreen extends Screen {
     @Override
     public void removed() {
         if (!changed)
-            PacketHandler.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, -1, true, true, false, getValueX() ,getValueY(), posX, posY, getCanal()));
+            Messages.sendToServer(new UploadVideoUpdateMessage(be.getBlockPos(), url, -1, true, true, false, getValueX() ,getValueY(), posX, posY, getCanal()));
         Minecraft.getInstance().keyboardHandler.setSendRepeatsToGui(false);
     }
 

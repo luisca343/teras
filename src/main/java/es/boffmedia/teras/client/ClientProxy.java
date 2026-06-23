@@ -5,7 +5,7 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.BloquePantalla;
 import es.boffmedia.teras.client.gui.PantallaCine;
 import es.boffmedia.teras.client.gui.PantallaSmartRotom;
-import es.boffmedia.teras.client.gui.VideoScreen2;
+import es.boffmedia.teras.client.gui.VideoScreen;
 import es.boffmedia.teras.client.renders.IItemRenderer;
 import es.boffmedia.teras.client.renders.SmartRotomRenderer;
 import es.boffmedia.teras.SharedProxy;
@@ -201,7 +201,7 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
     @Override
     public void verVideo(String url) {
         MessageHelper.enviarMensaje(Minecraft.getInstance().player, "Abriendo video " + url);
-        mc.setScreen(new VideoScreen2(url, 100));
+        mc.setScreen(new VideoScreen(url, 100, true));
 
     }
 

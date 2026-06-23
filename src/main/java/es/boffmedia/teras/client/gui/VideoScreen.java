@@ -35,18 +35,24 @@ public class VideoScreen extends Screen {
 
     // TOOLS
     private final SyncVideoPlayer player;
+    private final boolean instantClose;
 
     // VIDEO INFO
     int videoTexture = -1;
 
 
     public VideoScreen(String url, int volume) {
+        this(url, volume, false);
+    }
+
+    public VideoScreen(String url, int volume, boolean instantClose) {
         super(new StringTextComponent(""));
 
         Minecraft minecraft = Minecraft.getInstance();
         Minecraft.getInstance().getSoundManager().pause();
 
         this.player = new SyncVideoPlayer(null, minecraft, MemoryTracker::create);
+        this.instantClose = instantClose;
         player.setVolume(volume);
         player.start(url);
         started = true;
@@ -66,6 +72,10 @@ public class VideoScreen extends Screen {
 
         if (player.isEnded() || player.isStopped() || player.getRawPlayerState().equals(State.ERROR)) {
             if (fadeLevel == 1 || closing) {
+                if (instantClose) {
+                    onClose();
+                    return;
+                }
                 closing = true;
                 if (closingOnTick == -1) closingOnTick = tick + 20;
                 if (tick >= closingOnTick) fadeLevel = Math.max(fadeLevel - (pPartialTicks / 8), 0.0f);

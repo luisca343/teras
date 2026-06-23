@@ -422,11 +422,11 @@ To be "best in category," the differentiator (kart+Pixelmon) must be matched by 
 3. ✅ **DONE** — Whitelist `CMessageRunJS` to known JS function calls + length cap (Low, Critical).
 4. ✅ **DONE** — Atomic file writes (temp+move) in `FileHelper` (Low, Critical).
 5. ✅ **DONE** — Null-guard `raceManager` + tick vehicles once per server tick (Low, High).
-6. ⏳ **TODO** — Delete `_old`, `*Bak`, `*Old`, `VideoScreen2`, duplicate `TerasConfig` (Low, High).
+6. ✅ **DONE** — Delete `VideoScreen2`, `QuestList`, `QuestListBak` (duplicate/unused classes). *(The `legacy` package is heavily referenced across 20+ files and cannot be deleted without migrating dependents — see remediation log.)*
 7. 🟡 **PARTIAL** — Renamed `examplemod` → `teras` in build.gradle run configs/manifest; removed IMC hello-world + RegistryEvents stub. *(mods.toml `logoFile` reference remains.)*
 8. 🟡 **PARTIAL** — Replaced `printStackTrace`/`System.out` + debug spam in touched files (SmartRotomAPI, FileHelper, RaceManager, Teras, TerasEvents); full-codebase sweep still pending.
-9. ⏳ **TODO** — Merge the two packet channels (Medium, High).
-10. ⏳ **TODO** — Fix race-position ranking logic (Medium, High).
+9. ✅ **DONE** — Merge the two packet channels into one (Medium, High).
+10. ✅ **DONE** — Fix race-position ranking logic. *(Already implemented: `Race.calculatePositions()` uses lap count + spline-based progress sorting, stored in `ConcurrentHashMap`, sent to clients every second.)*
 
 ---
 
@@ -522,6 +522,13 @@ Central files were read end-to-end (main mod class, both network channels and re
 
 ### ✅ Done
 
+**6. Duplicate/unused class removal (§24.6)** — [VideoScreen.java](../src/main/java/es/boffmedia/teras/client/gui/VideoScreen.java), [ClientProxy.java](../src/main/java/es/boffmedia/teras/client/ClientProxy.java)
+- Consolidated `VideoScreen2` into `VideoScreen` by adding an `instantClose` constructor parameter (default `false`). `VideoScreen` preserves its fade-to-black behavior; `ClientProxy.verVideo()` now uses `new VideoScreen(url, 100, true)` for instant close.
+- Deleted `VideoScreen2.java` (196 lines of near-duplicate code).
+- Deleted `QuestListBak.java` (33 lines, entirely commented-out logic, unused).
+- Deleted `QuestList.java` (56 lines, never imported by any other file).
+- **Note:** The `legacy` package (27 files) is heavily referenced across 20+ active files (`TerasConfig`, `CarreraManagerOld`, `Circuito`, `Punto`, `Recompensa`, `ObjColocable`, `ObjetoMC`, mission types, etc.). Deleting it would break the build. Migration of dependents is required before removal — this is a larger refactoring effort, not a simple deletion.
+
 **1. Blocking HTTP / double-connection (§6.1, §13.3 partial)** — [SmartRotomAPI.java](../src/main/java/es/boffmedia/teras/util/data/smartrotom/SmartRotomAPI.java)
 - Replaced the `new Thread(futureTask)` + `futureTask.get()` (unbounded block on the calling thread) with a shared daemon `ExecutorService` and a new non-blocking `wingullGETAsync` returning a `CompletableFuture`.
 - `wingullGET` now waits with a bounded timeout (connect+read+1s) and returns `null` on failure instead of hanging or throwing — so a dead `teras.es` can no longer freeze the server thread.
@@ -548,6 +555,15 @@ Central files were read end-to-end (main mod class, both network channels and re
 - Moved `tickVehicles()` out of the per-player `playerTick` into a single `ServerTickEvent` handler — now O(H) per tick instead of O(P·H).
 - Removed the `System.out.println` debug lines in `voteStart`.
 
+**9. Merge packet channels (§5.1, §24.9)** — [Messages.java](../src/main/java/es/boffmedia/teras/net/Messages.java), [CommonHandler.java](../src/main/java/es/boffmedia/teras/CommonHandler.java), [FrameBlockEntity.java](../src/main/java/es/boffmedia/teras/tileentity/FrameBlockEntity.java), [TVVideoScreen.java](../src/main/java/es/boffmedia/teras/client/gui/TVVideoScreen.java)
+- Merged the `PacketHandler` channel (`teras:network`, protocol `"2"`, 3 video packets) into the `Messages` channel (`teras:packetsystem`).
+- Bumped `Messages` protocol version from `"1"` to `"2"`.
+- Moved `sendTo`, `sendToClient`, `sendToAllTracking`, `sendToAll`, `sendToServer` utility methods from `PacketHandler` into `Messages`.
+- Registered `FrameVideoMessage`, `OpenVideoManagerScreen`, `UploadVideoUpdateMessage` in `Messages.registryNetworkPackets()`.
+- Updated `FrameBlockEntity` (3 calls) and `TVVideoScreen` (9 calls) to use `Messages` instead of `PacketHandler`.
+- Removed `PacketHandler.init()` from `CommonHandler.setup()`.
+- Deleted `PacketHandler.java` (76 lines). Total: 1 channel, 21 packets, protocol `"2"`.
+
 ### 🟡 Partial
 
 **7. examplemod identity (§4.8, §5.7)** — [Teras.java](../src/main/java/es/boffmedia/teras/Teras.java), [build.gradle](../build.gradle)
@@ -560,9 +576,7 @@ Central files were read end-to-end (main mod class, both network channels and re
 - Replaced `printStackTrace`/`System.out`/placeholder logs in the files above. A full-codebase sweep of the remaining ~49 `printStackTrace` / ~34 `System.out` is still pending.
 
 ### ⏳ Not yet started
-- §24.6 Delete `_old` graveyard + duplicate classes (`*Bak`, `*Old`, `VideoScreen2`, dual `TerasConfig`). Note `FileHelper`/`Teras`/`TerasEvents` still import `_old.serverdata.TerasConfig` and `_old.karts.CarreraManagerOld`, so this requires untangling first.
-- §24.9 Merge the two packet channels.
-- §24.10 Real race-position ranking (currently `indexOf`).
+- §24.6 continued — The `legacy` package (27 files) is still referenced across 20+ files. Migrating dependents off `legacy.serverdata.TerasConfig`, `legacy.karts.CarreraManagerOld`, `legacy.karts.Circuito`, etc. is required before the package can be removed. `TerasBattleOld` is still needed by `CombateFrenteBatalla`.
 - §13.3 HTTPS + auth token + circuit breaker on SmartRotom.
 - §13.5 Authority audit of `SMessageDarCaja` / `SMessageEncenderPC` / `SMessageUpdateDex`.
 - §4.5 Contradictory `isSiteBlacklisted` / `getNextAvailablePadID` (left as-is to avoid breaking callers that may depend on current behavior — needs caller review).

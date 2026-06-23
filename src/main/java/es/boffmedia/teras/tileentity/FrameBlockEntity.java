@@ -3,7 +3,7 @@ package es.boffmedia.teras.tileentity;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.TVBlock;
 import es.boffmedia.teras.init.TileEntityInit;
-import es.boffmedia.teras.net.PacketHandler;
+import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.video.FrameVideoMessage;
 import es.boffmedia.teras.net.video.OpenVideoManagerScreen;
 import es.boffmedia.teras.util.math.CreateFrameBox;
@@ -206,7 +206,7 @@ public class FrameBlockEntity extends TileEntity implements ITickableTileEntity 
         Teras.LOGGER.info("Comprobando permisos de " + player.getUUID());
         boolean permisos = PermissionAPI.hasPermission(player, "teras.frames.video");
         Teras.LOGGER.info("Permisos de " + player.getUUID() + ": " + permisos);
-        PacketHandler.sendTo(new OpenVideoManagerScreen(blockPos, url, tick, (int) (volume * 100), loop, sizeX, sizeY, posX, posY, canal, permisos), player);
+        Messages.sendTo(new OpenVideoManagerScreen(blockPos, url, tick, (int) (volume * 100), loop, sizeX, sizeY, posX, posY, canal, permisos), player);
     }
 
     public void setBeingUsed(UUID player) {
@@ -294,7 +294,7 @@ public class FrameBlockEntity extends TileEntity implements ITickableTileEntity 
     }
 
     public void notifyPlayer() {
-        PacketHandler.sendToClient(new FrameVideoMessage(worldPosition, playing, tick, sizeX, sizeY, posX, posY, canal, url), level, worldPosition);
+        Messages.sendToClient(new FrameVideoMessage(worldPosition, playing, tick, sizeX, sizeY, posX, posY, canal, url), level, worldPosition);
     }
 
     public int getSizeX() {
@@ -410,7 +410,7 @@ public class FrameBlockEntity extends TileEntity implements ITickableTileEntity 
         this.url = url;
         this.tick = 0;
         this.playing = true;
-        PacketHandler.sendToClient(new FrameVideoMessage(worldPosition, true, tick, sizeX, sizeY, posX, posY, canal, url), level, worldPosition);
+        Messages.sendToClient(new FrameVideoMessage(worldPosition, true, tick, sizeX, sizeY, posX, posY, canal, url), level, worldPosition);
     }
 
     public int getCanal() {
