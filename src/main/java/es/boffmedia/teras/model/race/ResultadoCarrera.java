@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.karts;
+package es.boffmedia.teras.model.race;
 
 import java.util.ArrayList;
 

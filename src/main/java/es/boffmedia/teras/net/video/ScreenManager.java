@@ -1,7 +1,7 @@
 package es.boffmedia.teras.net.video;
 
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects.legacy.karts.Punto;
+import es.boffmedia.teras.model.geometry.Punto;
 import es.boffmedia.teras.tileentity.FrameBlockEntity;
 import es.boffmedia.teras.util.file.FileHelper;
 import io.leangen.geantyref.TypeToken;

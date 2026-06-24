@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.karts;
+package es.boffmedia.teras.model.geometry;
 
 public class Punto {
     private double x, y, z;

@@ -422,7 +422,7 @@ To be "best in category," the differentiator (kart+Pixelmon) must be matched by 
 3. ✅ **DONE** — Whitelist `CMessageRunJS` to known JS function calls + length cap (Low, Critical).
 4. ✅ **DONE** — Atomic file writes (temp+move) in `FileHelper` (Low, Critical).
 5. ✅ **DONE** — Null-guard `raceManager` + tick vehicles once per server tick (Low, High).
-6. ✅ **DONE** — Delete `VideoScreen2`, `QuestList`, `QuestListBak` (duplicate/unused classes). *(The `legacy` package is heavily referenced across 20+ files and cannot be deleted without migrating dependents — see remediation log.)*
+6. ✅ **DONE** — Delete `VideoScreen2`, `QuestList`, `QuestListBak` (duplicate/unused classes). *(The `legacy` package has now been fully retired — dead old-race engine deleted, live model classes migrated to `model.*` — see remediation log.)*
 7. 🟡 **PARTIAL** — Renamed `examplemod` → `teras` in build.gradle run configs/manifest; removed IMC hello-world + RegistryEvents stub. *(mods.toml `logoFile` reference remains.)*
 8. ✅ **DONE** — Replaced every live `printStackTrace`/`System.out` across the codebase with the logger; debug spam removed. Only commented-out occurrences remain.
 9. ✅ **DONE** — Merge the two packet channels into one (Medium, High).
@@ -591,6 +591,12 @@ Central files were read end-to-end (main mod class, both network channels and re
 - The only remaining occurrences are inside `/* ... */` comment blocks (AudioManager `playMp3`, JourneyMapEventListener test buttons, CMessageDatosServer) — dead/commented, left for a separate dead-code pass.
 - No code comments reference the audit document.
 
+**6 (continued). Legacy package migration (§24.6, §18 dead-code, §3 package structure)** — codebase-wide
+- **Phase 0 — reachability verification:** confirmed the old race engine is unreachable from live gameplay. `Teras.carreraManager` was instantiated in `TerasEvents` but only ever read from *within* the old race classes themselves (self-referential); every live `/karts` path uses the new `RaceManager`/`RaceTrack`/`CoordinatePoint`. The `private Circuito circuito;` fields in `FrenteBatallaCommand`/`ObjectiveCommand`/`TestCommand` were declared but never used, and `KartsCommand`'s `Circuito`/`Punto` imports were stale.
+- **Phase 4a — deleted dead old-race engine (8 classes):** `CarreraManagerOld`, `Carrera`, `Coche`, `Participante`, `EstadoCarrera`, `Checkpoint` (legacy), `Circuito`. Removed the `Teras.carreraManager` field + its `TerasEvents` init, the three dead `circuito` command fields, and `KartsCommand`'s stale imports.
+- **Phases 1–4b — relocated all live model/DTO classes off the misnamed `legacy` package** (pure package moves; GSON serializes by field name, so existing JSON stays compatible): `chatapp.CallData`→`model.comms`; `ObjColocable`/`ObjetoMC`/`WayPoint`/`mina.DarCaja`→`model.world`; `pixelmon.{Recompensa,PosicionEquipo,PokemonData}`+`frentebatalla.PkmSlot`→`model.battle`; `misiones.*`→`model.quests`; `serverdata.{TerasConfig,UserData,GetUserData}`→`model.config`; `karts.Punto`→`model.geometry`; `karts.{ResultadoCarrera,ParticipanteCarrera}`→`model.race`.
+- The `es.boffmedia.teras.util.objects.legacy` package no longer exists. `compileJava` passes. *(Note: the relocated `model.config.TerasConfig` is the GSON data model; the root `es.boffmedia.teras.TerasConfig` Forge SPEC config is a distinct class and was untouched.)*
+
 ### ⏳ Not yet started
-- §24.6 continued — The `legacy` package (27 files) is still referenced across 20+ files. Migrating dependents off `legacy.serverdata.TerasConfig`, `legacy.karts.CarreraManagerOld`, `legacy.karts.Circuito`, etc. is required before the package can be removed. `TerasBattleOld` is still needed by `CombateFrenteBatalla`.
 - §4.5 Contradictory `isSiteBlacklisted` / `getNextAvailablePadID` (left as-is to avoid breaking callers that may depend on current behavior — needs caller review).
+- `TerasBattleOld` is still needed by `CombateFrenteBatalla` — a separate consolidation (§4.6) from the now-completed `legacy` migration.
