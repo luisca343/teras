@@ -18,8 +18,6 @@ import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.session.SessionManager;
 import com.sk89q.worldedit.world.World;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects.legacy.karts.Circuito;
-import es.boffmedia.teras.util.objects.legacy.karts.Punto;
 import es.boffmedia.teras.util.objects.karts.Checkpoint;
 import es.boffmedia.teras.util.objects.karts.CoordinatePoint;
 import es.boffmedia.teras.util.objects.karts.RaceTrack;

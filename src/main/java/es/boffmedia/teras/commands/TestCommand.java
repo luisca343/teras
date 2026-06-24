@@ -32,7 +32,6 @@ import es.boffmedia.teras.util.data.PixelmonStorageHelper;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
 import es.boffmedia.teras.util.objects.legacy.WayPoint;
-import es.boffmedia.teras.util.objects.legacy.karts.Circuito;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.pixelmon.battle.TeamManager;
 import es.boffmedia.teras.pixelmon.frentebatalla.TorreBatallaController;
@@ -58,7 +57,6 @@ import java.io.*;
 import java.util.*;
 
 public class TestCommand {
-    private Circuito circuito;
 
     public TestCommand(CommandDispatcher<CommandSource> dispatcher) {
         LiteralArgumentBuilder<CommandSource> literalBuilder = Commands.literal("test")

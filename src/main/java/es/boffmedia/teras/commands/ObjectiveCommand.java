@@ -6,7 +6,6 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import es.boffmedia.teras.util.objects.legacy.karts.Circuito;
 import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.command.CommandSource;
 import net.minecraft.command.Commands;
@@ -18,7 +17,6 @@ import net.minecraft.util.text.StringTextComponent;
 import java.util.UUID;
 
 public class ObjectiveCommand {
-    private Circuito circuito;
 
     public ObjectiveCommand(CommandDispatcher<CommandSource> dispatcher){
         LiteralArgumentBuilder<CommandSource> literalBuilder = Commands.literal("objetivo")
