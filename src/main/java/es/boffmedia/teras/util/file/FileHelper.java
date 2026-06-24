@@ -182,6 +182,8 @@ public class FileHelper {
             config.setId(RandomStringUtils.random(8, true, true));
             config.setHome("http://localhost:8080");
             config.setAPI_URL("http://localhost:3000");
+            config.setApiToken("");        // set a bearer token here to authenticate SmartRotom requests
+            config.setRequireHttps(false); // set true once API_URL is HTTPS to fail-closed on plaintext
 
             Teras.config = config;
             writeFile(file, config);

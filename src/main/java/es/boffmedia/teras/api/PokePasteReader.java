@@ -46,7 +46,7 @@ public class PokePasteReader {
         try {
             this.reader.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Error closing PokePaste reader", e);
         }
     }
 
@@ -54,7 +54,7 @@ public class PokePasteReader {
         try {
             return reader.readLine();
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Error reading line from PokePaste", e);
         }
 
         return null;
@@ -65,7 +65,7 @@ public class PokePasteReader {
         try {
             url = new URL("http://api.boffmedia.es/smartrotom/combates/"+paste+".txt");
         } catch (MalformedURLException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Malformed PokePaste URL for paste " + paste, e);
         }
 
         if(url == null) {
@@ -106,7 +106,7 @@ public class PokePasteReader {
         try {
             return new URL(paste);
         } catch (MalformedURLException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Malformed PokePaste URL: " + paste, e);
         }
 
         return null;
@@ -119,7 +119,7 @@ public class PokePasteReader {
 
             return con.getInputStream();
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Error opening PokePaste connection stream", e);
         }
 
         return null;
@@ -143,7 +143,7 @@ public class PokePasteReader {
         try {
             return new FileInputStream(file);
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("PokePaste file not found: " + file.getPath(), e);
         }
 
         return null;

@@ -1,5 +1,7 @@
 package es.boffmedia.teras.util.math.vector;
 
+import es.boffmedia.teras.Teras;
+
 public class Matrix3 {
 
     public double m00;
@@ -1824,7 +1826,7 @@ public class Matrix3 {
     static void print_mat(double[] mat) {
         int i;
         for (i = 0; i < 3; i++) {
-            System.out.println(mat[i * 3 + 0] + " " + mat[i * 3 + 1] + " " + mat[i * 3 + 2] + "\n");
+            Teras.getLogger().info(mat[i * 3 + 0] + " " + mat[i * 3 + 1] + " " + mat[i * 3 + 2] + "\n");
         }
 
     }

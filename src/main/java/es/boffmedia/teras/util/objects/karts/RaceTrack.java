@@ -1,5 +1,7 @@
 package es.boffmedia.teras.util.objects.karts;
 
+import es.boffmedia.teras.Teras;
+
 import java.util.ArrayList;
 import java.util.LinkedList;
 
@@ -67,14 +69,14 @@ public class RaceTrack {
     public void printCheckpoints() {
         int i = 0;
         for (Checkpoint checkpoint : checkpoints) {
-            System.out.println("#"+ ++i + " " + checkpoint.toString());
+            Teras.getLogger().info("#"+ ++i + " " + checkpoint.toString());
         }
     }
 
     public void printStartingPoints() {
         int i = 0;
         for (CoordinatePoint startingPoint : startingPoints) {
-            System.out.println("#"+ ++i + " " + startingPoint.toString());
+            Teras.getLogger().info("#"+ ++i + " " + startingPoint.toString());
         }
     }
 

@@ -2,6 +2,7 @@ package es.boffmedia.teras.util.file;
 
 import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.api.PokePasteReader;
 import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
 
@@ -24,7 +25,7 @@ public class Reader {
 
             return con.getInputStream();
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Error opening connection stream", e);
         }
 
         return null;
@@ -44,7 +45,7 @@ public class Reader {
         try {
             url = new URL("http://api.boffmedia.es/smartrotom/combates/"+ tipo +"/"+npc+"/config.json");
         } catch (MalformedURLException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Malformed combat config URL for npc " + npc, e);
         }
         InputStream inputStream = getConnectionStream(url);
 

@@ -1,7 +1,6 @@
 package es.boffmedia.teras.net.server;
 
-import com.google.common.base.Charsets;
-import com.google.gson.Gson;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.ChestCreationHelper;
 import es.boffmedia.teras.util.objects.legacy.mina.DarCaja;
 import es.boffmedia.teras.util.objects.legacy.ObjetoMC;
@@ -13,30 +12,45 @@ import java.util.*;
 import java.util.function.Supplier;
 
 public class SMessageDarCaja implements Runnable {
+    /** Hard cap on the inbound payload to avoid memory-amplification DoS. */
+    private static final int MAX_LEN = 32768;
+
     private String str;
     private ServerPlayerEntity player;
 
     public SMessageDarCaja(String str) {
         this.str = str;
     }
-    
+
     @Override
     public void run() {
-        Gson gson = new Gson();
-        DarCaja darObjetos = gson.fromJson(str, DarCaja.class);
-        ArrayList<ObjetoMC> objetos = darObjetos.getObjetos();
-        
-        // Use the helper class to create and give chests to the player
-        ChestCreationHelper.createAndGiveChests(player, objetos);
+        if (player == null) {
+            return;
+        }
+        try {
+            DarCaja darObjetos = Teras.GSON.fromJson(str, DarCaja.class);
+            if (darObjetos == null) {
+                return;
+            }
+            ArrayList<ObjetoMC> objetos = darObjetos.getObjetos();
+            if (objetos == null || objetos.isEmpty()) {
+                return;
+            }
+            Teras.getLogger().info("[audit] SMessageDarCaja: granting {} item(s) to {}",
+                    objetos.size(), player.getGameProfile().getName());
+            ChestCreationHelper.createAndGiveChests(player, objetos);
+        } catch (Exception e) {
+            Teras.getLogger().error("Error handling SMessageDarCaja from "
+                    + player.getGameProfile().getName() + ": " + e.getMessage());
+        }
     }
 
     public static SMessageDarCaja decode(PacketBuffer buf) {
-        SMessageDarCaja message = new SMessageDarCaja(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageDarCaja(buf.readUtf(MAX_LEN));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str == null ? "" : str, MAX_LEN);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

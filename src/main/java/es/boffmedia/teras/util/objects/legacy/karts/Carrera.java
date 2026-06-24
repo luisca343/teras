@@ -139,7 +139,8 @@ public class Carrera {
                 }
                 iniciar();
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                Teras.getLogger().error("Race thread interrupted", e);
+                Thread.currentThread().interrupt();
             }
         }).start();
 
@@ -215,7 +216,8 @@ public class Carrera {
                     Thread.sleep(1000);
                 }
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                Teras.getLogger().error("Race thread interrupted", e);
+                Thread.currentThread().interrupt();
             }
         }).start();
     }

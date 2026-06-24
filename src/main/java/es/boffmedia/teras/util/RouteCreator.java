@@ -338,8 +338,7 @@ public class RouteCreator {
             currentRoute = overlay;
             Teras.getLogger().debug("Route drawn with " + path.size() + " waypoint(s)");
         } catch (Exception e) {
-            Teras.getLogger().error("Error drawing route on map: " + e.getMessage());
-            e.printStackTrace();
+            Teras.getLogger().error("Error drawing route on map", e);
         }
     }
 

@@ -387,7 +387,7 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
             try {
                 fileDatos.createNewFile();
             } catch (IOException e) {
-                e.printStackTrace();
+                Teras.LOGGER.error("Failed to create file " + ruta, e);
             }
         }
         return path;

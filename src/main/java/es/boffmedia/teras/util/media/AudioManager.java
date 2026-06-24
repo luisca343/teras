@@ -70,10 +70,8 @@ public class AudioManager {
             AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), readSound(file));
             players.put(channelID, player);
             return player;
-        } catch (UnsupportedAudioFileException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (UnsupportedAudioFileException | IOException e) {
+            Teras.LOGGER.error("Failed to create audio player for music disc", e);
         }
         return null;
     }
@@ -98,10 +96,8 @@ public class AudioManager {
             AudioPlayer player = api.createAudioPlayer(channel, api.createEncoder(), readSound(file));
             players.put(channelID, player);
             player.startPlaying();
-        } catch (UnsupportedAudioFileException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (UnsupportedAudioFileException | IOException e) {
+            Teras.LOGGER.error("Failed to play music disc audio", e);
         }
     }
 
@@ -125,10 +121,8 @@ public class AudioManager {
             players.put(channelID, audioPlayer);
             audioPlayer.startPlaying();
 
-        } catch (UnsupportedAudioFileException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (UnsupportedAudioFileException | IOException e) {
+            Teras.LOGGER.error("Failed to play audio for player " + player.getName().getString(), e);
         }
     }
 

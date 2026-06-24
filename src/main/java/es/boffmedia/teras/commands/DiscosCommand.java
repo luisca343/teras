@@ -81,10 +81,10 @@ public class DiscosCommand {
 
                                         } catch (IOException e) {
                                             source.sendFailure(new StringTextComponent("Error descargando el archivo: " + e.getMessage()));
-                                            e.printStackTrace();
+                                            Teras.getLogger().error("Error downloading music disc file", e);
                                         } catch (UnsupportedAudioFileException e) {
                                             source.sendFailure(new StringTextComponent("Error. Formato no soportado: " + e.getMessage()));
-                                            e.printStackTrace();
+                                            Teras.getLogger().error("Unsupported audio format for music disc", e);
                                         }
                                     }).start();
 

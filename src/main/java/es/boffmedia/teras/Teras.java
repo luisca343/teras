@@ -253,7 +253,7 @@ public class Teras
                 Files.createDirectories(Paths.get("/Teras"));
 
             } catch (IOException e) {
-                e.printStackTrace();
+                LOGGER.error("Failed to create Teras music directory", e);
             }
         }
     }

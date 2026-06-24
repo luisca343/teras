@@ -63,8 +63,7 @@ public class PolygonCreator {
             Teras.getLogger().info("Loaded " + (regions == null ? 0 : regions.size()) + " region(s)");
             return regions;
         } catch (Exception e) {
-            Teras.getLogger().error("Failed to load regions: " + e.getMessage());
-            e.printStackTrace();
+            Teras.getLogger().error("Failed to load regions", e);
             return null;
         }
     }
@@ -130,7 +129,7 @@ public class PolygonCreator {
 
                     polygonMap.put(region.getName(), overlay);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    Teras.getLogger().error("Failed to show region overlay", e);
                 }
             }
         }
@@ -144,7 +143,7 @@ public class PolygonCreator {
                 try {
                     jmAPI.remove(overlay);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    Teras.getLogger().error("Failed to remove region overlay", e);
                 }
             }
         }
@@ -158,7 +157,7 @@ public class PolygonCreator {
                 try {
                     jmAPI.remove(entry.getValue());
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    Teras.getLogger().error("Failed to remove region overlay", e);
                 }
             }
             polygonMap.clear();

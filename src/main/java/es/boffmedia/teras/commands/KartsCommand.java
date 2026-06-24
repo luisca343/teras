@@ -277,7 +277,7 @@ public class KartsCommand {
 
                     } catch (IncompleteRegionException e) {
                         source.sendFailure(new StringTextComponent("Selecciona una regiÃ³n primero"));
-                        e.printStackTrace();
+                        Teras.getLogger().error("WorldEdit region not selected", e);
                     }
                     return 1;
                 });
@@ -309,7 +309,7 @@ public class KartsCommand {
 
                     } catch (IncompleteRegionException e) {
                         source.sendFailure(new StringTextComponent("Selecciona una regiÃ³n primero"));
-                        e.printStackTrace();
+                        Teras.getLogger().error("WorldEdit region not selected", e);
                     }
                     return 1;
                 });
@@ -666,7 +666,7 @@ public class KartsCommand {
             return 1;
         } catch (Exception e) {
             context.getSource().sendFailure(new StringTextComponent("Error al establecer la selecciÃ³n de WorldEdit"));
-            e.printStackTrace();
+            Teras.getLogger().error("Failed to set WorldEdit selection", e);
             return 0;
         }
     }
@@ -703,7 +703,7 @@ public class KartsCommand {
             return 1;
         } catch (Exception e) {
             context.getSource().sendFailure(new StringTextComponent("Error al establecer la selecciÃ³n de WorldEdit"));
-            e.printStackTrace();
+            Teras.getLogger().error("Failed to set WorldEdit selection", e);
             return 0;
         }
     }

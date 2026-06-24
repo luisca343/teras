@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.command.CommandSource;
 import net.minecraft.command.Commands;
@@ -41,7 +42,7 @@ public class DimTPCommand {
 
                     } catch (Exception e) {
                          MessageHelper.enviarMensaje(player, "No existe la dimensión " + dim);
-                         e.printStackTrace();
+                         Teras.getLogger().error("Failed to teleport to dimension " + dim, e);
                     }
                        return 0;
                 }))))));

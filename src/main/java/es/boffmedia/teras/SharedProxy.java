@@ -120,7 +120,7 @@ public class SharedProxy {
                     }
 
                 } catch (CommandSyntaxException e) {
-                    e.printStackTrace();
+                    Teras.getLogger().error("Failed to apply NBT to item stack", e);
                 }
             }
 

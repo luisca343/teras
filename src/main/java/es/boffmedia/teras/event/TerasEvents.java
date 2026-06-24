@@ -215,7 +215,8 @@ public class TerasEvents {
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent ev) {
         Gson gson = new Gson();
         TerasConfig terasConfig = FileHelper.getConfig();
-        String data = gson.toJson(terasConfig);
+        // Send the client-safe copy: it omits apiToken so the backend credential never leaves the server.
+        String data = gson.toJson(terasConfig.copyForClient());
 
         ev.getPlayer().getPersistentData().putBoolean("frentebatalla", false);
 

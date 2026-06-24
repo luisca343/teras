@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import de.maxhenkel.voicechat.api.Group;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.TerasVoicechatPlugin;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageMCEFResponse;
@@ -31,7 +32,7 @@ public class SMessageIniciarLlamada implements Runnable{
         VoicechatServerApi api = TerasVoicechatPlugin.SERVER_API;
         Gson gson = new Gson();
         CallData datosLlamada = gson.fromJson(str, CallData.class);
-        System.out.println("Miembros: "+datosLlamada.getUsers());
+        Teras.getLogger().info("Miembros: "+datosLlamada.getUsers());
 
         /*
         if(datosLlamada.getUsers().size() <= 1){

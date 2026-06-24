@@ -24,6 +24,40 @@ import java.util.stream.Collectors;
 
 public class ChestCreationHelper {
 
+    private static final int MAX_TOTAL_ITEMS = 27 * 10; // up to 10 chests' worth
+    private static final int MAX_ITEM_COUNT = 64;        // a vanilla stack
+
+    /**
+     * Drops items whose id is not a registered item and clamps counts to [1, MAX_ITEM_COUNT],
+     * capping the total at MAX_TOTAL_ITEMS. Protects against forged/oversized DarCaja payloads.
+     */
+    private static ArrayList<ObjetoMC> sanitize(ArrayList<ObjetoMC> objetos) {
+        ArrayList<ObjetoMC> clean = new ArrayList<>();
+        for (ObjetoMC item : objetos) {
+            if (clean.size() >= MAX_TOTAL_ITEMS) {
+                Teras.LOGGER.warn("DarCaja payload exceeded {} items; truncating", MAX_TOTAL_ITEMS);
+                break;
+            }
+            if (item == null || item.getId() == null) {
+                continue;
+            }
+            ResourceLocation id;
+            try {
+                id = new ResourceLocation(item.getId());
+            } catch (Exception e) {
+                Teras.LOGGER.warn("DarCaja: skipping malformed item id '{}'", item.getId());
+                continue;
+            }
+            if (!ForgeRegistries.ITEMS.containsKey(id)) {
+                Teras.LOGGER.warn("DarCaja: skipping unknown item id '{}'", item.getId());
+                continue;
+            }
+            int count = Math.max(1, Math.min(MAX_ITEM_COUNT, item.getCantidad()));
+            clean.add(new ObjetoMC(item.getId(), count));
+        }
+        return clean;
+    }
+
     /**
      * Creates chest items containing the provided objects and gives them to the player identified by UUID
      * @param uuidString String representation of the player's UUID
@@ -72,6 +106,11 @@ public class ChestCreationHelper {
      */
     public static void createAndGiveChests(ServerPlayerEntity player, ArrayList<ObjetoMC> objetos) {
         if (player == null || objetos == null || objetos.isEmpty()) {
+            return;
+        }
+
+        objetos = sanitize(objetos);
+        if (objetos.isEmpty()) {
             return;
         }
 

@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.server;
 
-import com.google.common.base.Charsets;
 import com.pixelmonmod.pixelmon.Pixelmon;
 import com.pixelmonmod.pixelmon.api.events.PokedexEvent;
 import com.pixelmonmod.pixelmon.api.pokedex.PlayerPokedex;
@@ -16,6 +15,9 @@ import net.montoyo.mcef.api.IJSQueryCallback;
 import java.util.function.Supplier;
 
 public class SMessageUpdateDex implements Runnable{
+    /** Hard cap on inbound string fields to avoid memory-amplification DoS. */
+    private static final int MAX_LEN = 64;
+
     private int dex;
     private String form;
     private String palette;
@@ -30,6 +32,15 @@ public class SMessageUpdateDex implements Runnable{
 
     @Override
     public void run() {
+        // AUTHORITY: this only ever registers a SEEN entry in the SENDER's own Pokédex, so the
+        // sender is inherently the authority. Validate the dex id so a malformed/forged packet
+        // can't throw on the empty Optional from PixelmonSpecies.fromDex.
+        if (player == null) {
+            return;
+        }
+        if (!PixelmonSpecies.fromDex(dex).isPresent()) {
+            return;
+        }
         Pokemon pokemon = PokemonFactory.create(PixelmonSpecies.fromDex(dex).get());
         pokemon.setForm(form);
         pokemon.setForm(palette);
@@ -44,14 +55,15 @@ public class SMessageUpdateDex implements Runnable{
     }
 
     public static SMessageUpdateDex decode(PacketBuffer buf) {
-        SMessageUpdateDex message = new SMessageUpdateDex(buf.readInt(), buf.toString(Charsets.UTF_8), buf.toString(Charsets.UTF_8));
-        return message;
+        // readUtf advances the reader index (the old buf.toString did not, so form and palette
+        // both received the entire remaining buffer) and length-caps each field.
+        return new SMessageUpdateDex(buf.readInt(), buf.readUtf(MAX_LEN), buf.readUtf(MAX_LEN));
     }
 
     public void encode(PacketBuffer buf) {
         buf.writeInt(dex);
-        buf.writeCharSequence(form, Charsets.UTF_8);
-        buf.writeCharSequence(palette, Charsets.UTF_8);
+        buf.writeUtf(form == null ? "" : form, MAX_LEN);
+        buf.writeUtf(palette == null ? "" : palette, MAX_LEN);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

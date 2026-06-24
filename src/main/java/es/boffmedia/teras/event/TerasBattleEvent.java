@@ -101,7 +101,7 @@ public class TerasBattleEvent {
                 }
             }
         }catch (Exception e){
-            e.printStackTrace();
+            Teras.getLogger().error("Error resolving battle results", e);
         }
 
         if(ganador instanceof ServerPlayerEntity && combate instanceof NPCTerasBattle) {

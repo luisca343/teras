@@ -237,7 +237,6 @@ public class NpcTrainerPartyStorage extends TrainerPartyStorage {
     }
 
     public void set(int slot, Pokemon pokemon) {
-        System.out.println("Setting pokemon in slot " + slot);
         this.set(new StoragePosition(-1, slot), pokemon);
     }
 

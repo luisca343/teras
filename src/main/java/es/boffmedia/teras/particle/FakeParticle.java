@@ -63,7 +63,7 @@ public abstract class FakeParticle extends SpriteTexturedParticle {
 
             return texture;
         } catch (IOException e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Failed to load fake particle texture", e);
         }
         return new FakeParticleTexture(Arrays.asList(atlasTexture.getSprite(MissingTextureSprite.getLocation())));
     }

@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.server;
 
-import com.google.common.base.Charsets;
 import com.pixelmonmod.pixelmon.api.util.helpers.NetworkHelper;
 import com.pixelmonmod.pixelmon.comm.packetHandlers.OpenScreenPacket;
 import com.pixelmonmod.pixelmon.comm.packetHandlers.clientStorage.newStorage.pc.ClientChangeOpenPCPacket;
@@ -17,17 +16,25 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 public class SMessageEncenderPC implements Runnable{
+    /** Hard cap on the inbound payload to avoid memory-amplification DoS. */
+    private static final int MAX_LEN = 64;
+
     private String str;
     private ServerPlayerEntity player;
 
     public SMessageEncenderPC(String str){
         this.str = str;
     }
-    
+
     @Override
     public void run() {
+        if (player == null) {
+            return;
+        }
         try{
-            UUID uuid = UUID.fromString(str);
+            // AUTHORITY: ignore the client-supplied UUID and always open the SENDER's own PC.
+            // Trusting the client string would let a player open another player's PC storage.
+            UUID uuid = player.getUUID();
             NetworkHelper.sendPacket(new ClientChangeOpenPCPacket(uuid), player);
             if(!player.getPersistentData().getBoolean(PersistentDataFields.FB_ACTIVO.label)){
                 OpenScreenPacket.open(player, EnumGuiScreen.PC, new int[0]);
@@ -41,12 +48,11 @@ public class SMessageEncenderPC implements Runnable{
     }
 
     public static SMessageEncenderPC decode(PacketBuffer buf) {
-        SMessageEncenderPC message = new SMessageEncenderPC(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageEncenderPC(buf.readUtf(MAX_LEN));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str == null ? "" : str, MAX_LEN);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

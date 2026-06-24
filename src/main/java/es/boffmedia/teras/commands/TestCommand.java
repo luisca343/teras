@@ -124,14 +124,14 @@ public class TestCommand {
         return Commands.literal("armadura")
                 .executes((command) -> {
                             SkinLibrary lib = SkinLibraryManager.getServer().getLibrary();
-                            System.out.println("=====================================");
-                            System.out.println(lib.getRootPath());
+                            Teras.getLogger().info("=====================================");
+                            Teras.getLogger().info(lib.getRootPath());
                             lib.getFiles().forEach((skinFile) -> {
-                                System.out.println(skinFile.getName());
-                                System.out.println(skinFile.getPath());
-                                System.out.println(skinFile.getSkinIdentifier());
-                                System.out.println(skinFile.getSkinType());
-                                System.out.println(skinFile.getSkinProperties());
+                                Teras.getLogger().info(skinFile.getName());
+                                Teras.getLogger().info(skinFile.getPath());
+                                Teras.getLogger().info(skinFile.getSkinIdentifier());
+                                Teras.getLogger().info(skinFile.getSkinType());
+                                Teras.getLogger().info(String.valueOf(skinFile.getSkinProperties()));
 
 
                                 try {
@@ -144,8 +144,8 @@ public class TestCommand {
 
                             LocalDataService lib2 = SkinLibraryManager.getServer().getDatabaseLibrary();
 
-                            System.out.println("=====================================");
-                            System.out.println(lib2);
+                            Teras.getLogger().info("=====================================");
+                            Teras.getLogger().info(String.valueOf(lib2));
 
                             return 1;
                         }
@@ -250,7 +250,7 @@ public class TestCommand {
                             MessageHelper.enviarMensaje(player, "Parcela creada: " + ++parcelasCreadas);
                             editSession.flushSession();
                         } catch (WorldEditException e) {
-                            e.printStackTrace();
+                            Teras.getLogger().error("WorldEdit operation failed while creating parcela", e);
                         }
 
                         return 1;

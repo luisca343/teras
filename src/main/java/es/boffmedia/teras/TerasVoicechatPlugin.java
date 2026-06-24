@@ -98,7 +98,7 @@ public class TerasVoicechatPlugin implements VoicechatPlugin {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            Teras.getLogger().error("Error loading voicechat image", e);
         }
         return null;
     }

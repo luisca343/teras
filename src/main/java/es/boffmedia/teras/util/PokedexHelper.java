@@ -2,6 +2,7 @@ package es.boffmedia.teras.util;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import es.boffmedia.teras.Teras;
 import com.pixelmonmod.pixelmon.api.pokedex.PlayerPokedex;
 import com.pixelmonmod.pixelmon.api.pokedex.PokedexRegistrationStatus;
 import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
@@ -36,6 +37,6 @@ public class PokedexHelper {
         Map<PokedexRegistrationStatus, List<Integer>> groupedData = getPokedexStatus(uuid);
         Gson gson = new GsonBuilder().setPrettyPrinting().create();
         String json = gson.toJson(groupedData);
-        System.out.println(json);
+        Teras.getLogger().info(json);
     }
 }

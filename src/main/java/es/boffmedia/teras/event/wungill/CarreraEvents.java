@@ -72,7 +72,8 @@ public class CarreraEvents {
                 try {
                     Thread.sleep(tiempo / 8);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    Teras.getLogger().error("Interrupted while animating kart rotation", e);
+                    Thread.currentThread().interrupt();
                 }
             }
             vehicleEntity.setEngine(true);

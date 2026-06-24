@@ -54,7 +54,6 @@ public class SmartRotom extends Item {
 */
 
     public LivingEntity getRayTracedEntities(World world, PlayerEntity player, Hand hand, int range){
-        System.out.println("getRayTracedEntities");
         Vector3d startVec = player.getEyePosition(1.0F);
         Vector3d lookVec = player.getViewVector(1.0F).scale(range);
         Vector3d endVec = startVec.add(lookVec);

@@ -65,7 +65,7 @@ public class SchematicService {
 
                 pasteSchematic(world, pos, room, dungeon, clipboard);
             } catch (IOException | WorldEditException e) {
-                e.printStackTrace();
+                Teras.getLogger().error("Failed to load/paste schematic", e);
             }
         }
 

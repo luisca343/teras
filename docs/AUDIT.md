@@ -415,16 +415,16 @@ To be "best in category," the differentiator (kart+Pixelmon) must be matched by 
 
 ## 24. Prioritized Action Plan (by ROI)
 
-> **Remediation status — updated 2026-06-23.** See the "Remediation Progress Log" at the end of this file for details.
+> **Remediation status — updated 2026-06-24.** See the "Remediation Progress Log" at the end of this file for details.
 
 1. ✅ **DONE** — Make all HTTP async + timeouts; remove double-connection (Low effort, Critical).
-2. ✅ **DONE** — Add authority/permission checks to `SMessageChatMessage`; stop broadcasting unprivileged client text (Low, Critical). *(Other server-bound packets — §13.5 — still need an authority audit.)*
+2. ✅ **DONE** — Add authority/permission checks to `SMessageChatMessage`; stop broadcasting unprivileged client text (Low, Critical). Authority audit of the remaining state-mutating packets (`SMessageEncenderPC`/`SMessageUpdateDex`/`SMessageDarCaja`, §13.5) is now also done — see log. *(`SMessageDarCaja` is hardened but not fully closed; its complete fix is gated on §13.3 backend verification.)*
 3. ✅ **DONE** — Whitelist `CMessageRunJS` to known JS function calls + length cap (Low, Critical).
 4. ✅ **DONE** — Atomic file writes (temp+move) in `FileHelper` (Low, Critical).
 5. ✅ **DONE** — Null-guard `raceManager` + tick vehicles once per server tick (Low, High).
 6. ✅ **DONE** — Delete `VideoScreen2`, `QuestList`, `QuestListBak` (duplicate/unused classes). *(The `legacy` package is heavily referenced across 20+ files and cannot be deleted without migrating dependents — see remediation log.)*
 7. 🟡 **PARTIAL** — Renamed `examplemod` → `teras` in build.gradle run configs/manifest; removed IMC hello-world + RegistryEvents stub. *(mods.toml `logoFile` reference remains.)*
-8. 🟡 **PARTIAL** — Replaced `printStackTrace`/`System.out` + debug spam in touched files (SmartRotomAPI, FileHelper, RaceManager, Teras, TerasEvents); full-codebase sweep still pending.
+8. ✅ **DONE** — Replaced every live `printStackTrace`/`System.out` across the codebase with the logger; debug spam removed. Only commented-out occurrences remain.
 9. ✅ **DONE** — Merge the two packet channels into one (Medium, High).
 10. ✅ **DONE** — Fix race-position ranking logic. *(Already implemented: `Race.calculatePositions()` uses lap count + spline-based progress sorting, stored in `ConcurrentHashMap`, sent to clients every second.)*
 
@@ -555,6 +555,19 @@ Central files were read end-to-end (main mod class, both network channels and re
 - Moved `tickVehicles()` out of the per-player `playerTick` into a single `ServerTickEvent` handler — now O(H) per tick instead of O(P·H).
 - Removed the `System.out.println` debug lines in `voteStart`.
 
+**23/13.3. SmartRotom auth, HTTPS enforcement & circuit breaker (§13.3)** — [SmartRotomAPI.java](../src/main/java/es/boffmedia/teras/util/data/smartrotom/SmartRotomAPI.java), [TerasConfig.java](../src/main/java/es/boffmedia/teras/util/objects/legacy/serverdata/TerasConfig.java), [FileHelper.java](../src/main/java/es/boffmedia/teras/util/file/FileHelper.java), [TerasEvents.java](../src/main/java/es/boffmedia/teras/event/TerasEvents.java)
+- **Auth token:** added `apiToken` to `TerasConfig`; `SmartRotomAPI.applyHeaders` now sends `Authorization: Bearer <token>` on every GET/POST when configured. Empty/absent token → no header (opt-in).
+- **Token leak fix:** the login flow serialised the *entire* `TerasConfig` to every client (`CMessageConfigServer`). Added `TerasConfig.copyForClient()` (omits `apiToken`) and switched `onLogin` to send it — the backend credential now never leaves the server. *(Note: `getRegions` is still invoked client-side from the config-packet handler, so client-initiated reads carry no token; moving region loading server-side is recommended follow-up.)*
+- **HTTPS enforcement (opt-in, fail-closed):** added `requireHttps` to config; `isTransportAllowed` refuses non-HTTPS URLs when enabled. Defaults to `false` so existing localhost/dev setups keep working.
+- **Circuit breaker:** after 5 consecutive failures the circuit opens for 30s; GET/POST then fail fast (skip the network call) instead of repeatedly stalling login/race flows against a dead backend. Resets on first success.
+- Replaced the misleading `User-Agent: Mozilla/4.0` with `Teras-SmartRotom`. New config files seed `apiToken=""` + `requireHttps=false`.
+
+**44. Authority audit of state-mutating server packets (§13.5)** — [SMessageEncenderPC.java](../src/main/java/es/boffmedia/teras/net/server/SMessageEncenderPC.java), [SMessageUpdateDex.java](../src/main/java/es/boffmedia/teras/net/server/SMessageUpdateDex.java), [SMessageDarCaja.java](../src/main/java/es/boffmedia/teras/net/server/SMessageDarCaja.java), [ChestCreationHelper.java](../src/main/java/es/boffmedia/teras/util/ChestCreationHelper.java)
+- `SMessageEncenderPC`: now **ignores the client-supplied UUID** and opens the *sender's own* PC (`player.getUUID()`) — previously a client could pass another player's UUID to `ClientChangeOpenPCPacket` and open their PC. Null-guarded; full-buffer decode → `readUtf(64)`.
+- `SMessageUpdateDex`: only ever registers a SEEN entry in the *sender's own* Pokédex (inherently sender-authoritative). Fixed the **broken decode** — the old `buf.toString(Charsets.UTF_8)` for `form`/`palette` did not advance the reader index, so both fields received the entire remaining buffer; now `readUtf(64)` each. Null-guarded + validates `PixelmonSpecies.fromDex` is present before dereferencing the `Optional`.
+- `SMessageDarCaja`: this packet **grants items** and is still trust-the-client *by design* (the reward is authorised on the SmartRotom backend, not verifiable server-side until §13.3 lands). Hardened with: `readUtf(32768)` cap, null-guard + try/catch, **audit logging** of every grant (player + item count), reuse of `Teras.GSON`, and **server-side clamping in `ChestCreationHelper.sanitize`** — drops unregistered item ids, clamps `Count` to `[1,64]`, caps total at 270 items (10 chests). *Residual risk:* a modded client can still request (valid, bounded) items without a real purchase; a full fix requires the server to confirm the reward with the backend (tracked under §13.3).
+- *Note:* `MessageCarTest` (`net.both`) is **not registered** in the channel — unsendable dead code, no live exploit; left for a separate dead-code pass.
+
 **9. Merge packet channels (§5.1, §24.9)** — [Messages.java](../src/main/java/es/boffmedia/teras/net/Messages.java), [CommonHandler.java](../src/main/java/es/boffmedia/teras/CommonHandler.java), [FrameBlockEntity.java](../src/main/java/es/boffmedia/teras/tileentity/FrameBlockEntity.java), [TVVideoScreen.java](../src/main/java/es/boffmedia/teras/client/gui/TVVideoScreen.java)
 - Merged the `PacketHandler` channel (`teras:network`, protocol `"2"`, 3 video packets) into the `Messages` channel (`teras:packetsystem`).
 - Bumped `Messages` protocol version from `"1"` to `"2"`.
@@ -572,11 +585,12 @@ Central files were read end-to-end (main mod class, both network channels and re
 - Removed debug log spam: `TESTES`, `HELLO FROM PREINIT`, `API NO FUNKA`, `FUNCTIONANDO LOGIIIINN`, and the `enterWorld`/`onLogin` permission-dump spam.
 - *Remaining:* `mods.toml` still has `logoFile="examplemod.png"`.
 
-**8. Logging cleanup (§4.1, §4.2, §4.3)** — touched files only
-- Replaced `printStackTrace`/`System.out`/placeholder logs in the files above. A full-codebase sweep of the remaining ~49 `printStackTrace` / ~34 `System.out` is still pending.
+**8. Logging cleanup (§4.1, §4.2, §4.3)** — full-codebase sweep complete
+- All **live** `printStackTrace()` calls replaced with `Teras.LOGGER`/`Teras.getLogger().error("context", e)` across ~20 files (PokePasteReader, AudioManager, PolygonCreator, KartsCommand, DiscosCommand, DungeonCommand, DimTPCommand, ClientProxy, CarreraEvents, TerasBattleEvent, RouteCreator, FakeParticle, Teras, TerasVoicechatPlugin, SharedProxy, SchematicService, Reader, TestCommand, Carrera). Duplicate `UnsupportedAudioFileException`/`IOException` catches merged; `InterruptedException` handlers now restore the interrupt flag.
+- All **live** `System.out.println` debug output either removed (pure debug: RotomListenerMixin form prints, SmartRotom `getRayTracedEntities`, NpcTrainerPartyStorage slot print) or converted to `Teras.getLogger().info` (SMessageCheckSpawns, SMessageIniciarLlamada, PokedexHelper, Matrix3, RaceTrack, TestCommand skin dump).
+- The only remaining occurrences are inside `/* ... */` comment blocks (AudioManager `playMp3`, JourneyMapEventListener test buttons, CMessageDatosServer) — dead/commented, left for a separate dead-code pass.
+- No code comments reference the audit document.
 
 ### ⏳ Not yet started
 - §24.6 continued — The `legacy` package (27 files) is still referenced across 20+ files. Migrating dependents off `legacy.serverdata.TerasConfig`, `legacy.karts.CarreraManagerOld`, `legacy.karts.Circuito`, etc. is required before the package can be removed. `TerasBattleOld` is still needed by `CombateFrenteBatalla`.
-- §13.3 HTTPS + auth token + circuit breaker on SmartRotom.
-- §13.5 Authority audit of `SMessageDarCaja` / `SMessageEncenderPC` / `SMessageUpdateDex`.
 - §4.5 Contradictory `isSiteBlacklisted` / `getNextAvailablePadID` (left as-is to avoid breaking callers that may depend on current behavior — needs caller review).

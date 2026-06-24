@@ -118,8 +118,6 @@ public class RotomListenerMixin {
                     Pokemon pokemon = party.find(event.getPokeBall().getPokeUUID());
 
                     String pokemonForm = pokemon.getForm().getName();
-                    System.out.println("Pokemon form: "+pokemonForm);
-                    System.out.println("Form: "+form);
 
                     if (pokemonForm.toLowerCase().contains("astral")) {
                         String currForm = form;
@@ -135,7 +133,6 @@ public class RotomListenerMixin {
                     }
 
                     if (replaceMove(pokemon, pokemon.getForm().getName(), form)) {
-                        System.out.println("Setting form: "+form);
                         pokemon.setForm(form);
                     } else {
                         LearnMoveController.sendLearnMove(Objects.requireNonNull(party.getPlayer()), pokemon.getUUID(), (ImmutableAttack)((Optional<?>)getAttackMap().get(form)).get());

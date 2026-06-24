@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.services.SchematicService;
 import es.boffmedia.teras.util.game.dungeons.DungeonBuilder;
 import es.boffmedia.teras.util.game.dungeons.DungeonGenerator;
@@ -57,7 +58,7 @@ public class DungeonCommand {
             try {
                 generateAndPlaceDungeon(context, stageId, curseOfTheLabyrinth, curseOfTheLost, seed);
             } catch (Exception e) {
-                e.printStackTrace();
+                Teras.getLogger().error("Error generating dungeon", e);
                 context.getSource().sendFailure(new StringTextComponent("Error generating dungeon: " + e.getMessage()));
             }
         }).start();
@@ -132,7 +133,7 @@ public class DungeonCommand {
                             startRoomPos.getX(), startRoomPos.getY(), startRoomPos.getZ()
                     );
                 } catch (CommandSyntaxException e) {
-                    e.printStackTrace();
+                    Teras.getLogger().error("Failed to teleport player to dungeon start room", e);
                 }
             });
         }

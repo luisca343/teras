@@ -39,8 +39,8 @@ public class SMessageCheckSpawns implements Runnable{
 
 
         AbstractSpawner spawner  = PixelmonSpawning.coordinator.getSpawner(player.getName().getString());
-        System.out.println("Nombre: "+player.getName().getString());
-        System.out.println("Spawner Creado: "+spawner.name);
+        Teras.getLogger().info("Nombre: "+player.getName().getString());
+        Teras.getLogger().info("Spawner Creado: "+spawner.name);
         PlayerTrackingSpawner pSpawner = (PlayerTrackingSpawner)spawner;
 
         SpawnerCoordinator spawnerCoordinator = PixelmonSpawning.coordinator;
@@ -52,7 +52,7 @@ public class SMessageCheckSpawns implements Runnable{
         ArrayList<SpawnLocation> spawnLocations = pSpawner.spawnLocationCalculator.calculateSpawnableLocations(blocks);
         Iterator var8 = arguments.iterator();
 
-        System.out.println("SpawnLocations: "+spawnLocations.size());
+        Teras.getLogger().info("SpawnLocations: "+spawnLocations.size());
 
         while(var8.hasNext()) {
             String argument = (String)var8.next();
@@ -148,7 +148,7 @@ public class SMessageCheckSpawns implements Runnable{
         String json = gson.toJson(pokedexSpawnChances);
 
 
-        System.out.println("Enviando datos de spawns: " + json);
+        Teras.getLogger().info("Enviando datos de spawns: " + json);
         Messages.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new CMessageMCEFResponse(json));
 
 
