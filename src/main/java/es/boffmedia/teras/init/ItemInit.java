@@ -1,7 +1,7 @@
 package es.boffmedia.teras.init;
 
 import com.pixelmonmod.pixelmon.items.BadgeItem;
-import es.boffmedia.teras.items.*;
+import es.boffmedia.teras.client.funko.FunkoItemRenderer;
 import es.boffmedia.teras.items.*;
 import net.minecraft.item.BucketItem;
 import net.minecraft.item.Item;
@@ -17,6 +17,13 @@ public class ItemInit {
 
     public static final RegistryObject<Item> SMARTROTOM = ITEMS.register("smartrotom",
             () -> new SmartRotom(new Item.Properties().stacksTo(1).tab(TerasItemGroup.LIZARDON_GROUP)));
+
+    // Funko statue. The ISTER (client-only) renders the actual skin in inventory/hand;
+    // the supplier is only invoked on the client, so referencing the client class here is dist-safe.
+    public static final RegistryObject<Item> FUNKO = ITEMS.register("funko",
+            () -> new FunkoItem(BlockInit.FUNKO.get(), new Item.Properties().stacksTo(16)
+                    .tab(TerasItemGroup.LIZARDON_GROUP)
+                    .setISTER(() -> FunkoItemRenderer::new)));
 
     /*public static final RegistryObject<Item> MEDALLA = ITEMS.register("medalla_helada",
             () -> new BadgeItem());

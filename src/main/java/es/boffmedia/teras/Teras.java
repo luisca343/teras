@@ -198,9 +198,7 @@ public class Teras
 
     private void doClientStuff(final FMLClientSetupEvent event) {
         // do something that can only be done on the es.boffmedia.teras.client
-        // ClientRegistry.bindTileEntityRenderer(TileEntityInit.FUNKO_TE.get(), FunkoRenderer::new);
-
-        //ClientRegistry.bindTileEntityRenderer(TileEntityInit.FUNKO_TE.get(), FunkoTERenderer::new);
+        ClientRegistry.bindTileEntityRenderer(TileEntityInit.FUNKO_TE.get(), es.boffmedia.teras.tileentity.FunkoTERenderer::new);
         ClientRegistry.bindTileEntityRenderer(TileEntityInit.TEST_PANTALLA.get(), PantallaRenderer::new);
 
 

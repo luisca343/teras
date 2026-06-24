@@ -25,9 +25,11 @@ public class BlockInit {
     public static RegistryObject TWISTER_AZUL = registerBlock("twister_azul", () -> new Alfombra(Material.WOOL));
     public static RegistryObject TWISTER_ROJO = registerBlock("twister_rojo", () -> new Alfombra(Material.WOOL));
     public static RegistryObject TWISTER_VERDE = registerBlock("twister_verde", () -> new Alfombra(Material.WOOL));
-    /*
-    public static final RegistryObject<Block> FUNKO = registerBlock("funko", () -> new Funko(AbstractBlock.Properties.of(Material.STONE)));
+    // Block only: the funko item is a custom FunkoItem (with an inventory renderer) registered in ItemInit.
+    public static final RegistryObject<Block> FUNKO = BLOCKS.register("funko",
+            () -> new Funko(AbstractBlock.Properties.of(Material.WOOL).strength(0.8F).noOcclusion()));
 
+    /*
     public static final RegistryObject<Block> TOCADISCOS = registerBlock("tocadiscos", () -> new BloqueTocadiscos(AbstractBlock.Properties.of(Material.STONE)));
     */
     public static final RegistryObject<Block> PANTALLA = registerBlock("pantalla", () -> new BloquePantalla(AbstractBlock.Properties.of(Material.STONE)));

@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.pixelmonmod.pixelmon.blocks.tileentity.PCTileEntity;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.blocks.TestModeloFunko;
 import es.boffmedia.teras.commands.*;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageConfigServer;
@@ -22,8 +21,6 @@ import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.renderer.culling.ClippingHelper;
-import net.minecraft.client.renderer.model.IBakedModel;
-import net.minecraft.client.renderer.model.ModelResourceLocation;
 import net.minecraft.client.renderer.texture.AtlasTexture;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
@@ -31,7 +28,6 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.client.event.ModelBakeEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -88,14 +84,6 @@ public class TerasEvents {
             event.addSprite(new ResourceLocation(Teras.MOD_ID, "particle/stars_1"));
             FakeParticle.atlasTexture = event.getMap();
         }
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    @SubscribeEvent
-    public static void modelBake(ModelBakeEvent event) {
-        ModelResourceLocation mrl = new ModelResourceLocation("teras:funko", "inventory");
-        IBakedModel model = event.getModelRegistry().get(mrl);
-        event.getModelRegistry().put(mrl, new TestModeloFunko(model));
     }
 
     @SubscribeEvent
@@ -167,6 +155,7 @@ public class TerasEvents {
         new FrenteBatallaCommand(event.getDispatcher());
 
         new DungeonCommand(event.getDispatcher());
+        new FunkoCommand(event.getDispatcher());
 
         // Client only commands
 
