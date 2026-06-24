@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.server.serverOld;
 
-import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import de.maxhenkel.voicechat.api.Group;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
@@ -65,12 +64,11 @@ public class SMessageIniciarLlamada implements Runnable{
     }
 
     public static SMessageIniciarLlamada decode(PacketBuffer buf) {
-        SMessageIniciarLlamada message = new SMessageIniciarLlamada(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageIniciarLlamada(buf.readUtf(4096));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, 4096);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

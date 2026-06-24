@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.server;
 
-import com.google.common.base.Charsets;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageDatosServer;
 import es.boffmedia.teras.model.config.TerasConfig;
@@ -26,12 +25,11 @@ public class SMessageDatosServer implements Runnable{
     }
 
     public static SMessageDatosServer decode(PacketBuffer buf) {
-        SMessageDatosServer message = new SMessageDatosServer(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageDatosServer(buf.readUtf(256));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, 256);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

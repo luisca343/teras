@@ -1,7 +1,6 @@
 package es.boffmedia.teras.net.client;
 
 
-import com.google.common.base.Charsets;
 import es.boffmedia.teras.client.ClientProxy;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
@@ -23,12 +22,11 @@ public class CMessageMCEFResponse implements Runnable{
     }
 
     public static CMessageMCEFResponse decode(PacketBuffer buf) {
-        CMessageMCEFResponse message = new CMessageMCEFResponse(buf.toString(Charsets.UTF_8));
-        return message;
+        return new CMessageMCEFResponse(buf.readUtf(65536));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(json, Charsets.UTF_8);
+        buf.writeUtf(json, 65536);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

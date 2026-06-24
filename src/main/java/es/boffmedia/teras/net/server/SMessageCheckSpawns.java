@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.server;
 
-import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import com.pixelmonmod.api.registry.RegistryValue;
 import com.pixelmonmod.pixelmon.api.registries.PixelmonSpecies;
@@ -156,12 +155,11 @@ public class SMessageCheckSpawns implements Runnable{
 
 
     public static SMessageCheckSpawns decode(PacketBuffer buf) {
-        SMessageCheckSpawns message = new SMessageCheckSpawns(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageCheckSpawns(buf.readUtf(256));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, 256);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

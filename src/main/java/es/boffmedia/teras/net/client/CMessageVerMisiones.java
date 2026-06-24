@@ -1,7 +1,6 @@
 package es.boffmedia.teras.net.client;
 
 
-import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.client.ClientProxy;
 import es.boffmedia.teras.model.quests.QuestData;
@@ -41,8 +40,7 @@ public class CMessageVerMisiones implements Runnable{
     }
 
     public static CMessageVerMisiones decode(PacketBuffer buf) {
-        CMessageVerMisiones message = new CMessageVerMisiones(buf.toString(Charsets.UTF_8));
-        return message;
+        return new CMessageVerMisiones(buf.readUtf(65536));
     }
 
     public void actualizar(ArrayList<Mision> listaAnterior, ArrayList<Mision> lista){
@@ -58,7 +56,7 @@ public class CMessageVerMisiones implements Runnable{
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, 65536);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

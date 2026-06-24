@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.both;
 
-import com.google.common.base.Charsets;
 import es.boffmedia.teras.Teras;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
@@ -23,12 +22,11 @@ public class MessageCarTest implements Runnable{
     }
 
     public static MessageCarTest decode(PacketBuffer buf) {
-        MessageCarTest message = new MessageCarTest(buf.toString(Charsets.UTF_8));
-        return message;
+        return new MessageCarTest(buf.readUtf(256));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(test, Charsets.UTF_8);
+        buf.writeUtf(test, 256);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

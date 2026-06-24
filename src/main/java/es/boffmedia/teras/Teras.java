@@ -49,6 +49,8 @@ import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 // The value here should match an entry in the META-INF/mods.toml file
@@ -84,6 +86,13 @@ public class Teras
     public static SharedProxy PROXY = DistExecutor.<SharedProxy>safeRunForDist(() -> ClientProxy::new, () -> SharedProxy::new);
 
     public static RaceManager raceManager;
+
+    /** Shared daemon thread pool for CPU/I/O background tasks (not HTTP — see SmartRotomAPI for that). */
+    public static final ExecutorService EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "Teras-Worker");
+        t.setDaemon(true);
+        return t;
+    });
 
 
     public API getAPI() {

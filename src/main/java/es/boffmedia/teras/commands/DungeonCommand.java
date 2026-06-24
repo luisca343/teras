@@ -54,14 +54,14 @@ public class DungeonCommand {
         boolean curseOfTheLabyrinth = BoolArgumentType.getBool(context, "curseOfTheLabyrinth");
         boolean curseOfTheLost = BoolArgumentType.getBool(context, "curseOfTheLost");
 
-        new Thread(() -> {
+        Teras.EXECUTOR.submit(() -> {
             try {
                 generateAndPlaceDungeon(context, stageId, curseOfTheLabyrinth, curseOfTheLost, seed);
             } catch (Exception e) {
                 Teras.getLogger().error("Error generating dungeon", e);
                 context.getSource().sendFailure(new StringTextComponent("Error generating dungeon: " + e.getMessage()));
             }
-        }).start();
+        });
 
         return 1;
     }

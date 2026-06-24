@@ -1,7 +1,6 @@
 package es.boffmedia.teras.net.client;
 
 
-import com.google.common.base.Charsets;
 import es.boffmedia.teras.event.wungill.RegionEventsClient;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
@@ -23,12 +22,11 @@ public class CMessageCambioRegion implements Runnable{
     }
 
     public static CMessageCambioRegion decode(PacketBuffer buf) {
-        CMessageCambioRegion message = new CMessageCambioRegion(buf.toString(Charsets.UTF_8));
-        return message;
+        return new CMessageCambioRegion(buf.readUtf(256));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, 256);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

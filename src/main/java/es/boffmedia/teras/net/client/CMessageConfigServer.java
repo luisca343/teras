@@ -1,7 +1,6 @@
 package es.boffmedia.teras.net.client;
 
 
-import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.util.PolygonCreator;
 import es.boffmedia.teras.Teras;
@@ -40,12 +39,11 @@ public class CMessageConfigServer implements Runnable{
     }
 
     public static CMessageConfigServer decode(PacketBuffer buf) {
-        CMessageConfigServer message = new CMessageConfigServer(buf.toString(Charsets.UTF_8));
-        return message;
+        return new CMessageConfigServer(buf.readUtf(65536));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(datos, Charsets.UTF_8);
+        buf.writeUtf(datos, 65536);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

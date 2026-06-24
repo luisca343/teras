@@ -68,7 +68,7 @@ public class UploadVideoUpdateMessage implements IMessage<UploadVideoUpdateMessa
 
     @Override
     public UploadVideoUpdateMessage decode(PacketBuffer buffer) {
-        return new UploadVideoUpdateMessage(buffer.readBlockPos(), buffer.readUtf(), buffer.readInt(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt());
+        return new UploadVideoUpdateMessage(buffer.readBlockPos(), buffer.readUtf(4096), buffer.readInt(), buffer.readBoolean(), buffer.readBoolean(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt());
     }
 
     @Override

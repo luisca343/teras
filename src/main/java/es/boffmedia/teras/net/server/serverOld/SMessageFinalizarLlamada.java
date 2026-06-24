@@ -1,6 +1,5 @@
 package es.boffmedia.teras.net.server.serverOld;
 
-import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
@@ -39,12 +38,11 @@ public class SMessageFinalizarLlamada implements Runnable{
     }
 
     public static SMessageFinalizarLlamada decode(PacketBuffer buf) {
-        SMessageFinalizarLlamada message = new SMessageFinalizarLlamada(buf.toString(Charsets.UTF_8));
-        return message;
+        return new SMessageFinalizarLlamada(buf.readUtf(256));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(str, Charsets.UTF_8);
+        buf.writeUtf(str, 256);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

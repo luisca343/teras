@@ -57,7 +57,7 @@ public class CarreraEvents {
 
 
         int tiempo = 2000;
-        new Thread(() -> {
+        Teras.EXECUTOR.submit(() -> {
             vehicleEntity.setEngine(false);
 
             for(int i = 0; i < 8; i++){
@@ -77,7 +77,7 @@ public class CarreraEvents {
                 }
             }
             vehicleEntity.setEngine(true);
-        }).start();
+        });
     }
 
 

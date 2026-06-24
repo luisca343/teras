@@ -1,7 +1,6 @@
 package es.boffmedia.teras.net.client;
 
 
-import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.ClientProxy;
@@ -49,12 +48,11 @@ public class CMessageDatosServer implements Runnable{
     }
 
     public static CMessageDatosServer decode(PacketBuffer buf) {
-        CMessageDatosServer message = new CMessageDatosServer(buf.toString(Charsets.UTF_8));
-        return message;
+        return new CMessageDatosServer(buf.readUtf(256));
     }
 
     public void encode(PacketBuffer buf) {
-        buf.writeCharSequence(idServer, Charsets.UTF_8);
+        buf.writeUtf(idServer, 256);
     }
 
     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {

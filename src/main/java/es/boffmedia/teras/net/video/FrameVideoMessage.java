@@ -57,7 +57,7 @@ public class FrameVideoMessage implements IMessage<FrameVideoMessage> {
 
     @Override
     public FrameVideoMessage decode(PacketBuffer buffer) {
-        return new FrameVideoMessage(buffer.readBlockPos(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readUtf());
+        return new FrameVideoMessage(buffer.readBlockPos(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readUtf(4096));
     }
     @Override
     public void handle(FrameVideoMessage message, Supplier<NetworkEvent.Context> supplier) {

@@ -64,7 +64,7 @@ public class OpenVideoManagerScreen implements IMessage<OpenVideoManagerScreen> 
 
     @Override
     public OpenVideoManagerScreen decode(PacketBuffer buffer) {
-        return new OpenVideoManagerScreen(buffer.readBlockPos(), buffer.readUtf(), buffer.readInt(), buffer.readInt(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readBoolean());
+        return new OpenVideoManagerScreen(buffer.readBlockPos(), buffer.readUtf(4096), buffer.readInt(), buffer.readInt(), buffer.readBoolean(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readBoolean());
     }
 
     @Override
