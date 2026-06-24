@@ -7,7 +7,7 @@ import net.minecraft.entity.player.ServerPlayerEntity;
 
 import java.util.List;
 
-public class CombateFrenteBatalla extends TerasBattleOld {
+public class CombateFrenteBatalla extends BattleSession {
     private String modalidad;
     public CombateFrenteBatalla(ServerPlayerEntity player, BattleConfig configCombate) {
         super(player, configCombate);

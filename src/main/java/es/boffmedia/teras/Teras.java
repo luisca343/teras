@@ -262,9 +262,6 @@ public class Teras
     }
 
 
-    public void setBackup() {
-    }
-
     /* Pantallas */
 
     public static String applyBlacklist(String url) {
@@ -273,12 +270,12 @@ public class Teras
         return url;
     }
 
-    public static int getNextAvailablePadID() {
-        return 0;
-    }
-
-    public static boolean isSiteBlacklisted(String url) {
-        return !url.contains("smartrotom");
+    /**
+     * SmartRotom pads are whitelisted to the smartrotom site only: any other
+     * URL is blocked and the pad is redirected back to its home page.
+     */
+    public static boolean isSiteAllowed(String url) {
+        return url.contains("smartrotom");
     }
 
 

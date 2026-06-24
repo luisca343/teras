@@ -313,7 +313,7 @@ public class ClientProxy extends SharedProxy implements IDisplayHandler, IJSQuer
 
             for(PadData pd: padList) {
                 if(pd.view == browser && t - pd.lastURLSent >= 1000) {
-                    if(Teras.isSiteBlacklisted(url))
+                    if(!Teras.isSiteAllowed(url))
                         pd.view.loadURL(Teras.config.getHome());
                     else {
                         pd.lastURLSent = t;

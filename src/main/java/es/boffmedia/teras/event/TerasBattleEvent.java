@@ -40,12 +40,12 @@ public class TerasBattleEvent {
         SmartRotomService.defeatTrainer(defeatMoney);
     }
 
-    public void inicioCombateEntrenador(BattleStartedEvent event, TerasBattleOld combate){
+    public void inicioCombateEntrenador(BattleStartedEvent event, BattleSession combate){
         Teras.LOGGER.info("Iniciando combate entrenador");
         //TerasBattleLog.parseLog(event.bc.battleLog, combate);
     }
 
-    public void inicioCombateSalvaje(BattleStartedEvent event, TerasBattleOld combate){
+    public void inicioCombateSalvaje(BattleStartedEvent event, BattleSession combate){
         Teras.LOGGER.info("Iniciando combate salvaje");
     }
 
@@ -180,7 +180,7 @@ public class TerasBattleEvent {
         }
     }
 
-    private void finCombateFrenteBatalla(BattleEndEvent event, TerasBattleOld combate) {
+    private void finCombateFrenteBatalla(BattleEndEvent event, BattleSession combate) {
         /*
         CombateFrenteBatalla combateFrenteBatalla = (CombateFrenteBatalla) combate;
         if(getGanador(event, combateFrenteBatalla)){
