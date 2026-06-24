@@ -5,7 +5,7 @@ import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.util.PolygonCreator;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.model.config.TerasConfig;
 import journeymap.client.waypoint.WaypointGroup;
 import journeymap.client.waypoint.WaypointGroupStore;
 import net.minecraft.entity.player.ServerPlayerEntity;

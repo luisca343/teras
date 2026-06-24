@@ -3,7 +3,7 @@ package es.boffmedia.teras.net.server;
 import com.google.common.base.Charsets;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageDatosServer;
-import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.model.config.TerasConfig;
 import es.boffmedia.teras.util.file.FileHelper;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;

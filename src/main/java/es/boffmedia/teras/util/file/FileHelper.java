@@ -3,7 +3,7 @@ package es.boffmedia.teras.util.file;
 import com.google.common.base.Charsets;
 import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.model.config.TerasConfig;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.nbt.CompressedStreamTools;
 import org.apache.commons.lang3.RandomStringUtils;

@@ -13,7 +13,7 @@ import es.boffmedia.teras.util.data.PersistentDataFields;
 import es.boffmedia.teras.util.file.FileHelper;
 import es.boffmedia.teras.util.game.ShinyTracker;
 import es.boffmedia.teras.util.objects.karts.RaceManager;
-import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.model.config.TerasConfig;
 import es.boffmedia.teras.particle.FakeParticle;
 import es.boffmedia.teras.util.cache.TextureCache;
 import es.boffmedia.teras.util.displayers.VideoDisplayer;

@@ -12,7 +12,7 @@ import es.boffmedia.teras.net.server.serverOld.SMessageFinalizarLlamada;
 import es.boffmedia.teras.net.server.serverOld.SMessageIniciarLlamada;
 import es.boffmedia.teras.util.objects.post.PokedexEventResponse;
 import es.boffmedia.teras.util.ScreenshotHandler;
-import es.boffmedia.teras.util.objects.legacy.serverdata.UserData;
+import es.boffmedia.teras.model.config.UserData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.ClientPlayerEntity;
 import net.minecraft.client.network.play.NetworkPlayerInfo;

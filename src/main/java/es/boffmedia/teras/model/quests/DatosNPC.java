@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.misiones;
+package es.boffmedia.teras.model.quests;
 
 public class DatosNPC {
     private String nombre;

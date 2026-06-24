@@ -14,7 +14,7 @@ import es.boffmedia.teras.integration.Integrations;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.util.PolygonCreator;
 import es.boffmedia.teras.util.objects.karts.RaceManager;
-import es.boffmedia.teras.util.objects.legacy.serverdata.TerasConfig;
+import es.boffmedia.teras.model.config.TerasConfig;
 import es.boffmedia.teras.pixelmon.attacks.DesenvaineSubito;
 import es.boffmedia.teras.pixelmon.attacks.TestAttack;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;

@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.serverdata;
+package es.boffmedia.teras.model.config;
 
 public class TerasConfig {
     private String id;
