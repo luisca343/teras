@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.pixelmon.frentebatalla;
+package es.boffmedia.teras.model.battle;
 
 public class PkmSlot {
     int caja;

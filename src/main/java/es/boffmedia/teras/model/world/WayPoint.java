@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy;
+package es.boffmedia.teras.model.world;
 
 import journeymap.client.waypoint.Waypoint;
 import net.minecraft.util.math.BlockPos;

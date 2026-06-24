@@ -1,6 +1,6 @@
 package es.boffmedia.teras.blocks;
 
-import es.boffmedia.teras.util.objects.legacy.ObjColocable;
+import es.boffmedia.teras.model.world.ObjColocable;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.item.BlockItem;

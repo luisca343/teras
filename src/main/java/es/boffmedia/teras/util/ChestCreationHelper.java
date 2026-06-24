@@ -1,7 +1,7 @@
 package es.boffmedia.teras.util;
 
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects.legacy.ObjetoMC;
+import es.boffmedia.teras.model.world.ObjetoMC;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.item.ItemStack;

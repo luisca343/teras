@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.pixelmon;
+package es.boffmedia.teras.model.battle;
 
 public class Recompensa {
     private String objeto;

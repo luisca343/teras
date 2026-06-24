@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy;
+package es.boffmedia.teras.model.world;
 
 public class ObjetoMC {
     String id;

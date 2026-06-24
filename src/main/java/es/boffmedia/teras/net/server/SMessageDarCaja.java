@@ -2,8 +2,8 @@ package es.boffmedia.teras.net.server;
 
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.ChestCreationHelper;
-import es.boffmedia.teras.util.objects.legacy.mina.DarCaja;
-import es.boffmedia.teras.util.objects.legacy.ObjetoMC;
+import es.boffmedia.teras.model.world.DarCaja;
+import es.boffmedia.teras.model.world.ObjetoMC;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
 import net.minecraftforge.fml.network.NetworkEvent;

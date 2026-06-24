@@ -1,6 +1,6 @@
-package es.boffmedia.teras.util.objects.legacy.mina;
+package es.boffmedia.teras.model.world;
 
-import es.boffmedia.teras.util.objects.legacy.ObjetoMC;
+import es.boffmedia.teras.model.world.ObjetoMC;
 
 import java.util.ArrayList;
 

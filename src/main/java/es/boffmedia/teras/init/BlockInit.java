@@ -3,7 +3,7 @@ package es.boffmedia.teras.init;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.*;
 import es.boffmedia.teras.items.TerasItemGroup;
-import es.boffmedia.teras.util.objects.legacy.ObjColocable;
+import es.boffmedia.teras.model.world.ObjColocable;
 import net.minecraft.block.*;
 import net.minecraft.block.material.Material;
 import net.minecraft.item.BlockItem;

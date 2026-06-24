@@ -20,7 +20,7 @@ import com.pixelmonmod.pixelmon.entities.npcs.NPCTrainer;
 import com.pixelmonmod.pixelmon.entities.pixelmon.PixelmonEntity;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.objects.pixelmon.BattleConfig;
-import es.boffmedia.teras.util.objects.legacy.pixelmon.PosicionEquipo;
+import es.boffmedia.teras.model.battle.PosicionEquipo;
 import es.boffmedia.teras.util.data.Scoreboard;
 import net.minecraft.entity.MobEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;

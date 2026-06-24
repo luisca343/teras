@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.pixelmon;
+package es.boffmedia.teras.model.battle;
 
 import es.boffmedia.teras.Teras;
 

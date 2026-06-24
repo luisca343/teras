@@ -10,7 +10,7 @@ import es.boffmedia.teras.TerasVoicechatPlugin;
 import es.boffmedia.teras.net.Messages;
 import es.boffmedia.teras.net.client.CMessageMCEFResponse;
 import es.boffmedia.teras.util.objects.SmartRotomResponse;
-import es.boffmedia.teras.util.objects.legacy.chatapp.CallData;
+import es.boffmedia.teras.model.comms.CallData;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.network.PacketBuffer;
 import net.minecraftforge.fml.network.NetworkEvent;

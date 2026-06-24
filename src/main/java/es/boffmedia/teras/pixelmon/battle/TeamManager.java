@@ -8,7 +8,7 @@ import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
 import com.pixelmonmod.pixelmon.api.storage.StorageProxy;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.file.FileHelper;
-import es.boffmedia.teras.util.objects.legacy.pixelmon.frentebatalla.PkmSlot;
+import es.boffmedia.teras.model.battle.PkmSlot;
 import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.nbt.CompoundNBT;

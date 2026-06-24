@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy;
+package es.boffmedia.teras.model.world;
 
 import net.minecraft.item.Item;
 import net.minecraft.item.UseAction;

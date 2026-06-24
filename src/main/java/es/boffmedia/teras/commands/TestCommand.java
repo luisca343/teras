@@ -31,7 +31,7 @@ import es.boffmedia.teras.util.PokedexHelper;
 import es.boffmedia.teras.util.data.PixelmonStorageHelper;
 import es.boffmedia.teras.util.data.smartrotom.SmartRotomService;
 import es.boffmedia.teras.util.objects.quests.UpdateNPCs;
-import es.boffmedia.teras.util.objects.legacy.WayPoint;
+import es.boffmedia.teras.model.world.WayPoint;
 import es.boffmedia.teras.pixelmon.battle.TerasBattleController;
 import es.boffmedia.teras.pixelmon.battle.TeamManager;
 import es.boffmedia.teras.pixelmon.frentebatalla.TorreBatallaController;

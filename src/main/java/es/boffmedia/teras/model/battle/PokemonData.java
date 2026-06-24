@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.pixelmon;
+package es.boffmedia.teras.model.battle;
 
 import com.pixelmonmod.pixelmon.api.pokemon.Element;
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;

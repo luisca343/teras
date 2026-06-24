@@ -1,4 +1,4 @@
-package es.boffmedia.teras.util.objects.legacy.chatapp;
+package es.boffmedia.teras.model.comms;
 
 import java.util.List;
 

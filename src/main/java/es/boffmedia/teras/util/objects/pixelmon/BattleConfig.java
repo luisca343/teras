@@ -7,7 +7,7 @@ import com.pixelmonmod.pixelmon.api.pokemon.boss.BossTiers;
 import com.pixelmonmod.pixelmon.battles.api.rules.clauses.BattleClause;
 import com.pixelmonmod.pixelmon.battles.api.rules.clauses.BattleClauseRegistry;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.util.objects.legacy.pixelmon.Recompensa;
+import es.boffmedia.teras.model.battle.Recompensa;
 import noppes.npcs.api.entity.ICustomNpc;
 
 import java.util.ArrayList;

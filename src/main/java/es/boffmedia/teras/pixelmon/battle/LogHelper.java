@@ -3,7 +3,7 @@ package es.boffmedia.teras.pixelmon.battle;
 import com.pixelmonmod.pixelmon.api.pokemon.species.gender.Gender;
 import com.pixelmonmod.pixelmon.api.pokemon.stats.BattleStatsType;
 import com.pixelmonmod.pixelmon.battles.controller.participants.PixelmonWrapper;
-import es.boffmedia.teras.util.objects.legacy.pixelmon.PosicionEquipo;
+import es.boffmedia.teras.model.battle.PosicionEquipo;
 
 import java.util.ArrayList;
 import java.util.HashMap;
