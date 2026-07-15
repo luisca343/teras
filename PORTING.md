@@ -25,8 +25,9 @@ source is **not** modified.
 
 ### Files added
 
-- `Teras.java` — `@Mod` entry, registers items + creative tab.
+- `Teras.java` — `@Mod` entry, registers items + creative tab + data components, loads config (common).
 - `init/ItemInit.java` — `smartrotom` item + `teras` creative tab.
+- `init/ComponentInit.java` — the per-item `smartrotom_id` UUID data component (see per-item browsers).
 - `items/SmartRotom.java` — right-click opens the browser (dex-scan path deferred, see below).
 - `client/TerasClient.java` — client setup: load config, register JS bridge with MCEF.
 - `mcef/TerasMCEF.java` — browser lifecycle + JS bridge registration + Java→JS.
@@ -35,7 +36,10 @@ source is **not** modified.
 - `client/gui/PantallaSmartRotom.java` — full-screen browser Screen (render + input).
 - `util/QueryHelper.java` — query dispatch (structure preserved 1:1; `getPlayers`, `chatMessage`,
   `getUserData` wired).
-- `util/TerasConfig.java` — reads `config/teras/config.json` (`home`, `API_URL`, …).
+- `util/TerasConfig.java` — reads `config/teras/config.json` (`home`, `API_URL`, `apiToken`,
+  `requireHttps`); **auto-creates it with defaults if missing** (ports 1.16.5 `FileHelper.getConfig`).
+  Default `home` is the real SmartRotom site `http://teras.es/smartrotom` (not a generic page), so the
+  browser loads the actual app out of the box; admins override it in the JSON. See the config note below.
 - `net/TerasNet.java` — NeoForge payload networking (replaces the 1.16.5 `SimpleChannel`).
 - `net/ChatMessagePayload.java`, `net/UserDataRequestPayload.java` — client→server payloads.
 - `net/McefResponsePayload.java` — server→client async reply (replaces `CMessageMCEFResponse`).
@@ -73,25 +77,100 @@ model in first person, mirroring 1.16.5's `SmartRotomRenderer`.
 
 ### Design decisions / deviations from legacy (flag list)
 
-- **Single shared browser.** Uses `TerasMCEF.getBrowser()` (not the 1.16.5 per-item `PadID` pad).
-  If `null`, the black fallback quad is drawn. The shared browser is sized to the window by the
-  full-screen path; in-hand we ignore its pixel size and just map UVs `0..1` onto the screen quad,
-  so resolution never matters here.
+- **Per-item browser** (see the dedicated section below). The in-hand renderer looks up the browser
+  for *this* item's `smartrotom_id` via `TerasMCEF.getBrowser(uuid)`. Each browser is sized to the
+  window by the full-screen path; in-hand we ignore its pixel size and just map UVs `0..1` onto the
+  screen quad, so resolution never matters here.
+- **Nothing drawn when off.** When there is no browser (SmartRotom off) the screen area draws
+  nothing — the model's own screen face shows through. (1.16.5 drew a black placeholder quad here,
+  which under this model's transforms rendered misplaced, so it was dropped.)
 - **Buffer flush before the browser quad.** NeoForge's hand-render pass hands us a *buffered*
   `MultiBufferSource.BufferSource`; the arm/item go through it while the browser quad is an
   immediate-mode draw. We `endBatch()` after the arm/item so the model flushes first and the browser
   lands on top (with depth test disabled). 1.16.5's montoyo draw was immediate too, but the flush is
   made explicit here to guarantee ordering under the buffered pass.
-- **Fallback shader.** The black fallback uses `getPositionColorShader` (`POSITION_COLOR`) rather than
-  reusing the textured shader with texture 0 bound (as 1.16.5 did) — a solid quad is robust and
-  avoids sampling an unbound texture unit. Also, unlike the 1.16.5 quirk where the fallback captured
-  its matrix *before* a (no-op) `translate(0.063, 0.28, 0.001)`, the offset there was dead code; the
-  real-browser branch applies that offset. Cosmetic only, and only visible when no browser exists.
-- **Item model asset still pending.** The screen-quad coords `(27.65/32, 14/32)` are tuned for the
-  1.16.5 3D Rotom-pad item model. The item currently resolves a flat sprite model (see below), so the
-  browser quad is positioned relative to that, not a real 3D screen face. Porting the pad model JSON
-  + textures (a resource-pack asset, separate from the unused `SmartRotomModel.java` Blockbench
-  export) is the remaining piece for pixel-correct placement.
+- **3D SmartRotom item model — DONE.** The Blockbench model was ported verbatim from 1.16.5:
+  `assets/teras/models/item/smartrotom.json` (was a flat `item/generated` sprite) plus the
+  `custom_model_data:1` override variant `smartrotom_sprigatito.json` + its texture. The base
+  texture (`textures/item/smartrotom.png`) was already byte-identical in the project. On 1.21.1 the
+  classic `models/item/<id>.json` + `overrides` system still applies (the data-driven `assets/<ns>/
+  items/` model system only arrived in 1.21.4), so the model auto-binds to `teras:smartrotom` with no
+  code change. The screen-quad coords `(27.65/32, 14/32)` and the renderer's transform math are tuned
+  for this model + its `firstperson_*_hand` display transforms, so the browser now lands on the
+  SmartRotom's screen face. Blockbench-only fields (`format_version`, `credit`, `groups`) are ignored
+  by the Java model loader. The unused `SmartRotomModel.java` `EntityModel` export was still not ported.
+
+## SmartRotom home configuration
+
+`config/teras/config.json`:
+
+```json
+{
+  "id": "aB3xK9pQ",
+  "home": "http://teras.es/smartrotom",
+  "API_URL": "http://api.boffmedia.es/smartrotom",
+  "apiToken": "",
+  "requireHttps": false
+}
+```
+
+- **Ported behaviour:** `TerasConfig.load()` reads the file and, if it does not exist, **writes this
+  default** — the 1.16.5 `FileHelper.getConfig()` did the same. The old port defaulted `home` to
+  `https://www.google.com` and never wrote a template, so a fresh install opened a generic page
+  ("default browser"); it now loads the **real SmartRotom** unless overridden.
+- **Loaded on both sides** in common setup (`Teras#onCommonSetup` → `TerasConfig.load()`). The server
+  needs `id`; the client needs `home`. (Was client-only before.)
+- **`id` — the server/world identifier.** This is what the SmartRotom web uses to confirm the player
+  is on the right server. The **server** injects its own `id` into the `getUserData` response as the
+  `world` field (`TerasNet.handleUserDataRequest`), so a multiplayer client's local `id` is
+  irrelevant — only the server's config `id` counts (exactly the 1.16.5
+  `SMessageDatosServer`→`CMessageDatosServer` flow, where the server sent `config.getId()` and the
+  client returned it to the page as `world`). A random 8-char id is generated + persisted on first
+  run (matching `RandomStringUtils.random(8,true,true)`); real deployments set it to the value
+  registered with the SmartRotom backend. An existing config without `id` gets one minted and written
+  back (unknown fields preserved).
+- `home` is the browser URL. It must contain `smartrotom` to satisfy `isSiteAllowed(...)`;
+  `load()` logs a warning if it doesn't. Switch it to `https://…` in the JSON once the endpoint
+  serves TLS.
+- `apiToken` is a **server-side secret** for the (deferred) outbound HTTP API — leave it empty on
+  clients. When the server-side API integration lands, keep the token server-side only (the 1.16.5
+  `copyForClient()` stripped it before sending config to clients).
+- **Navigation lock (deliberately NOT enabled):** 1.16.5 had an `onAddressChange` guard that would
+  redirect back to `home` on any non-`smartrotom` URL — but it was **commented out**
+  (`//api.registerDisplayHandler(this)`), so it never actually ran. CinemaMod MCEF supports it
+  cleanly (`MCEF.getClient().addDisplayHandler(...)` appends, doesn't clobber MCEF's own handler), so
+  it can be added later as an opt-in. It's left off here to preserve parity and avoid breaking the
+  real app's own redirects, which can't be verified without a live run.
+
+## Per-item browser instances
+
+Like 1.16.5, **each individual SmartRotom item has its own browser** (its own page + navigation
+state) — two SmartRotoms in an inventory show two independent pages. The old model was rebuilt, not
+copied: 1.16.5 keyed browsers on `PadID`, a client-side `padList.size()+1` counter written into item
+NBT (non-unique, non-persistent, and clobbered on server resync). This port uses a **persistent,
+server-assigned `UUID`**.
+
+- **`init/ComponentInit.java`** — a custom `smartrotom_id` data component
+  (`DataComponentType<UUID>`, `UUIDUtil.CODEC` + `UUIDUtil.STREAM_CODEC`), registered on the mod bus.
+- **`items/SmartRotom.java`** — `inventoryTick` assigns the id **server-side** (`UUID.randomUUID()`)
+  the first time an item without one ticks in an inventory, so it persists in the save and syncs
+  authoritatively to the client (a client can't spoof which browser is which). `SmartRotom.getId(stack)`
+  reads it.
+- **`mcef/TerasMCEF.java`** — now holds `Map<UUID, MCEFBrowser>` instead of one browser:
+  `getBrowser(id)`, `getOrCreateBrowser(id, url)`, `closeBrowser(id)`, `closeAll()`, `runJS(id, js)`.
+- **`client/ClientEvents.java`** — ports the 1.16.5 `onTick` GC. Every 10 ticks it scans the hotbar
+  (slots 0–8) + offhand: it **creates** the browser for the item actually in a hand (identity match,
+  so the in-hand renderer shows it live), **keeps alive** any SmartRotom present in the hotbar/offhand,
+  and **closes** browsers whose item has left — so a full inventory of SmartRotoms never spawns a live
+  Chromium per item. `closeAll()` fires on `ClientPlayerNetworkEvent.LoggingOut`.
+- **`client/gui/PantallaSmartRotom.java`** takes the specific item's `MCEFBrowser`; `SmartRotom.use()`
+  → `TerasClient.openSmartRotom(stack)` resolves the id, get-or-creates that browser, and opens it.
+
+Known limitations (flagged, matching or exceeding 1.16.5): the JS async-reply path
+(`QueryHelper.pendingCallback`, used by `getUserData`) is still a **single static callback** — as in
+1.16.5 (`callbackMCEF`) — so two browsers issuing a server round-trip at the exact same moment could
+race. A per-query id would fix it; deferred. Creative middle-click *copies* the component, so a
+duplicated item would share the original's browser (edge case, accepted).
 
 ## Build & run
 
@@ -114,13 +193,16 @@ itself independently of Teras.
    query function as `mcefQuery` and the cancel function as JCEF's default `cefQueryCancel`. These
    are reproduced exactly in `TerasMCEF.JS_QUERY_FN` / `JS_CANCEL_FN`, so `window.mcefQuery(...)`
    from your site resolves as before. (Only revisit if you later changed the site's JS.)
-2. Set `config/teras/config.json` → `home` to your SmartRotom URL (must contain `smartrotom` to
-   pass the whitelist), then right-click the SmartRotom item: the page should render and be
-   clickable/scrollable/typeable.
+2. First launch with no config: confirm `config/teras/config.json` is **auto-created** and that
+   right-clicking the SmartRotom loads the real site (`home` defaults to `http://teras.es/smartrotom`).
+   To point elsewhere, edit `home` (must contain `smartrotom` to pass the whitelist) and reopen — the
+   page should render and be clickable/scrollable/typeable.
 3. From the page, call `mcefQuery({request: JSON.stringify({query:"getPlayers"}), onSuccess:…,
    onFailure:…})` — `onSuccess` should receive the online player list. This proves JS→Java→JS.
-   - `{query:"getUserData"}` → `onSuccess` receives your uuid/name/op via a **server round-trip**
-     (client→server→client), proving the async `McefResponsePayload` → `pendingCallback` path.
+   - `{query:"getUserData"}` → `onSuccess` receives `{uuid, username, world, x, y, z, op}` via a
+     **server round-trip** (client→server→client), proving the async `McefResponsePayload` →
+     `pendingCallback` path. **`world` = the server's config `id`** — verify it matches what you set
+     in `config/teras/config.json` on the server; that's the "right server" check the web relies on.
    - `{query:"chatMessage","message":"hi"}` sent by an OP → broadcast to all players; a non-OP is
      silently rejected server-side (permission level 2).
 4. Confirm mouse mapping is pixel-accurate at non-100% GUI scale (the port scales by
@@ -140,13 +222,10 @@ itself independently of Teras.
 - **JourneyMap 1.21.1**: re-enable `getWaypoints` / `addWaypoint`.
 - **ScreenshotHandler** and **CameraZoomHandler**: port and re-enable those handlers + the
   shift-click screenshot item path.
-- **Multi-pad lifecycle**: the 1.16.5 `ClientProxy` created a browser per SmartRotom item (NBT
-  `PadID`) and tracked hotbar presence per tick. This port uses a single shared browser; restore
-  the per-item pad model if you need multiple simultaneous browsers.
-- **In-hand renderer DONE** (`client/renders/SmartRotomRenderer.java` + `client/ClientEvents.java`,
-  see the section above). Remaining for pixel-correct placement: add the **3D Rotom-pad item model
-  JSON + textures** (resource-pack asset) so the item renders as the pad instead of a flat sprite —
-  the browser-quad coords assume the pad geometry. The 1.16.5 `SmartRotomModel.java` (a Blockbench
+- **Multi-instance (per-item) lifecycle — DONE.** See the "Per-item browser instances" section above.
+- **In-hand renderer DONE** (`client/renders/SmartRotomRenderer.java` + `client/ClientEvents.java`)
+  **and the 3D SmartRotom item model DONE** (`models/item/smartrotom.json` + `smartrotom_sprigatito.json`
+  override + texture) — see the sections above. The 1.16.5 `SmartRotomModel.java` (a Blockbench
   `EntityModel` export) is **not** used by the renderer and was intentionally not ported.
 
 ## Notes

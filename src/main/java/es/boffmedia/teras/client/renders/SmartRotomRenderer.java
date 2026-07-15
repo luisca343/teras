@@ -10,6 +10,7 @@ import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.math.Axis;
 import es.boffmedia.teras.client.gui.PantallaSmartRotom;
+import es.boffmedia.teras.items.SmartRotom;
 import es.boffmedia.teras.mcef.TerasMCEF;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
@@ -27,20 +28,21 @@ import org.joml.Matrix4f;
  * <p>On a {@code RenderHandEvent} (dispatched from {@link es.boffmedia.teras.client.ClientEvents})
  * it cancels the vanilla hand render and instead: manually renders the player's arm, renders the
  * item model, then draws the live MCEF browser texture as a quad on the model's screen area, at the
- * legacy model coordinates {@code (0,0) -> (27.65/32, 14/32)}. A black quad is drawn as a fallback
- * when no browser exists.</p>
+ * legacy model coordinates {@code (0,0) -> (27.65/32, 14/32)}. When the SmartRotom is off (no
+ * browser) nothing is drawn on the screen area — the model's own screen face shows through.</p>
  *
  * <p>Differences from the 1.16.5 original are limited to API surface (montoyo {@code IBrowser.draw}
  * → a hand-rolled textured quad from {@code getRenderer().getTextureID()}; {@code MatrixStack} →
- * {@code PoseStack}; {@code Vector3f.YP} → {@code Axis.YP}). The single shared browser
- * ({@link TerasMCEF#getBrowser()}) replaces the 1.16.5 per-item {@code PadID} pad model (deferred).</p>
+ * {@code PoseStack}; {@code Vector3f.YP} → {@code Axis.YP}). Like the original, each item draws its
+ * <b>own</b> browser: the browser is looked up by the item's {@code smartrotom_id} via
+ * {@link TerasMCEF#getBrowser(java.util.UUID)} (the old {@code pad}/{@code PadID} vocabulary retired).</p>
  */
 @OnlyIn(Dist.CLIENT)
 public final class SmartRotomRenderer implements IItemRenderer {
 
     private static final float PI = (float) Math.PI;
 
-    /** Screen quad extent on the model, in item-model space (from the 1.16.5 pad geometry). */
+    /** Screen quad extent on the model, in item-model space (from the 1.16.5 SmartRotom geometry). */
     private static final float SCREEN_W = 27.65f / 32.0f + 0.01f;
     private static final float SCREEN_H = 14.0f / 32.0f + 0.002f;
 
@@ -78,7 +80,7 @@ public final class SmartRotomRenderer implements IItemRenderer {
                 ? ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
                 : ItemDisplayContext.FIRST_PERSON_LEFT_HAND);
 
-        // Prepare the pad/screen transform.
+        // Prepare the SmartRotom screen transform.
         stack.mulPose(Axis.YP.rotationDegrees(handSideSign * (45.0f - sinSwingProg2 * 20.0f)));
         stack.mulPose(Axis.ZP.rotationDegrees(handSideSign * sinSqrtSwingProg1 * -20.0f));
         stack.mulPose(Axis.XP.rotationDegrees(sinSqrtSwingProg1 * -80.0f));
@@ -93,22 +95,20 @@ public final class SmartRotomRenderer implements IItemRenderer {
             stack.mulPose(Axis.ZP.rotationDegrees(1.0f));
         }
 
-        // The arm/item were drawn into the buffered MultiBufferSource. Flush it now so the
-        // immediate-mode browser quad below lands on top of the model instead of behind it.
-        // (1.16.5's montoyo IBrowser.draw was immediate too; forcing the flush here makes the
-        // draw order explicit under NeoForge's buffered hand-render pass.)
-        if (buffer instanceof MultiBufferSource.BufferSource bufferSource) {
-            bufferSource.endBatch();
-        }
-
-        // Render the browser (or a black fallback) onto the model's screen area.
-        MCEFBrowser browserView = TerasMCEF.getBrowser();
+        // Render THIS item's own browser onto the model's screen area (each SmartRotom has its own,
+        // keyed by its smartrotom_id). When the SmartRotom is off (no browser for this id) draw
+        // nothing at all — the model's own screen face is what shows through.
+        MCEFBrowser browserView = TerasMCEF.getBrowser(SmartRotom.getId(is));
         if (browserView != null) {
+            // The arm/item were drawn into the buffered MultiBufferSource. Flush it now so the
+            // immediate-mode browser quad below lands on top of the model instead of behind it.
+            // (1.16.5's montoyo IBrowser.draw was immediate too; forcing the flush here makes the
+            // draw order explicit under NeoForge's buffered hand-render pass.)
+            if (buffer instanceof MultiBufferSource.BufferSource bufferSource) {
+                bufferSource.endBatch();
+            }
             stack.translate(0.063f, 0.28f, 0.001f);
             drawScreenQuad(stack.last().pose(), browserView.getRenderer().getTextureID());
-        } else {
-            // Pantalla falsa placeholder: solid black quad (no browser available).
-            drawFallbackQuad(stack.last().pose());
         }
 
         stack.popPose();
@@ -163,22 +163,6 @@ public final class SmartRotomRenderer implements IItemRenderer {
         BufferUploader.drawWithShader(vb.build());
 
         RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.enableDepthTest();
-    }
-
-    /** Solid black quad drawn when no browser is available (mirrors the 1.16.5 fallback). */
-    private void drawFallbackQuad(Matrix4f pose) {
-        RenderSystem.disableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-
-        Tesselator tesselator = Tesselator.getInstance();
-        BufferBuilder vb = tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        vb.addVertex(pose, 0.0f, 0.0f, 0.0f).setColor(0, 0, 0, 255);
-        vb.addVertex(pose, SCREEN_W, 0.0f, 0.0f).setColor(0, 0, 0, 255);
-        vb.addVertex(pose, SCREEN_W, SCREEN_H, 0.0f).setColor(0, 0, 0, 255);
-        vb.addVertex(pose, 0.0f, SCREEN_H, 0.0f).setColor(0, 0, 0, 255);
-        BufferUploader.drawWithShader(vb.build());
-
         RenderSystem.enableDepthTest();
     }
 }

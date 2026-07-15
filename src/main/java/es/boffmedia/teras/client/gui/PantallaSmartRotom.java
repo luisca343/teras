@@ -8,8 +8,6 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import es.boffmedia.teras.Teras;
-import es.boffmedia.teras.mcef.TerasMCEF;
-import es.boffmedia.teras.util.TerasConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -22,22 +20,21 @@ import net.minecraft.network.chat.Component;
  */
 public class PantallaSmartRotom extends Screen {
 
-    private MCEFBrowser browser;
+    private final MCEFBrowser browser;
     private int lastWidth = -1, lastHeight = -1;
 
-    public PantallaSmartRotom() {
+    /** Opens the screen bound to a specific SmartRotom item's browser instance. */
+    public PantallaSmartRotom(MCEFBrowser browser) {
         super(Component.literal("SmartRotom"));
+        this.browser = browser;
     }
 
     @Override
     protected void init() {
         super.init();
         if (browser == null) {
-            browser = TerasMCEF.getOrCreateBrowser(TerasConfig.getHome());
-            if (browser == null) {
-                Teras.LOGGER.error("SmartRotom browser unavailable (MCEF not initialized)");
-                return;
-            }
+            Teras.LOGGER.error("SmartRotom screen opened with no browser");
+            return;
         }
         resizeBrowser();
     }
@@ -99,7 +96,7 @@ public class PantallaSmartRotom extends Screen {
 
     @Override
     public void onClose() {
-        // Keep the browser instance alive across opens (mirrors the 1.16.5 "pad" persistence).
+        // Keep the browser instance alive across opens (mirrors the 1.16.5 per-item SmartRotom persistence).
         super.onClose();
     }
 

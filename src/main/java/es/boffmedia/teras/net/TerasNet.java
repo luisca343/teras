@@ -75,12 +75,18 @@ public final class TerasNet {
     private static void handleUserDataRequest(UserDataRequestPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer sp)) return;
-            // Authoritative, server-known player data. Mod-specific fields (missions, economy, …)
-            // are added here as those systems are ported.
+            // Authoritative, server-known player data (matches the 1.16.5 getUserData contract the
+            // SmartRotom web reads: uuid/username/world/x/y/z). `world` is THIS server's config id —
+            // it's how the web confirms the player is on the right server. Mod-specific fields
+            // (missions, economy, …) are added here as those systems are ported.
             JsonObject json = new JsonObject();
             json.addProperty("status", "ok");
             json.addProperty("uuid", sp.getUUID().toString());
-            json.addProperty("name", sp.getGameProfile().getName());
+            json.addProperty("username", sp.getGameProfile().getName());
+            json.addProperty("world", es.boffmedia.teras.util.TerasConfig.getId());
+            json.addProperty("x", sp.getX());
+            json.addProperty("y", sp.getY());
+            json.addProperty("z", sp.getZ());
             json.addProperty("op", sp.hasPermissions(CHAT_PERMISSION_LEVEL));
             PacketDistributor.sendToPlayer(sp, new McefResponsePayload(GSON.toJson(json)));
         });
