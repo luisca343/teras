@@ -26,10 +26,26 @@ public final class QueryHelper {
     private static final Gson GSON = new Gson();
 
     /**
-     * Holder for a callback that will be resolved later by an async (server round-trip) response,
-     * mirroring 1.16.5 {@code ClientProxy.callbackMCEF}. Wired up when networking is ported.
+     * Callbacks awaiting an async (server round-trip) response, keyed by the request id echoed back in
+     * {@code McefResponsePayload}. Replaces 1.16.5's per-query static callbacks and lets several async
+     * queries be in flight without their responses colliding. Resolved in {@code ClientNetHandler}.
      */
-    public static volatile JsQueryCallback pendingCallback;
+    private static final java.util.concurrent.ConcurrentHashMap<Long, JsQueryCallback> PENDING =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicLong NEXT_REQUEST_ID =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** Registers {@code callback} for a new async request and returns its id (for the request payload). */
+    private static long register(JsQueryCallback callback) {
+        long id = NEXT_REQUEST_ID.incrementAndGet();
+        PENDING.put(id, callback);
+        return id;
+    }
+
+    /** Resolves and removes the callback for {@code requestId}, or {@code null} if none (called by ClientNetHandler). */
+    public static JsQueryCallback takePending(long requestId) {
+        return PENDING.remove(requestId);
+    }
 
     private enum QueryType {
         ADD_WAYPOINT,
@@ -51,7 +67,6 @@ public final class QueryHelper {
     public static boolean handleQuery(CefBrowser browser, long id, String query,
                                       boolean persistent, JsQueryCallback callback) {
         Teras.LOGGER.info("SmartRotom query received: {}", query);
-        pendingCallback = callback;
 
         final JsonObject json;
         final String type;
@@ -82,9 +97,14 @@ public final class QueryHelper {
                     callback.success(SUCCESS);
                     return true;
                 case GET_USER_DATA:
-                    // Async: the server replies with an McefResponsePayload that resolves
-                    // `pendingCallback` (set above) via ClientNetHandler.
-                    es.boffmedia.teras.net.TerasNet.requestUserData();
+                    // Async: register the callback under a fresh id; the server echoes the id in an
+                    // McefResponsePayload, which ClientNetHandler routes back to this callback.
+                    es.boffmedia.teras.net.TerasNet.requestUserData(register(callback));
+                    return true;
+                case GET_SPAWNS:
+                    // Async (same round-trip): the server scans the player's Pixelmon spawner and
+                    // replies with the spawn list under the same id.
+                    es.boffmedia.teras.net.TerasNet.requestSpawns(register(callback));
                     return true;
 
                 // --- Handlers below need more networking / Pixelmon / JourneyMap: ported next phase ---
@@ -93,7 +113,6 @@ public final class QueryHelper {
                 case SET_CALL:
                 case LEAVE_CALL:
                 case GET_MISIONES:
-                case GET_SPAWNS:
                     return notPorted(queryType, callback, "server networking");
                 case ADD_WAYPOINT:
                 case GET_WAYPOINTS:

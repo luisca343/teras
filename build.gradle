@@ -59,8 +59,12 @@ dependencies {
     compileOnly "com.cinemamod:mcef:${mcef_version}"
     runtimeOnly "com.cinemamod:mcef-neoforge:${mcef_version}"
 
-    // --- Deferred until 1.21.1 coordinates are confirmed (SmartRotom couplings) ---
-    // compileOnly "curse.maven:pixelmon-389487:<fileId>"
+    // Pixelmon 9.3.9 for 1.21.1 NeoForge (Pixelmon-1.21.1-9.3.9-universal.jar). compileOnly: the
+    // server provides Pixelmon at runtime. NOTE: this Pixelmon build wants NeoForge >= 21.1.200 at
+    // runtime (we compile against 21.1.77) — bump the runtime NeoForge on the server accordingly.
+    compileOnly "curse.maven:pixelmon-389487:7026117"
+
+    // --- Deferred until 1.21.1 coordinates are confirmed ---
     // compileOnly "curse.maven:journeymap-32274:<fileId>"
 }
 

@@ -33,6 +33,7 @@ public final class TerasNet {
         PayloadRegistrar registrar = event.registrar("1");
         registrar.playToServer(ChatMessagePayload.TYPE, ChatMessagePayload.STREAM_CODEC, TerasNet::handleChat);
         registrar.playToServer(UserDataRequestPayload.TYPE, UserDataRequestPayload.STREAM_CODEC, TerasNet::handleUserDataRequest);
+        registrar.playToServer(SpawnsRequestPayload.TYPE, SpawnsRequestPayload.STREAM_CODEC, TerasNet::handleSpawnsRequest);
         // Client-only body is isolated behind a lambda -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -44,8 +45,12 @@ public final class TerasNet {
         PacketDistributor.sendToServer(new ChatMessagePayload(json));
     }
 
-    public static void requestUserData() {
-        PacketDistributor.sendToServer(UserDataRequestPayload.INSTANCE);
+    public static void requestUserData(long requestId) {
+        PacketDistributor.sendToServer(new UserDataRequestPayload(requestId));
+    }
+
+    public static void requestSpawns(long requestId) {
+        PacketDistributor.sendToServer(new SpawnsRequestPayload(requestId));
     }
 
     // ---- Server-side handlers ----
@@ -88,7 +93,27 @@ public final class TerasNet {
             json.addProperty("y", sp.getY());
             json.addProperty("z", sp.getZ());
             json.addProperty("op", sp.hasPermissions(CHAT_PERMISSION_LEVEL));
-            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(GSON.toJson(json)));
+            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), GSON.toJson(json)));
+        });
+    }
+
+    private static void handleSpawnsRequest(SpawnsRequestPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            // Port of 1.16.5 SMessageCheckSpawns: scan the player's Pixelmon spawner and reply with a
+            // PokedexSpawnChance[] JSON. SpawnScanner is the only Pixelmon-coupled class; guard on the
+            // mod being present so it is never classloaded when Pixelmon is absent (e.g. the
+            // compileOnly dev runtime) — otherwise a NoClassDefFoundError would leave the JS callback
+            // hanging. We always send a reply (even "[]") so the round-trip resolves.
+            String spawnsJson = "[]";
+            if (net.neoforged.fml.ModList.get().isLoaded("pixelmon")) {
+                spawnsJson = es.boffmedia.teras.pixelmon.SpawnScanner.scanAsJson(sp);
+            } else {
+                Teras.LOGGER.warn("getSpawns requested by {} but Pixelmon is not loaded on this "
+                        + "server; returning []. (Pixelmon is compileOnly — add it to the runtime, and "
+                        + "note it needs NeoForge >= 21.1.200.)", sp.getGameProfile().getName());
+            }
+            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), spawnsJson));
         });
     }
 }

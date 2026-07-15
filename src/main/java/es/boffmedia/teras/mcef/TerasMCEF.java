@@ -3,7 +3,10 @@ package es.boffmedia.teras.mcef;
 import com.cinemamod.mcef.MCEF;
 import com.cinemamod.mcef.MCEFBrowser;
 import es.boffmedia.teras.Teras;
+import org.cef.CefSettings;
+import org.cef.browser.CefBrowser;
 import org.cef.browser.CefMessageRouter;
+import org.cef.handler.CefDisplayHandlerAdapter;
 
 import java.util.Map;
 import java.util.Set;
@@ -42,10 +45,10 @@ public final class TerasMCEF {
 
     /** One browser per SmartRotom item, keyed by its {@code smartrotom_id}. */
     private static final Map<UUID, MCEFBrowser> BROWSERS = new ConcurrentHashMap<>();
-    // Off-screen render size for a freshly created browser; the full-screen path resizes to the
-    // window when opened. In-hand rendering maps UVs 0..1, so the exact size doesn't matter there.
-    private static final int DEFAULT_WIDTH = 1280;
-    private static final int DEFAULT_HEIGHT = 720;
+    // Browsers render at a fixed 1080p. The full-screen screen also drives 1920x1080, and in-hand
+    // rendering maps UVs 0..1, so this size is what you get everywhere.
+    private static final int DEFAULT_WIDTH = 1920;
+    private static final int DEFAULT_HEIGHT = 1080;
 
     /** Call once during client setup. Registers the JS bridge as soon as MCEF is initialized. */
     public static void init() {
@@ -67,11 +70,37 @@ public final class TerasMCEF {
                     new CefMessageRouter.CefMessageRouterConfig(JS_QUERY_FN, JS_CANCEL_FN));
             router.addHandler(new TerasQueryRouter(), true);
             MCEF.getClient().getHandle().addMessageRouter(router);
+            registerConsoleBridge();
             routerRegistered = true;
             Teras.LOGGER.info("SmartRotom JS bridge registered ({} / {})", JS_QUERY_FN, JS_CANCEL_FN);
         } catch (Exception e) {
             Teras.LOGGER.error("Failed to register SmartRotom JS bridge", e);
         }
+    }
+
+    /**
+     * In-game dev console: forward the page's {@code console.log/warn/error} to the Teras logger, so
+     * you can debug the SmartRotom web app from the Minecraft log/console without native DevTools
+     * (OSR browsers can't pop a DevTools window). MCEF multiplexes display handlers, so appending ours
+     * doesn't disturb MCEF's own.
+     */
+    private static void registerConsoleBridge() {
+        MCEF.getClient().addDisplayHandler(new CefDisplayHandlerAdapter() {
+            @Override
+            public boolean onConsoleMessage(CefBrowser browser, CefSettings.LogSeverity level,
+                                            String message, String source, int line) {
+                String where = source == null ? "" : source + ":" + line;
+                switch (level) {
+                    case LOGSEVERITY_ERROR, LOGSEVERITY_FATAL ->
+                            Teras.LOGGER.error("[SmartRotom console] {} ({})", message, where);
+                    case LOGSEVERITY_WARNING ->
+                            Teras.LOGGER.warn("[SmartRotom console] {} ({})", message, where);
+                    default ->
+                            Teras.LOGGER.info("[SmartRotom console] {} ({})", message, where);
+                }
+                return false; // don't suppress default handling
+            }
+        });
     }
 
     public static boolean isReady() {

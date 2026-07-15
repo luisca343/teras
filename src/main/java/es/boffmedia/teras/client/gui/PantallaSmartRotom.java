@@ -8,7 +8,6 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import es.boffmedia.teras.Teras;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
@@ -20,8 +19,13 @@ import net.minecraft.network.chat.Component;
  */
 public class PantallaSmartRotom extends Screen {
 
+    // The full-screen SmartRotom always renders at a fixed 1080p, independent of window size/GUI
+    // scale. The texture is stretched to fill the screen by the quad; mouse coords are mapped
+    // proportionally into this fixed space (see bx/by).
+    private static final int BROWSER_W = 1920;
+    private static final int BROWSER_H = 1080;
+
     private final MCEFBrowser browser;
-    private int lastWidth = -1, lastHeight = -1;
 
     /** Opens the screen bound to a specific SmartRotom item's browser instance. */
     public PantallaSmartRotom(MCEFBrowser browser) {
@@ -36,35 +40,17 @@ public class PantallaSmartRotom extends Screen {
             Teras.LOGGER.error("SmartRotom screen opened with no browser");
             return;
         }
-        resizeBrowser();
+        // Always drive the browser at 1920x1080 while the full screen is open.
+        browser.resize(BROWSER_W, BROWSER_H);
     }
 
-    // ---- Coordinate helpers: Screen coords are GUI-scaled; CEF wants physical pixels ----
-    private int px(double v) {
-        return (int) (v * minecraft.getWindow().getGuiScale());
+    // ---- Map GUI-scaled screen coords (0..width/height) into the fixed 1920x1080 browser space ----
+    private int bx(double mouseX) {
+        return width <= 0 ? 0 : (int) (mouseX / width * BROWSER_W);
     }
 
-    private void resizeBrowser() {
-        if (browser == null) return;
-        int w = minecraft.getWindow().getWidth();
-        int h = minecraft.getWindow().getHeight();
-        if (w > 0 && h > 0 && (w != lastWidth || h != lastHeight)) {
-            browser.resize(w, h);
-            lastWidth = w;
-            lastHeight = h;
-        }
-    }
-
-    @Override
-    public void resize(Minecraft mc, int w, int h) {
-        super.resize(mc, w, h);
-        resizeBrowser();
-    }
-
-    @Override
-    public void tick() {
-        super.tick();
-        resizeBrowser();
+    private int by(double mouseY) {
+        return height <= 0 ? 0 : (int) (mouseY / height * BROWSER_H);
     }
 
     @Override
@@ -104,7 +90,7 @@ public class PantallaSmartRotom extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (browser != null) {
-            browser.sendMousePress(px(mouseX), px(mouseY), button);
+            browser.sendMousePress(bx(mouseX), by(mouseY), button);
             browser.setFocus(true);
         }
         return super.mouseClicked(mouseX, mouseY, button);
@@ -113,7 +99,7 @@ public class PantallaSmartRotom extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (browser != null) {
-            browser.sendMouseRelease(px(mouseX), px(mouseY), button);
+            browser.sendMouseRelease(bx(mouseX), by(mouseY), button);
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }
@@ -121,7 +107,7 @@ public class PantallaSmartRotom extends Screen {
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
         if (browser != null) {
-            browser.sendMouseMove(px(mouseX), px(mouseY));
+            browser.sendMouseMove(bx(mouseX), by(mouseY));
         }
         super.mouseMoved(mouseX, mouseY);
     }
@@ -129,7 +115,7 @@ public class PantallaSmartRotom extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (browser != null) {
-            browser.sendMouseWheel(px(mouseX), px(mouseY), scrollY, 0);
+            browser.sendMouseWheel(bx(mouseX), by(mouseY), scrollY, 0);
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }

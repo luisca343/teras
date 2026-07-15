@@ -14,15 +14,15 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public final class ClientNetHandler {
     private ClientNetHandler() {}
 
-    /** Resolves the pending {@code mcefQuery} callback with the server's JSON response. */
+    /** Resolves the originating {@code mcefQuery} callback (matched by request id) with the JSON response. */
     public static void onMcefResponse(McefResponsePayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            JsQueryCallback cb = QueryHelper.pendingCallback;
+            JsQueryCallback cb = QueryHelper.takePending(payload.requestId());
             if (cb != null) {
                 cb.success(payload.json());
-                QueryHelper.pendingCallback = null;
             } else {
-                Teras.LOGGER.warn("Received MCEF response with no pending callback: {}", payload.json());
+                Teras.LOGGER.warn("MCEF response for unknown/expired request id {}: {}",
+                        payload.requestId(), payload.json());
             }
         });
     }

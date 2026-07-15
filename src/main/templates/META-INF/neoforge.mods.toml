@@ -21,6 +21,15 @@ versionRange = "[2.1.6,)"
 ordering = "AFTER"
 side = "CLIENT"
 
+# Optional: the SmartRotom getSpawns query reads Pixelmon's spawner. Everything else (the browser)
+# works without it, and getSpawns degrades to [] if Pixelmon is absent, so this is not required.
+[[dependencies.${mod_id}]]
+modId = "pixelmon"
+type = "optional"
+versionRange = "[9.3,)"
+ordering = "AFTER"
+side = "BOTH"
+
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"
