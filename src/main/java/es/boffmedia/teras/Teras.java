@@ -10,6 +10,9 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * Teras — 1.21.1 NeoForge port.
  *
@@ -21,6 +24,16 @@ import org.slf4j.LoggerFactory;
 public class Teras {
     public static final String MOD_ID = "teras";
     public static final Logger LOGGER = LoggerFactory.getLogger("Teras");
+
+    /**
+     * Shared pool for blocking off-thread work (remote combat-config / PokePaste fetches). Daemon
+     * threads so a pending fetch never blocks JVM shutdown. Ported from the 1.16.5 {@code EXECUTOR}.
+     */
+    public static final ExecutorService EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "Teras-Worker");
+        t.setDaemon(true);
+        return t;
+    });
 
     public Teras(IEventBus modBus, ModContainer container) {
         // Registries

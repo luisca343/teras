@@ -59,13 +59,34 @@ dependencies {
     compileOnly "com.cinemamod:mcef:${mcef_version}"
     runtimeOnly "com.cinemamod:mcef-neoforge:${mcef_version}"
 
-    // Pixelmon 9.3.9 for 1.21.1 NeoForge (Pixelmon-1.21.1-9.3.9-universal.jar). compileOnly: the
-    // server provides Pixelmon at runtime. NOTE: this Pixelmon build wants NeoForge >= 21.1.200 at
-    // runtime (we compile against 21.1.77) — bump the runtime NeoForge on the server accordingly.
-    compileOnly "curse.maven:pixelmon-389487:7026117"
+    // --- Battle engines: both compileOnly. Exactly one is present at runtime; the mod detects
+    //     which via ModList and selects the matching BattleProvider (see pixelmon/battle/api). ---
+
+    // Pixelmon 9.3.16 for 1.21.1 NeoForge (CurseForge file 8042508). NOTE: recent Pixelmon builds
+    // want NeoForge >= 21.1.200 at runtime (we compile against 21.1.77) — bump the runtime NeoForge
+    // on the server accordingly.
+    compileOnly "curse.maven:pixelmon-389487:8042508"
+
+    // Cobblemon 1.7.3+1.21.1 (CurseForge file 7553231). transitive=false: the fat jar carries the
+    // API classes we compile against; its runtime deps (architectury, KotlinForForge) are provided
+    // by the server. Kotlin stdlib is needed at compile time to call Cobblemon's Kotlin API from Java.
+    compileOnly("curse.maven:cobblemon-687131:7553231") { transitive = false }
+    compileOnly "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
 
     // --- Deferred until 1.21.1 coordinates are confirmed ---
     // compileOnly "curse.maven:journeymap-32274:<fileId>"
+
+    // Unit tests for the engine-agnostic battle layer (config/mode/level parsing) — no Minecraft
+    // or engine runtime required, so they run anywhere with `./gradlew test`.
+    testImplementation platform("org.junit:junit-bom:5.11.3")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    // Gson reaches the main sources transitively via Minecraft; the test sourceset needs it directly.
+    testImplementation "com.google.code.gson:gson:2.10.1"
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
 }
 
 // Expand mod metadata placeholders in src/main/templates/META-INF/neoforge.mods.toml
