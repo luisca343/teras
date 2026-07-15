@@ -15,7 +15,7 @@ public class WeatherChangeActionHandler implements BattleActionHandler<WeatherCh
         if (newGlobalStatus instanceof Weather) {
             Weather newWeather = (Weather) newGlobalStatus;
             WeatherType weatherType = WeatherType.fromPixelmonWeather(newWeather);
-            appendLine(terasBattle, "|-weather|" + weatherType.getShowdownName() + "|");
+            appendLine(terasBattle, "|-weather|" + weatherType.getShowdownName());
         }
     }
 }

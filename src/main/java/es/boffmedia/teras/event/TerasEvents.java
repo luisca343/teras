@@ -146,6 +146,7 @@ public class TerasEvents {
         new GpsCommand(event.getDispatcher());
         new DiscosCommand(event.getDispatcher());
         new CombateCommand(event.getDispatcher());
+        new TerasSmokeTestCommand(event.getDispatcher());
         new WECommand(event.getDispatcher());
         new DimTPCommand(event.getDispatcher());
 

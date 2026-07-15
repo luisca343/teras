@@ -148,7 +148,6 @@ public class Teras
         Pixelmon.EVENT_BUS.register(new MisionesCaza());
         Pixelmon.EVENT_BUS.register(new PixelmonEvents());
         Pixelmon.EVENT_BUS.register(new TerasBattleEvent());
-        Pixelmon.EVENT_BUS.register(new TerasBattleLogEvent());
         Teras.PROXY.crearArchivo("config.json");
 
 

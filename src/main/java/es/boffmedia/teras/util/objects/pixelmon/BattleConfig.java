@@ -54,11 +54,34 @@ public class BattleConfig {
     }
 
     public int getPlayerPkmCount(){
-        return Integer.parseInt(getTamanoEquipos().split("vs")[0]);
+        return teamSizePart(0);
     }
 
     public int getRivalPkmCount(){
-        return Integer.parseInt(getTamanoEquipos().split("vs")[1]);
+        return teamSizePart(1);
+    }
+
+    /** Parses one side of "AvsB" defensively. Falls back to a full party (6) on missing/garbled data. */
+    private int teamSizePart(int side){
+        String raw = getTamanoEquipos();
+        if (raw == null) return 6;
+        String[] parts = raw.split("vs");
+        if (parts.length <= side) return 6;
+        try {
+            return Integer.parseInt(parts[side].trim());
+        } catch (NumberFormatException e) {
+            return 6;
+        }
+    }
+
+    /** Active Pokémon per side the player controls at once (1 singles, 2 doubles, …). */
+    public int getPlayerActivePkmCount(){
+        return getModalidad()[0];
+    }
+
+    /** Active Pokémon per side the rival controls at once (1 singles, 2 doubles, 5 horde, 1 raid boss). */
+    public int getRivalActivePkmCount(){
+        return getModalidad()[1];
     }
 
     public int getNumPkmJugador(){
@@ -86,6 +109,7 @@ public class BattleConfig {
     }
 
     public void recibirRecompensas(UUID uuid){
+        if (recompensas == null) return;
         Teras.PROXY.darObjetos(recompensas, uuid);
     }
 
@@ -106,7 +130,7 @@ public class BattleConfig {
     }
 
     public BattleType getBattleType(){
-        switch (modalidad.toLowerCase()){
+        switch (modalidad == null ? "" : modalidad.toLowerCase()){
             case "doble":
                 return BattleType.DOUBLE;
             case "triple":
@@ -165,7 +189,7 @@ public class BattleConfig {
     }
 
     public BattleAIMode getIA() {
-        switch (IA.toUpperCase(Locale.ROOT)){
+        switch (IA == null ? "" : IA.toUpperCase(Locale.ROOT)){
             case "AGGRESSIVE":
             case "AGRESIVA":
                 return BattleAIMode.AGGRESSIVE;
@@ -206,8 +230,9 @@ public class BattleConfig {
 
     public List<BattleClause> getNormas() {
         List<BattleClause> clauses = new ArrayList<>();
+        if (normas == null) return clauses;
         for (String norma : normas) {
-            clauses.add(BattleClauseRegistry.getClause(norma.toLowerCase(Locale.ROOT)));
+            if (norma != null) clauses.add(BattleClauseRegistry.getClause(norma.toLowerCase(Locale.ROOT)));
         }
         return clauses;
     }
@@ -235,7 +260,8 @@ public class BattleConfig {
     public int calculateTeamLevel(int nivelJugador){
         int nivel;
 
-        if(this.nivel.contains("+")) nivel = nivelJugador + Integer.parseInt(this.nivel.split("\\+")[1]);
+        if(this.nivel == null) nivel = nivelJugador;
+        else if(this.nivel.contains("+")) nivel = nivelJugador + Integer.parseInt(this.nivel.split("\\+")[1]);
         else if(this.nivel.contains("-")) nivel = nivelJugador - Integer.parseInt(this.nivel.split("-")[1]);
         else if(this.nivel.equals("0") || this.nivel.equals("=") || this.nivel.equals("IGUALADO") || this.nivel.equals("EQUAL")) nivel = nivelJugador;
         else nivel = Integer.parseInt(this.nivel);
@@ -251,7 +277,7 @@ public class BattleConfig {
     }
 
     public int getNivelesExtra(){
-        if(this.nivel.contains("+")) return Integer.parseInt(this.nivel.split("\\+")[1]);
+        if(this.nivel != null && this.nivel.contains("+")) return Integer.parseInt(this.nivel.split("\\+")[1]);
         else return 0;
     }
 
@@ -276,7 +302,7 @@ public class BattleConfig {
     }
 
     public boolean esEntrenador(){
-        return !carpeta.equals("eventos");
+        return !"eventos".equals(carpeta);
     }
 
     public Pokemon getFirstPokemon(){
@@ -296,7 +322,7 @@ public class BattleConfig {
     }
 
     public ArrayList<String> getGimmick() {
-        return gimmick;
+        return gimmick == null ? new ArrayList<>() : gimmick;
     }
 
     public void setGimmick(ArrayList<String> gimmick) {

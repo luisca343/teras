@@ -23,9 +23,6 @@ public class AttackActionHandler implements BattleActionHandler<AttackAction> {
         MoveResults[] moveResults = (MoveResults[]) getProtectedProperty("moveResults", action);
 
         String move = attack.getActualMove().getAttackName();
-        String source = terasBattle.getPositionString(pokemon);
-
-        String attackStr =  "|move|" + getPositionAndNameString(pokemon, terasBattle) + "|" + move + "|";
 
         PixelmonWrapper moveTarget = pokemon;
         for (MoveResults result : moveResults) {
@@ -35,12 +32,22 @@ public class AttackActionHandler implements BattleActionHandler<AttackAction> {
             }
         }
 
-        String mainTargetStr = getPositionAndNameString(moveTarget, terasBattle);
-        attackStr += mainTargetStr + "|";
+        String attackStr = "|move|" + getPositionAndNameString(pokemon, terasBattle) + "|" + move
+                + "|" + getPositionAndNameString(moveTarget, terasBattle);
 
-        if(moveResults.length > 1){
-            attackStr += "[spread] ";
-            attackStr += Arrays.stream(moveResults).map((target) -> terasBattle.getPositionString(target.target)).reduce((a, b) -> a + "," + b).get();
+        if (moveResults.length > 1) {
+            String slots = Arrays.stream(moveResults)
+                    .filter(r -> r.target != null)
+                    .map(r -> terasBattle.getPositionString(r.target))
+                    .reduce((a, b) -> a + "," + b).orElse("");
+            attackStr += "|[spread] " + slots;
+        }
+
+        AttackResult primary = moveResults.length > 0 ? moveResults[0].getResult() : null;
+        if (primary == AttackResult.charging) {
+            attackStr += "|[still]";
+        } else if (primary == AttackResult.notarget) {
+            attackStr += "|[notarget]";
         }
 
         appendLine(terasBattle, attackStr);
@@ -49,25 +56,36 @@ public class AttackActionHandler implements BattleActionHandler<AttackAction> {
             handleStatusMove(move, attack, pokemon, terasBattle);
             return;
         }
-        
+
         for (MoveResults moveResult : moveResults) {
             PixelmonWrapper target = moveResult.target;
-            String targetName = target.getNickname();
+            if (target == null) continue;
+            AttackResult result = moveResult.getResult();
+            String targetStr = terasBattle.getPositionString(target) + ": " + target.getNickname();
+
+            if (result == AttackResult.missed) {
+                appendLine(terasBattle, "|-miss|" + getPositionAndNameString(pokemon, terasBattle) + "|" + targetStr);
+                continue;
+            }
+            if (result == AttackResult.failed || result == AttackResult.notarget) {
+                appendLine(terasBattle, "|-fail|" + targetStr);
+                continue;
+            }
 
             int currentHealth = moveResult.getTarget().getHealth();
             int maxHealth = moveResult.getTarget().getMaxHealth();
 
             if(currentHealth == 0){
-                appendLine(terasBattle, "|-damage|" + terasBattle.getPositionString(target) + ": " + targetName + "|0 fnt");
+                appendLine(terasBattle, "|-damage|" + targetStr + "|0 fnt");
             }else{
-                appendLine(terasBattle, "|-damage|" + terasBattle.getPositionString(target) + ": " + targetName + "|" + currentHealth + "\\/" + maxHealth);
+                appendLine(terasBattle, "|-damage|" + targetStr + "|" + currentHealth + "\\/" + maxHealth);
             }
         }
 
         // After faint: |faint|p2b: Wugtrio
         for (MoveResults moveResult : moveResults) {
             PixelmonWrapper target = moveResult.target;
-            if(moveResult.getTarget().getHealth() == 0){
+            if(target != null && moveResult.getTarget().getHealth() == 0){
                 appendLine(terasBattle, "|faint|" + terasBattle.getPositionString(target) + ": " + target.getNickname());
             }
         }
@@ -76,7 +94,7 @@ public class AttackActionHandler implements BattleActionHandler<AttackAction> {
     private void handleStatusMove(String move, Attack attack, PixelmonWrapper pokemon, TerasBattle terasBattle) {
         switch (move) {
             case "Wonder Room": case "Trick Room": case "Magic Room":
-                appendLine(terasBattle, "|-fieldstart|"+move+"|[of] " + getPositionAndNameString(pokemon, terasBattle));
+                appendLine(terasBattle, "|-fieldstart|move: "+move+"|[of] " + getPositionAndNameString(pokemon, terasBattle));
                 break;
             case "Protect": case "Detect": case "Endure": case "King's Shield": case "Spiky Shield": 
             case "Baneful Bunker": case "Obstruct": case "Quick Guard": case "Wide Guard": case "Crafty Shield": 

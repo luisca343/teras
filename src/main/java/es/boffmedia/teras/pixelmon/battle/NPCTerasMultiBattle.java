@@ -49,11 +49,10 @@ public class NPCTerasMultiBattle extends NPCTerasBattle {
         br.setNewClauses(battleConfig.getNormas());
         br = br.set(BattleRuleRegistry.TEAM_SELECT, true);
         br = br.set(BattleRuleRegistry.TEAM_PREVIEW, false);
-
-        br = br.set(BattleRuleRegistry.NUM_POKEMON, battleConfig.getPlayerPkmCount());
         br = br.set(BattleRuleRegistry.BATTLE_TYPE, BattleType.DOUBLE);
-        br.set(BattleRuleRegistry.NUM_POKEMON, battleConfig.getRivalPkmCount());
-
+        // NUM_POKEMON caps the player's team-selection size; each NPC trainer's party is sized
+        // when it is built, so the rivals are not driven by this single global property.
+        br = br.set(BattleRuleRegistry.NUM_POKEMON, battleConfig.getPlayerPkmCount());
         br = br.set(TerasBattleRuleRegistry.SPECIAL_BATTLE, true);
 
         setBattleType("MULTI");
@@ -66,14 +65,25 @@ public class NPCTerasMultiBattle extends NPCTerasBattle {
         team2[0] = getRivalParticipant(configEnemigo1);
         team2[1] = getRivalParticipant(configEnemigo2);
 
+        if (team1[0] == null || team1[1] == null || team2[0] == null || team2[1] == null) {
+            Teras.LOGGER.error("No se pudo iniciar el combate multi '" + battleConfig.getNombreArchivo()
+                    + "': falta un participante (equipo vacío o configuración inválida).");
+            cleanupNpcEntity();
+            return;
+        }
 
-            battle = BattleRegistry.startBattle(team1, team2, br);
-            Teras.getLBC().addTerasBattle(battle.battleIndex, this);
+        battle = BattleRegistry.startBattle(team1, team2, br);
+        Teras.getLBC().addTerasBattle(battle.battleIndex, this);
 
-            npcEntity.remove();
-            npcEntity = null;
+        cleanupNpcEntity();
     }
 
+
+    @Override
+    protected int getPlayerControlledCount(){
+        // 2v2 multi: the player and the partner trainer each fill one of the two doubles slots.
+        return 1;
+    }
 
     public BattleParticipant getRivalParticipant(BattleConfig configEnemigo){
         SpecialNpcTrainer npc = new SpecialNpcTrainer(player.level);
@@ -113,6 +123,7 @@ public class NPCTerasMultiBattle extends NPCTerasBattle {
             i++;
             if (i == configEnemigo.getNumPkmRival()) break;
         }
+        // Each side has two trainers filling the two doubles slots, so every trainer controls 1.
         return new TrainerParticipant(npc, 1);
     }
 
@@ -154,6 +165,7 @@ public class NPCTerasMultiBattle extends NPCTerasBattle {
             i++;
             if (i == companionConfig.getNumPkmRival()) break;
         }
+        // Each side has two trainers filling the two doubles slots, so every trainer controls 1.
         return new TrainerParticipant(npc, 1);
     }
 

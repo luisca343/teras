@@ -21,6 +21,19 @@ public class BattleActionHandlerFactory {
         register(StatusRemoveAction.class, new StatusRemoveActionHandler());
         register(TerrainChangeAction.class, new TerrainChangeActionHandler());
         register(BattleMessageAction.class, new BattleMessageActionHandler());
+        register(DamagePokemonAction.class, new DamagePokemonActionHandler());
+        register(HealPokemonAction.class, new HealPokemonActionHandler());
+        register(GlobalStatusAddAction.class, new GlobalStatusAddActionHandler());
+        register(GlobalStatusRemoveAction.class, new GlobalStatusRemoveActionHandler());
+        register(MegaEvolveAction.class, new MegaEvolveActionHandler());
+        register(HeldItemChangeAction.class, new HeldItemChangeActionHandler());
+        register(ChangeAbilityAction.class, new ChangeAbilityActionHandler());
+        register(ChangeTypeAction.class, new ChangeTypeActionHandler());
+        register(TurnEndAction.class, new TurnEndActionHandler());
+        register(EnterDynamaxAction.class, new EnterDynamaxActionHandler());
+        register(ExitDynamaxAction.class, new ExitDynamaxActionHandler());
+        register(UltraBurstAction.class, new UltraBurstActionHandler());
+        register(BagItemAction.class, new BagItemActionHandler());
     }
 
     private static <T extends BattleAction> void register(Class<T> clazz, BattleActionHandler<T> handler) {
@@ -31,7 +44,7 @@ public class BattleActionHandlerFactory {
     public static <T extends BattleAction> BattleActionHandler<T> getHandler(T action) {
         BattleActionHandler<T> handler = (BattleActionHandler<T>) handlers.get(action.getClass());
         if (handler == null) {
-            Teras.LOGGER.info("Unknown action: " + action.getClass().getSimpleName());
+            Teras.LOGGER.warn("Unknown action: " + action.getClass().getSimpleName());
             return null;
         }
         return handler;

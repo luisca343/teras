@@ -30,8 +30,7 @@ public class TerasBattle{
 
     public TerasBattle(BattleController battle){
         this.battle = battle;
-
-        if(battle != null) TerasBattleLog.appendStartBattle(this);
+        // The Showdown header is built once when the battle is registered (addTerasBattle).
     }
 
     public BattleController getBattle(){
@@ -79,11 +78,8 @@ public class TerasBattle{
         log.add(line);
     }
 
-    public
-
-
     /* Pokémon Management */
-    final char[] letters = {'a', 'b', 'c', 'd', 'e', 'f'};
+    public final char[] letters = {'a', 'b', 'c', 'd', 'e', 'f'};
 
     public String getPositionString(int team, int position){
         return "p" + team + TerasBattleLog.getPositionLetter(position);
@@ -113,7 +109,6 @@ public class TerasBattle{
             }
         }
 
-        Teras.getLogger().warn("Active team: " + result.toString());
         return result;
     }
 

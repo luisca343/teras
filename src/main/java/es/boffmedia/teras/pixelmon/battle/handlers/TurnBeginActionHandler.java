@@ -17,7 +17,7 @@ public class TurnBeginActionHandler implements BattleActionHandler<TurnBeginActi
     public void handle(TurnBeginAction action, TerasBattle terasBattle) {
         BattleController bc = terasBattle.getBattle();
         int turn = (int) getProtectedProperty("turn", action);
-        if(turn == 0) appendStartBattle(terasBattle);
+        // The header is built once at registration (addTerasBattle); do not rebuild it here.
 
         appendLine(terasBattle,"|turn|" + (turn+1));
         appendLine(terasBattle,"|");
@@ -27,7 +27,6 @@ public class TurnBeginActionHandler implements BattleActionHandler<TurnBeginActi
 
         int participantIndex = 1;
         for (BattleParticipant participant : participantsList) {
-            Teras.getLogger().warn(participant.controlledPokemon);
             for (int i = 0; i < participant.controlledPokemon.size(); i++) {
                 PixelmonWrapper pokemon = participant.controlledPokemon.get(i);
                 if(!terasBattle.getActivePokemon(participantIndex, i).equals(pokemon)){

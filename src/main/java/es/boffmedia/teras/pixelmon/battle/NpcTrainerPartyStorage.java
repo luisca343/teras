@@ -25,7 +25,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public class NpcTrainerPartyStorage extends TrainerPartyStorage {
-    public static final int MAX_PARTY = 12;
+    public static final int MAX_PARTY = 6;
     protected Pokemon[] party = new Pokemon[MAX_PARTY];
 
 

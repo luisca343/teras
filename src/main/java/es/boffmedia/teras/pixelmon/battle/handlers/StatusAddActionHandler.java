@@ -22,10 +22,9 @@ public class StatusAddActionHandler implements BattleActionHandler<StatusAddActi
         map.put(StatusType.Poison, "psn");
         map.put(StatusType.PoisonBadly, "tox");
         map.put(StatusType.Sleep, "slp");
-        map.put(StatusType.Confusion, "confusion");
         return map;
     }
-    
+
     @Override
     public void handle(StatusAddAction action, TerasBattle terasBattle) {
         StatusBase status = (StatusBase) getProtectedProperty("status", action);
@@ -34,8 +33,10 @@ public class StatusAddActionHandler implements BattleActionHandler<StatusAddActi
         String showdownStatus = STATUS_MAP.get(status.type);
         if (showdownStatus != null) {
             appendLine(terasBattle, "|-status|" + getPositionAndNameString(pokemon, terasBattle) + "|" + showdownStatus);
+        } else if (status.type == StatusType.Confusion) {
+            appendLine(terasBattle, "|-start|" + getPositionAndNameString(pokemon, terasBattle) + "|confusion");
         } else if (status.type == StatusType.Flinch) {
-            appendLine(terasBattle, "|-flinch|" + getPositionAndNameString(pokemon, terasBattle));
+            appendLine(terasBattle, "|cant|" + getPositionAndNameString(pokemon, terasBattle) + "|flinch");
         } else if (status.type == StatusType.ParadoxBoost) {
             appendLine(terasBattle, "|-activate|" + getPositionAndNameString(pokemon, terasBattle) + 
                        "|ability: " + pokemon.getAbility().getName());

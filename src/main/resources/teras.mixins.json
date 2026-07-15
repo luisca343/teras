@@ -4,12 +4,21 @@
   "compatibilityLevel": "JAVA_8",
   "minVersion": "0.8.4",
   "server": [
+    "BagItemActionMixin",
+    "ChangeAbilityActionMixin",
+    "ChangeTypeActionMixin",
+    "DamagePokemonActionMixin",
+    "GlobalStatusAddActionMixin",
+    "HealPokemonActionMixin",
+    "HeldItemChangeActionMixin",
     "LogMixin",
+    "MegaEvolveActionMixin",
     "PokemonMixin",
     "RotomListenerMixin",
     "ShearInteractionMixin",
     "StatChangeActionMixin",
     "StatusAddActionMixin",
+    "StatusRemoveActionMixin",
     "TeamSelectionMixin"
   ],
   "client": [

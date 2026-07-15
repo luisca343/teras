@@ -51,22 +51,31 @@ public class TerasBattleEvent {
 
     public void finCombateEntrenador(BattleEndEvent event, TerasBattle combate){
         Teras.LOGGER.info("Fin combate entrenador");
-        //TerasBattleLog.parseLog(event.getBattleController().battleLog, combate);
-
-
 
         boolean ganador = getGanador(event, combate);
-        String nombreGanador = ganador ? combate.getP1().getDisplayName() : combate.getP2().getDisplayName();
-        TerasBattleLog.appendLine(combate, "|win|" + nombreGanador);
 
         if(combate instanceof NPCTerasBattle){
-            LogroCombate logroCombate = getLogroCombate((NPCTerasBattle) combate, ganador);
+            NPCTerasBattle npcCombate = (NPCTerasBattle) combate;
+            LogroCombate logroCombate = getLogroCombate(npcCombate, ganador);
             SmartRotomService.saveBattle(logroCombate);
+            FileHelper.writeStringFile("logs/terasbattle/" + npcCombate.getBattleConfig().getNombreArchivo() + ".log", combate.getLogString());
         }
 
         Teras.getLogger().info(combate.getLogString());
-        FileHelper.writeStringFile("logs/terasbattle/\"+combate.getBattleConfig().getNombreArchivo()+\".log", combate.getLogString());
+    }
 
+    private void appendWinner(BattleEndEvent event, TerasBattle combate){
+        try {
+            for (Map.Entry<BattleParticipant, BattleResults> entry : event.getResults().entrySet()){
+                if(entry.getValue() == BattleResults.VICTORY){
+                    TerasBattleLog.appendLine(combate, "|win|" + entry.getKey().getDisplayName());
+                    return;
+                }
+            }
+            TerasBattleLog.appendLine(combate, "|tie");
+        } catch (Exception e){
+            Teras.getLogger().error("Error appending battle winner to replay", e);
+        }
     }
 
     private static @NotNull LogroCombate getLogroCombate(NPCTerasBattle combate, boolean ganador) {
@@ -137,6 +146,8 @@ public class TerasBattleEvent {
         if(Teras.getLBC().existsTerasBattle(event.getBattleController().battleIndex)) {
             TerasBattle combate = Teras.getLBC().getTerasBattle(event.getBattleController().battleIndex);
             Teras.LOGGER.info("Finalizando combate desde evento");
+
+            appendWinner(event, combate);
 
             /*
             Iterator<Map.Entry<BattleParticipant, BattleResults>> iterator = event.getResults().entrySet().iterator();

@@ -49,55 +49,63 @@ public class NPCTerasBattle extends TerasBattle {
         br.setNewClauses(battleConfig.getNormas());
         br = br.set(BattleRuleRegistry.TEAM_SELECT, true);
         br = br.set(BattleRuleRegistry.TEAM_PREVIEW, false);
-
-        br = br.set(BattleRuleRegistry.NUM_POKEMON, battleConfig.getPlayerPkmCount());
         br = br.set(BattleRuleRegistry.BATTLE_TYPE, battleConfig.getBattleType());
-        br.set(BattleRuleRegistry.NUM_POKEMON, battleConfig.getRivalPkmCount());
-
-        setBattleType(battleConfig.getBattleType().toString());
-        
+        // NUM_POKEMON is a single global property that caps the player's team-selection size.
+        // The rival is an NPC whose party is sized when it is built (getPartRivalEntrenador),
+        // so it is not driven by this property — that is what lets sizes differ (e.g. 3vs6).
+        br = br.set(BattleRuleRegistry.NUM_POKEMON, battleConfig.getPlayerPkmCount());
         br = br.set(TerasBattleRuleRegistry.SPECIAL_BATTLE, true);
 
+        setBattleType(battleConfig.getBattleType().toString());
+
+        PlayerParticipant playerParticipant = getPlayerParticipant();
+        BattleParticipant rivalParticipant = getRivalParticipant();
+
+        if (playerParticipant == null || rivalParticipant == null) {
+            Teras.LOGGER.error("No se pudo iniciar el combate '" + battleConfig.getNombreArchivo()
+                    + "': falta un participante (equipo rival vacío o configuración inválida).");
+            cleanupNpcEntity();
+            return;
+        }
 
         if(battleConfig.getRivalPkmCount() >= 6) {
-            battle = BattleRegistry.startBattle(getPlayerParticipant(), getRivalParticipant());
+            // Pass the rules so SPECIAL_BATTLE is applied; otherwise the BattleStartedEvent
+            // handler would register this battle a second time and rebuild the header.
+            battle = BattleRegistry.startBattle(
+                    new BattleParticipant[]{playerParticipant},
+                    new BattleParticipant[]{rivalParticipant},
+                    br);
             Teras.getLBC().addTerasBattle(battle.battleIndex, this);
 
-            npcEntity.remove();
-            npcEntity = null;
-        } else if(battleConfig.getRivalPkmCount() < 6) {
+            cleanupNpcEntity();
+        } else {
             TeamSelectionRegistry.Builder test =
                     TeamSelectionRegistry
                             .builder()
-                            .members(getPlayerParticipant().getEntity(), getRivalParticipant().getEntity())
+                            .members(playerParticipant.getEntity(), rivalParticipant.getEntity())
                             .battleRules(br)
                             .showOpponentTeam()
                             .closeable()
                             .battleStartConsumer(bc -> {
                                 battle = bc;
                                 Teras.getLBC().addTerasBattle(bc.battleIndex, this);
-
-                                // First we need to get the team of the player
-
-                                BattleParticipant part = null;
-
-                                for (BattleParticipant participant : bc.participants) {
-                                    if(participant instanceof PlayerParticipant){
-                                        part = participant;
-                                    }
-                                }
-
-
-
-                                npcEntity.remove();
-                                npcEntity = null;
+                                cleanupNpcEntity();
                             })
                             .cancelConsumer(ts -> {
                                 Teras.LOGGER.error("CANCELADO");
+                                cleanupNpcEntity();
                             });
             test.start();
         }
 
+    }
+
+    /** Removes the trainer entity spawned for this battle, guarding against a null/leaked handle. */
+    protected void cleanupNpcEntity() {
+        if (npcEntity != null) {
+            npcEntity.remove();
+            npcEntity = null;
+        }
     }
 
 
@@ -120,8 +128,25 @@ public class NPCTerasBattle extends TerasBattle {
 
     public PlayerParticipant getPlayerParticipant(){
         if(p1 !=null) return (PlayerParticipant) p1;
-        //List<Pokemon> pokemon = getPlayerParty().findAll(Pokemon::canBattle);
-        return new PlayerParticipant(player, (Pokemon) null);
+        // PlayerParticipant derives its controlled (sent-out) count from the number of lead Pokémon it
+        // is given. On the direct >=6 path there is no team-selection UI to fill those leads, so we must
+        // hand it the right number ourselves — e.g. 2 for a doubles battle — or it defaults to one lead
+        // and the player only ever sends out a single Pokémon.
+        int active = Math.max(1, getPlayerControlledCount());
+        List<Pokemon> team = getPlayerParty().getTeam();
+        Pokemon[] leads = team.stream().limit(active).toArray(Pokemon[]::new);
+        if (leads.length == 0) {
+            return new PlayerParticipant(player, (Pokemon) null);
+        }
+        return new PlayerParticipant(player, leads);
+    }
+
+    /**
+     * How many Pokémon the player sends out at once. Derived from the battle type for a 1-vs-1-trainer
+     * battle; multi battles override this to 1 because the partner trainer fills the second doubles slot.
+     */
+    protected int getPlayerControlledCount(){
+        return battleConfig.getPlayerActivePkmCount();
     }
 
     public BattleParticipant getRivalParticipant(){
@@ -186,7 +211,9 @@ public class NPCTerasBattle extends TerasBattle {
             i++;
             if (i == battleConfig.getNumPkmRival()) break;
         }
-        return new TrainerParticipant(npc, 1);
+        // Controlled count = Pokémon this trainer sends out at once, derived from the battle
+        // type (1 singles, 2 doubles, 3 triples, …) instead of a hardcoded 1.
+        return new TrainerParticipant(npc, battleConfig.getRivalActivePkmCount());
     }
 
     public void setEntity(MobEntity entity) {

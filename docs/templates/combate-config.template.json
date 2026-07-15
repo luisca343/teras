@@ -1,0 +1,20 @@
+{
+  "nombre": "Líder Aqua",
+  "modalidad": "doble",
+  "tamanoEquipos": "6vs6",
+  "nivel": "0",
+  "dinero": 2000,
+  "exp": true,
+  "curar": true,
+  "preview": false,
+  "frecuencia": "DIA",
+  "IA": "TACTICAL",
+  "logro": "gimnasio_aqua",
+  "equipos": [1, 2],
+  "normas": ["sleepclause", "speciesclause"],
+  "gimmick": ["Mega"],
+  "recompensas": [
+    { "objeto": "pixelmon:rare_candy", "cantidad": 5 },
+    { "objeto": "pixelmon:water_gem", "cantidad": 1, "nbt": "{display:{Name:'{\"text\":\"Insignia Aqua\"}'}}" }
+  ]
+}

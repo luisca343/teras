@@ -1,9 +1,12 @@
 package es.boffmedia.teras.pixelmon.battle;
 
-import java.util.HashMap;
+import com.pixelmonmod.pixelmon.battles.BattleRegistry;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class TerasBattleController {
-    public HashMap<Integer, TerasBattle> terasBattles = new HashMap<>();
+    public Map<Integer, TerasBattle> terasBattles = new ConcurrentHashMap<>();
 
 
 
@@ -35,11 +38,22 @@ public class TerasBattleController {
     }
 
     public void addTerasBattle(int id, TerasBattle combate){
+        reapStaleBattles();
         terasBattles.put(id, combate);
         TerasBattleLog.appendStartBattle(combate);
     }
 
     public void removeTerasBattle(int id){
         terasBattles.remove(id);
+    }
+
+    /**
+     * Drops entries whose underlying battle is no longer active in Pixelmon's registry. Normal endings
+     * are cleared by {@link #removeTerasBattle} from {@code BattleEndEvent}; this reaps the ones that
+     * leak on abnormal termination (crash/disconnect with no end event). Runs opportunistically each
+     * time a new battle is registered, so the map can't grow unbounded across a long uptime.
+     */
+    private void reapStaleBattles(){
+        terasBattles.keySet().removeIf(battleId -> BattleRegistry.getBattle(battleId) == null);
     }
 }

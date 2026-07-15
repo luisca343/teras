@@ -1,6 +1,5 @@
 package es.boffmedia.teras.pixelmon.battle.handlers;
 
-import com.pixelmonmod.pixelmon.battles.controller.BattleController;
 import com.pixelmonmod.pixelmon.battles.controller.log.action.type.TerrainChangeAction;
 import com.pixelmonmod.pixelmon.battles.controller.participants.PixelmonWrapper;
 import com.pixelmonmod.pixelmon.battles.status.ElectricTerrain;
@@ -15,19 +14,27 @@ import static es.boffmedia.teras.pixelmon.battle.TerasBattleLog.*;
 public class TerrainChangeActionHandler implements BattleActionHandler<TerrainChangeAction> {
     @Override
     public void handle(TerrainChangeAction action, TerasBattle terasBattle) {
-        BattleController bc = terasBattle.getBattle();
         GlobalStatusBase newGlobalStatus = (GlobalStatusBase) getProtectedProperty("newTerrain", action);
         GlobalStatusBase oldGlobalStatus = (GlobalStatusBase) getProtectedProperty("oldTerrain", action);
         PixelmonWrapper pokemon = (PixelmonWrapper) getProtectedProperty("pokemon", action);
 
-        if (newGlobalStatus instanceof ElectricTerrain) {
-            appendLine(terasBattle, "|-fieldstart|Electric Terrain|" + getPositionAndNameString(pokemon, terasBattle));
-        } else if (newGlobalStatus instanceof PsychicTerrain) {
-            appendLine(terasBattle, "|-fieldstart|Psychic Terrain|" + getPositionAndNameString(pokemon, terasBattle));
-        } else if (newGlobalStatus instanceof MistyTerrain) {
-            appendLine(terasBattle, "|-fieldstart|Misty Terrain|" + getPositionAndNameString(pokemon, terasBattle));
-        } else if (newGlobalStatus instanceof GrassyTerrain) {
-            appendLine(terasBattle, "|-fieldstart|Grassy Terrain|" + getPositionAndNameString(pokemon, terasBattle));
+        String newName = terrainName(newGlobalStatus);
+        if (newName != null) {
+            appendLine(terasBattle, "|-fieldstart|move: " + newName + "|[of] " + getPositionAndNameString(pokemon, terasBattle));
+            return;
         }
+
+        String oldName = terrainName(oldGlobalStatus);
+        if (oldName != null) {
+            appendLine(terasBattle, "|-fieldend|move: " + oldName);
+        }
+    }
+
+    private static String terrainName(GlobalStatusBase status) {
+        if (status instanceof ElectricTerrain) return "Electric Terrain";
+        if (status instanceof PsychicTerrain) return "Psychic Terrain";
+        if (status instanceof MistyTerrain) return "Misty Terrain";
+        if (status instanceof GrassyTerrain) return "Grassy Terrain";
+        return null;
     }
 }

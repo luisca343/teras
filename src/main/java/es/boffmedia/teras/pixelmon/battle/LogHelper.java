@@ -55,35 +55,6 @@ public class LogHelper {
         this.boosts.put(pkm, boosts);
     }
 
-    public enum BattleBoostsType {
-        ACCURACY(0, "acc"),
-        EVASION(1, "eva"),
-        ATTACK(2, "atk"),
-        DEFENSE(3, "def"),
-        SPECIAL_ATTACK(4, "specialattack"),
-        SPECIAL_DEFENSE(5, "specialdefense"),
-        SPEED(6, "spe"),
-        HP(7, "hp");
-        private final int index;
-        private final String name;
-
-        private BattleBoostsType(int index, String name) {
-            this.index = index;
-            this.name = name;
-        }
-
-        public static BattleBoostsType fromIndex(int index) {
-            for(BattleBoostsType type : BattleBoostsType.values()) {
-                if(type.index == index) return type;
-            }
-            return null;
-        }
-
-        public String getName() {
-            return name;
-        }
-    }
-
     public ArrayList<Integer> getBoostsActuales(PixelmonWrapper pokemon) {
         ArrayList<Integer> boosts = new ArrayList<>();
         //int hp = pokemon.getBattleStats().getStage(BattleStatsType.HP);

@@ -16,7 +16,10 @@ public class TerasBattleProperty extends AbstractBooleanProperty {
     }
 
     public boolean requiredByClient() {
-        return true;
+        // The client mod does not register this server-only property, so it must not be flagged
+        // required-by-client — otherwise team-select/rules serialization would desync. It is used
+        // purely server-side as a key object for rules.set/get.
+        return false;
     }
 
     public Optional<PropertyValue<Boolean>> getDefault() {
