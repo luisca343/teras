@@ -1,35 +1,4 @@
 {
-  "itemGroup.terasTab": "Teras",
-
   "item.teras.smartrotom": "SmartRotom",
-  "item.teras.cubo_aguas_termales": "Cubo de aguas termales",
-  "block.teras.funko": "Funko",
-  "block.teras.lavender": "Lavanda",
-
-  "biome.teras.arrecife_wingull": "Arrecife de los Wingull",
-  "biome.teras.pueblo_tulipan": "Pueblo Tulipán",
-  "biome.teras.pueblo_shiroi": "Pueblo Shiroi",
-  "biome.teras.pueblo_hagane": "Pueblo Hagane",
-  "biome.teras.pueblo_yume": "Pueblo Yume",
-  "biome.teras.pueblo_dento": "Pueblo Dento",
-  "biome.teras.pueblo_iwa": "Pueblo Iwa",
-  "biome.teras.pueblo_tsuchi": "Pueblo Tsuchi",
-  "biome.teras.pueblo_oasis": "Pueblo Oasis",
-  "biome.teras.pueblo_senshi": "Pueblo Senshi",
-  "biome.teras.pueblo_kinoko": "Pueblo Kinoko",
-  "biome.teras.pueblo_sakura": "Pueblo Sakura",
-
-  "biome.teras.pueblo_takai": "Pueblo Takai",
-  "biome.teras.pueblo_doku": "Pueblo Doku",
-  "biome.teras.pueblo_gaku": "Pueblo Gaku",
-  "biome.teras.pueblo_lavanda": "Pueblo Lavanda",
-  "biome.teras.pueblo_denki": "Pueblo Denki",
-  "biome.teras.pueblo_mizu": "Pueblo Mizu",
-  "biome.teras.pueblo_olivo": "Pueblo Olivo",
-
-  "biome.teras.narukami_akina": "Narukami-Akina",
-  "biome.teras.fukitsu_gansolia": "Fukitsu-Gansolia",
-
-  "ability.TestAbility": "Potencia Floral",
-  "ability.TestAbility.description": "Duplica el ataque de tu dinosaurio amorfo de mierda."
+  "itemGroup.teras": "Teras"
 }

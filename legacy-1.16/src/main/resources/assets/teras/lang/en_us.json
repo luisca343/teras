@@ -1,0 +1,88 @@
+{
+  "itemGroup.terasTab": "Teras",
+
+  "block.teras.funko": "Funko",
+
+  "block.teras.itamilk": "Itamilk",
+
+  "block.teras.tocadiscos": "Tocadiscos",
+  "block.teras.twister_amarillo": "Alfombra de Twister Amarilla",
+  "block.teras.twister_azul": "Alfombra de Twister Azul",
+  "block.teras.twister_rojo": "Alfombra de Twister Roja",
+  "block.teras.twister_verde": "Alfombra de Twister Verde",
+  "block.teras.blue_nether_brick_stairs": "Escaleras de ladrillo del Nether azul",
+  "block.teras.blue_nether_brick_slab": "Losa de ladrillo del Nether azul",
+  "block.teras.frame": "Marco online",
+
+  "item.teras.smartrotom": "Smart Rotom",
+  "item.teras.cubo_aguas_termales": "Cubo de aguas termales",
+  "block.teras.lavender": "Lavanda",
+
+  "item.teras.latigo_numeril": "Latigo Numeril",
+  "item.teras.taser": "Táser",
+  "item.teras.disco": "Disco",
+  "item.teras.porra": "Porra",
+
+  "biome.teras.arrecife_wingull": "Arrecife de los Wingull",
+  "biome.teras.puerto_wingull": "Puerto de los Wingull",
+  "biome.teras.pueblo_tulipan": "Pueblo Tulipán",
+  "biome.teras.pueblo_shiroi": "Pueblo Shiroi",
+  "biome.teras.pueblo_hagane": "Pueblo Hagane",
+  "biome.teras.pueblo_yume": "Pueblo Yume",
+  "biome.teras.pueblo_dento": "Pueblo Dento",
+  "biome.teras.pueblo_iwa": "Pueblo Iwa",
+  "biome.teras.pueblo_tsuchi": "Pueblo Tsuchi",
+  "biome.teras.pueblo_oasis": "Pueblo Oasis",
+  "biome.teras.pueblo_senshi": "Pueblo Senshi",
+  "biome.teras.pueblo_kinoko": "Pueblo Kinoko",
+  "biome.teras.pueblo_sakura": "Pueblo Sakura",
+
+  "biome.teras.pueblo_takai": "Pueblo Takai",
+  "biome.teras.pueblo_doku": "Pueblo Doku",
+  "biome.teras.pueblo_gaku": "Pueblo Gaku",
+  "biome.teras.pueblo_lavanda": "Pueblo Lavanda",
+  "biome.teras.pueblo_denki": "Pueblo Denki",
+  "biome.teras.pueblo_mizu": "Pueblo Mizu",
+  "biome.teras.pueblo_olivo": "Pueblo Olivo",
+
+  "biome.teras.narukami_akina": "Narukami-Akina",
+  "biome.teras.fukitsu_gansolia": "Fukitsu-Gansolia",
+
+
+  "biome.teras.fukitsu": "Fukitsu",
+  "biome.teras.gansolia": "Gansolia",
+  "biome.teras.narukami": "Narukami",
+  "biome.teras.akina" : "Akina",
+
+  "biome.teras.acento_circunflejo": "???",
+
+  "death.attack.teras.latigo_numeril": "%1$s ha sido domado por %2$s",
+  "death.attack.teras.taser": "%2$s ha infartado a %1$s",
+  "death.attack.teras.bonk": "%2$s ha bonkeado a %1$s",
+
+  "teras.latigo_numeril": "Latigazo",
+  "teras.taser": "Taser",
+  "teras.bonk": "¡BONK!",
+
+  "gui.frame.save": "Save",
+  "gui.frame.play": "Play",
+  "gui.frame.pause": "Pause",
+  "gui.frame.stop": "Stop",
+  "gui.frame.url_text": "Url:",
+  "gui.frame.volume": "Volume",
+
+  "customslider.videoplayer.value": "%s: %d",
+
+  "pixelmon.generic.form.calle": "Calle",
+
+  "ability.TestAbility": "Potencia Floral",
+  "ability.TestAbility.description": "Duplica el ataque de tu dinosaurio amorfo de mierda.",
+
+  "attack.test_attack": "Ataque de prueba",
+  "attack.test_attack.description": "Ataque de prueba",
+
+
+  "ribbon.teras": "Cinta Teras",
+  "ribbon.teras.description": "Cinta obtenida por derrotar a Teras en el modo aventura.",
+  "ribbon.teras.title": "%s el Teras"
+}

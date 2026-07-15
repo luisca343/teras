@@ -1,57 +1,33 @@
 package es.boffmedia.teras.init;
 
-import com.pixelmonmod.pixelmon.items.BadgeItem;
-import es.boffmedia.teras.client.funko.FunkoItemRenderer;
-import es.boffmedia.teras.items.*;
-import net.minecraft.item.BucketItem;
-import net.minecraft.item.Item;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.RegistryObject;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.ForgeRegistries;
+import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.items.SmartRotom;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
-public class ItemInit {
+public final class ItemInit {
+    private ItemInit() {}
 
-    public static final DeferredRegister<Item> ITEMS =
-            DeferredRegister.create(ForgeRegistries.ITEMS, "teras");
+    public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Teras.MOD_ID);
 
-    public static final RegistryObject<Item> SMARTROTOM = ITEMS.register("smartrotom",
-            () -> new SmartRotom(new Item.Properties().stacksTo(1).tab(TerasItemGroup.LIZARDON_GROUP)));
+    public static final DeferredItem<Item> SMARTROTOM = ITEMS.registerItem(
+            "smartrotom",
+            SmartRotom::new,
+            new Item.Properties().stacksTo(1)
+    );
 
-    // Funko statue. The ISTER (client-only) renders the actual skin in inventory/hand;
-    // the supplier is only invoked on the client, so referencing the client class here is dist-safe.
-    public static final RegistryObject<Item> FUNKO = ITEMS.register("funko",
-            () -> new FunkoItem(BlockInit.FUNKO.get(), new Item.Properties().stacksTo(16)
-                    .tab(TerasItemGroup.LIZARDON_GROUP)
-                    .setISTER(() -> FunkoItemRenderer::new)));
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
+            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, Teras.MOD_ID);
 
-    /*public static final RegistryObject<Item> MEDALLA = ITEMS.register("medalla_helada",
-            () -> new BadgeItem());
-
-    public static final RegistryObject<Item> DISCO = ITEMS.register("disco",
-            () -> new Disco());
-
-    public static final RegistryObject<Item> TEST = ITEMS.register("test",
-            () -> new Item(new Item.Properties().stacksTo(6).tab(TerasItemGroup.LIZARDON_GROUP)));
-
-    public static final RegistryObject<Item> CHAPA_OXIDADA = ITEMS.register("chapa_oxidada",
-            () -> new ChapaOxidada());
-
-   */
-    
-    public static final RegistryObject<Item> LATIGO_NUMERIL = ITEMS.register("latigo_numeril",
-            () -> new LatigoNumeril(new Item.Properties().stacksTo(1).tab(TerasItemGroup.LIZARDON_GROUP)));
-    public static final RegistryObject<Item> PORRA = ITEMS.register("porra",
-            () -> new Porra(new Item.Properties().stacksTo(1).tab(TerasItemGroup.LIZARDON_GROUP)));
-
-    public static final RegistryObject<Item> TASER = ITEMS.register("taser",
-            () -> new Taser(new Item.Properties().stacksTo(1).tab(TerasItemGroup.LIZARDON_GROUP)));
-
-    public static final RegistryObject<Item> CUBO_AGUAS_TERMALES = ITEMS.register("cubo_aguas_termales",
-            () -> new BucketItem(() -> FluidInit.AGUAS_TERMALES_SOURCE.get(), new Item.Properties().stacksTo(1).tab(TerasItemGroup.LIZARDON_GROUP)));
-
-
-    public static void register(IEventBus eventBus) {
-        ITEMS.register(eventBus);
-    }
+    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TERAS_TAB =
+            CREATIVE_TABS.register("teras", () -> CreativeModeTab.builder()
+                    .title(Component.translatable("itemGroup.teras"))
+                    .icon(() -> SMARTROTOM.get().getDefaultInstance())
+                    .displayItems((params, output) -> output.accept(SMARTROTOM.get()))
+                    .build());
 }

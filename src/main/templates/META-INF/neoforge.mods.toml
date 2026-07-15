@@ -1,0 +1,36 @@
+modLoader = "javafml"
+loaderVersion = "${loader_version_range}"
+license = "All rights reserved"
+issueTrackerURL = "https://github.com/boffmedia/teras/issues"
+
+[[mods]]
+modId = "${mod_id}"
+version = "${mod_version}"
+displayName = "${mod_name}"
+authors = "Luisca"
+credits = "Luisca"
+description = '''
+Teras companion mod for Pixelmon — 1.21.1 NeoForge port. SmartRotom in-game browser powered by MCEF.
+'''
+
+# Hard dependency on MCEF (provides the Chromium browser used by SmartRotom)
+[[dependencies.${mod_id}]]
+modId = "mcef"
+type = "required"
+versionRange = "[2.1.6,)"
+ordering = "AFTER"
+side = "CLIENT"
+
+[[dependencies.${mod_id}]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neoforge_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"
