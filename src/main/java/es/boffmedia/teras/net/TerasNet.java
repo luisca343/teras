@@ -13,6 +13,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
+
 /**
  * NeoForge payload networking for SmartRotom, replacing the 1.16.5 Forge {@code SimpleChannel}
  * ({@code Messages}). Only the SmartRotom-relevant, self-contained messages are ported here.

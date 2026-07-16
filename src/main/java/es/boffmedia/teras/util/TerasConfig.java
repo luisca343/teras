@@ -18,7 +18,8 @@ import java.security.SecureRandom;
 /**
  * Port of the 1.16.5 {@code TerasConfig} + {@code FileHelper.getConfig()}. Reads
  * {@code config/teras/config.json}:
- * <pre>{ "id": "...", "home": "...", "API_URL": "...", "apiToken": "...", "requireHttps": false }</pre>
+ * <pre>{ "id": "...", "home": "...", "API_URL": "...", "apiToken": "...",
+ *   "requireHttps": false }</pre>
  *
  * <p>This is the <b>server's</b> configuration, and only the server's. It is loaded when a server
  * starts — a dedicated server, or the integrated one behind a single-player world — and never on a

@@ -3,7 +3,7 @@ package es.boffmedia.teras.battle.api;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.battle.cobblemon.CobblemonBattleProvider;
 import es.boffmedia.teras.battle.pixelmon.PixelmonBattleProvider;
-import net.neoforged.fml.ModList;
+import es.boffmedia.teras.integration.PokemonEngines;
 
 /**
  * Detects which Pokémon engine is installed and hands out the matching {@link BattleProvider}.
@@ -17,18 +17,15 @@ import net.neoforged.fml.ModList;
 public final class BattleProviders {
     private BattleProviders() {}
 
-    private static final String PIXELMON = "pixelmon";
-    private static final String COBBLEMON = "cobblemon";
-
     private static BattleProvider active;
     private static boolean resolved;
 
     public static boolean isPixelmonLoaded() {
-        return ModList.get().isLoaded(PIXELMON);
+        return PokemonEngines.isPixelmonLoaded();
     }
 
     public static boolean isCobblemonLoaded() {
-        return ModList.get().isLoaded(COBBLEMON);
+        return PokemonEngines.isCobblemonLoaded();
     }
 
     /**

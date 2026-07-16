@@ -1,6 +1,7 @@
-package es.boffmedia.teras.economy;
+package es.boffmedia.teras.economy.pixelmon;
 
 import com.pixelmonmod.pixelmon.api.economy.BankAccount;
+import es.boffmedia.teras.economy.EconomyStore;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -12,7 +13,8 @@ import java.util.UUID;
  * <p>Pixelmon calls this on the server thread and expects it not to block, so every method is a cache
  * read or a cache write plus a fire-and-forget POST.</p>
  *
- * <p><b>Pixelmon-coupled.</b> Only ever named from {@link EconomyBridge} behind a mod-presence check.</p>
+ * <p><b>Pixelmon-coupled.</b> Only ever named from {@link PixelmonEconomyHook}, which the JVM does not
+ * load until Pixelmon has been confirmed present.</p>
  */
 public class TerasBankAccount implements BankAccount {
     private final UUID playerId;

@@ -4,11 +4,13 @@ import com.cobblemon.mod.common.Cobblemon;
 import com.cobblemon.mod.common.api.battles.model.PokemonBattle;
 import com.cobblemon.mod.common.api.battles.model.actor.BattleActor;
 import com.cobblemon.mod.common.api.events.CobblemonEvents;
+import com.cobblemon.mod.common.api.events.battles.BattleFledEvent;
 import com.cobblemon.mod.common.api.events.battles.BattleVictoryEvent;
 import com.cobblemon.mod.common.api.moves.Move;
 import com.cobblemon.mod.common.api.moves.MoveSet;
 import com.cobblemon.mod.common.api.pokemon.PokemonProperties;
 import com.cobblemon.mod.common.api.pokemon.stats.Stat;
+import com.cobblemon.mod.common.api.scheduling.SchedulingFunctionsKt;
 import com.cobblemon.mod.common.api.storage.party.PlayerPartyStore;
 import com.cobblemon.mod.common.battles.BattleFormat;
 import com.cobblemon.mod.common.battles.BattleRegistry;
@@ -16,10 +18,10 @@ import com.cobblemon.mod.common.battles.BattleSide;
 import com.cobblemon.mod.common.battles.BattleStartResult;
 import com.cobblemon.mod.common.battles.SuccessfulBattleStart;
 import com.cobblemon.mod.common.battles.actor.PlayerBattleActor;
-import com.cobblemon.mod.common.battles.actor.TrainerBattleActor;
-import com.cobblemon.mod.common.battles.ai.RandomBattleAI;
 import com.cobblemon.mod.common.battles.pokemon.BattlePokemon;
 import com.cobblemon.mod.common.api.pokemon.stats.Stats;
+import com.cobblemon.mod.common.entity.npc.NPCBattleActor;
+import com.cobblemon.mod.common.entity.npc.NPCEntity;
 import com.cobblemon.mod.common.pokemon.EVs;
 import com.cobblemon.mod.common.pokemon.FormData;
 import com.cobblemon.mod.common.pokemon.Gender;
@@ -40,6 +42,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
+import kotlin.Unit;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -53,8 +57,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * {@link BattleProvider} for Cobblemon. Only linked when the {@code cobblemon} mod is present. Trainer
- * battles pit a {@link TrainerBattleActor} (virtual AI trainer, no world entity) against the player's
- * {@link PlayerBattleActor}. Teams come from {@link ShowdownTeamParser} mapped onto
+ * battles pit an NPC-backed {@link NPCBattleActor} (see {@link CobblemonTrainerFactory}) against the
+ * player's {@link PlayerBattleActor}. Teams come from {@link ShowdownTeamParser} mapped onto
  * {@link PokemonProperties} (species, level, gender, shiny, ability, nature, tera, moves, EVs/IVs,
  * held item).
  */
@@ -64,15 +68,17 @@ public class CobblemonBattleProvider implements BattleProvider {
     private static final ConcurrentHashMap<UUID, Pending> PENDING = new ConcurrentHashMap<>();
     private static final AtomicBoolean SUBSCRIBED = new AtomicBoolean(false);
 
-    private record Pending(ServerPlayer player, BattleConfig config) {}
+    /** @param npcs the trainer entities spawned for this battle, to discard once it ends */
+    private record Pending(ServerPlayer player, BattleConfig config, List<NPCEntity> npcs) {}
 
     public CobblemonBattleProvider() {
-        // Cobblemon has no per-battle end callback, so correlate the global BATTLE_VICTORY back via PENDING.
+        // Cobblemon has no per-battle end callback, so correlate the global battle events back via PENDING.
         if (SUBSCRIBED.compareAndSet(false, true)) {
             try {
                 CobblemonEvents.BATTLE_VICTORY.subscribe(CobblemonBattleProvider::onVictory);
+                CobblemonEvents.BATTLE_FLED.subscribe(CobblemonBattleProvider::onFled);
             } catch (Exception e) {
-                Teras.LOGGER.error("Failed to subscribe to Cobblemon BATTLE_VICTORY", e);
+                Teras.LOGGER.error("Failed to subscribe to Cobblemon battle events", e);
             }
         }
     }
@@ -104,14 +110,16 @@ public class CobblemonBattleProvider implements BattleProvider {
             return;
         }
 
-        String name = config.getNombre() == null || config.getNombre().isBlank()
-                ? "Entrenador" : config.getNombre();
+        NPCBattleActor rival = CobblemonTrainerFactory.buildTrainer(player, trainerName(config), rivalTeam,
+                teamLevel, CobblemonTrainerFactory.spotNear(player, RIVAL_DISTANCE, 0), player.position());
+        if (rival == null) {
+            return;
+        }
         BattleSide playerSide = new BattleSide(new PlayerBattleActor(player.getUUID(), playerTeam));
-        BattleSide rivalSide = new BattleSide(
-                new TrainerBattleActor(name, UUID.randomUUID(), rivalTeam, new RandomBattleAI()));
+        BattleSide rivalSide = new BattleSide(rival);
 
         startBattle(player, config, battleFormat(config, toFormat(config.getBattleMode())),
-                playerSide, rivalSide);
+                playerSide, rivalSide, List.of(rival.getEntity()));
     }
 
     @Override
@@ -138,32 +146,98 @@ public class CobblemonBattleProvider implements BattleProvider {
             return;
         }
 
+        // The partner lines up beside the player and faces the rivals with them; the rivals face back.
+        Vec3 rivalArea = CobblemonTrainerFactory.spotNear(player, RIVAL_DISTANCE, 0);
+        NPCBattleActor partnerActor = CobblemonTrainerFactory.buildTrainer(player, trainerName(partner),
+                partnerTeam, partner.calculateTeamLevel(level),
+                CobblemonTrainerFactory.spotNear(player, 0, -ALLY_SPACING), rivalArea);
+        NPCBattleActor rival1Actor = CobblemonTrainerFactory.buildTrainer(player, trainerName(rival1),
+                rival1Team, rival1.calculateTeamLevel(level),
+                CobblemonTrainerFactory.spotNear(player, RIVAL_DISTANCE, ALLY_SPACING / 2), player.position());
+        NPCBattleActor rival2Actor = CobblemonTrainerFactory.buildTrainer(player, trainerName(rival2),
+                rival2Team, rival2.calculateTeamLevel(level),
+                CobblemonTrainerFactory.spotNear(player, RIVAL_DISTANCE, -ALLY_SPACING / 2), player.position());
+        List<NPCEntity> npcs = spawnedEntities(partnerActor, rival1Actor, rival2Actor);
+        if (partnerActor == null || rival1Actor == null || rival2Actor == null) {
+            discard(npcs); // a half-spawned line-up would leave orphan NPCs standing
+            return;
+        }
+
         BattleSide playerSide = new BattleSide(
-                new PlayerBattleActor(player.getUUID(), playerTeam),
-                new TrainerBattleActor(trainerName(partner), UUID.randomUUID(), partnerTeam, new RandomBattleAI()));
-        BattleSide rivalSide = new BattleSide(
-                new TrainerBattleActor(trainerName(rival1), UUID.randomUUID(), rival1Team, new RandomBattleAI()),
-                new TrainerBattleActor(trainerName(rival2), UUID.randomUUID(), rival2Team, new RandomBattleAI()));
+                new PlayerBattleActor(player.getUUID(), playerTeam), partnerActor);
+        BattleSide rivalSide = new BattleSide(rival1Actor, rival2Actor);
 
         // Outcome/rewards use rival1.
         startBattle(player, rival1,
-                battleFormat(rival1, BattleFormat.Companion.getGEN_9_MULTI()), playerSide, rivalSide);
+                battleFormat(rival1, BattleFormat.Companion.getGEN_9_MULTI()), playerSide, rivalSide, npcs);
     }
 
     /* ---- Helpers ---- */
 
-    private void startBattle(ServerPlayer player, BattleConfig outcomeConfig,
-                             BattleFormat format, BattleSide side1, BattleSide side2) {
+    /** Blocks between the player and the trainers they face. */
+    private static final double RIVAL_DISTANCE = 6.0;
+    /** Blocks between two trainers standing on the same side. */
+    private static final double ALLY_SPACING = 3.0;
+
+    private void startBattle(ServerPlayer player, BattleConfig outcomeConfig, BattleFormat format,
+                             BattleSide side1, BattleSide side2, List<NPCEntity> npcs) {
         try {
             BattleStartResult result = BattleRegistry.startBattle(format, side1, side2, false);
             if (result instanceof SuccessfulBattleStart success) {
-                PENDING.put(success.getBattle().getBattleId(), new Pending(player, outcomeConfig));
+                PENDING.put(success.getBattle().getBattleId(), new Pending(player, outcomeConfig, npcs));
             } else {
                 Teras.LOGGER.error("Cobblemon battle '{}' did not start: {}",
                         outcomeConfig.getNombreArchivo(), result);
+                discard(npcs);
             }
         } catch (Exception e) {
             Teras.LOGGER.error("Error starting Cobblemon battle '{}'", outcomeConfig.getNombreArchivo(), e);
+            discard(npcs);
+        }
+    }
+
+    private static List<NPCEntity> spawnedEntities(NPCBattleActor... actors) {
+        List<NPCEntity> npcs = new ArrayList<>(actors.length);
+        for (NPCBattleActor actor : actors) {
+            if (actor != null) {
+                npcs.add(actor.getEntity());
+            }
+        }
+        return npcs;
+    }
+
+    /** Removes the battle's trainer NPCs from the world. Never throws. */
+    private static void discard(List<NPCEntity> npcs) {
+        for (NPCEntity npc : npcs) {
+            try {
+                npc.discard();
+            } catch (Exception e) {
+                Teras.LOGGER.warn("Failed to discard Cobblemon trainer NPC: {}", e.toString());
+            }
+        }
+    }
+
+    /** Seconds the trainers linger after the battle, so their win/lose animation and their Pokémon's
+     *  recall aren't cut short by the entity vanishing. */
+    private static final float DISCARD_DELAY_SECONDS = 3f;
+
+    private static void discardAfterBattle(List<NPCEntity> npcs) {
+        try {
+            SchedulingFunctionsKt.afterOnServer(DISCARD_DELAY_SECONDS, () -> {
+                discard(npcs);
+                return Unit.INSTANCE;
+            });
+        } catch (Exception e) {
+            Teras.LOGGER.warn("Failed to schedule Cobblemon trainer NPC cleanup: {}", e.toString());
+            discard(npcs);
+        }
+    }
+
+    /** BATTLE_FLED handler: no outcome to award, but the trainer NPCs still have to go. */
+    private static void onFled(BattleFledEvent event) {
+        Pending pending = PENDING.remove(event.getBattle().getBattleId());
+        if (pending != null) {
+            discardAfterBattle(pending.npcs());
         }
     }
 
@@ -174,6 +248,7 @@ public class CobblemonBattleProvider implements BattleProvider {
         if (pending == null) {
             return; // not one of ours
         }
+        discardAfterBattle(pending.npcs());
         boolean won = false;
         for (BattleActor actor : event.getWinners()) {
             if (actor.getUuid().equals(pending.player().getUUID())) {

@@ -15,8 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * is not optional: Pixelmon's {@code BankAccount#getBalance} is synchronous, and starbank is a network
  * hop, so a balance must already be in memory by the time the game asks.</p>
  *
- * <p>Deliberately free of Pixelmon imports — {@link TerasBankAccount} adapts this to Pixelmon's API,
- * so a server without Pixelmon can still load and use the economy.</p>
+ * <p>Deliberately free of engine imports — {@code economy.pixelmon.TerasBankAccount} adapts this to
+ * Pixelmon's API, so a Cobblemon (or engine-less) server can still load and use the economy.</p>
  *
  * <h2>Unknown is not zero</h2>
  * A player whose balance has not been loaded is <b>unknown</b>, not broke. Every read fails closed:

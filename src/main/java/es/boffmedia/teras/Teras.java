@@ -53,8 +53,8 @@ public class Teras {
             // Quest system: no-op unless CustomNPCs is installed. QuestBridge is the only class named
             // here, so no `noppes` class is loaded on a server without it.
             es.boffmedia.teras.quests.QuestBridge.registerIfPresent();
-            // Economy: takes over Pixelmon's bank so PokeDollars are the starbank balance. Same
-            // isolation — EconomyBridge names no Pixelmon class until it has checked for the mod.
+            // Economy: takes over the engine's bank (Pixelmon only; Cobblemon has none) so in-game
+            // currency is the starbank balance. Same isolation — EconomyBridge names no engine class.
             es.boffmedia.teras.economy.EconomyBridge.registerIfPresent();
         });
     }

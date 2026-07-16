@@ -1,7 +1,8 @@
-package es.boffmedia.teras.economy;
+package es.boffmedia.teras.economy.pixelmon;
 
 import com.pixelmonmod.pixelmon.api.economy.BankAccount;
 import com.pixelmonmod.pixelmon.api.economy.BankAccountManager;
+import es.boffmedia.teras.economy.EconomyStore;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -17,7 +18,8 @@ import java.util.concurrent.CompletableFuture;
  * <p>The 9.0.6 → 9.3.16 signature change is here: {@code getBankAccount} returned {@code Optional} on
  * 1.16.5 and returns {@link CompletableFuture} now.</p>
  *
- * <p><b>Pixelmon-coupled.</b> Only ever named from {@link EconomyBridge} behind a mod-presence check.</p>
+ * <p><b>Pixelmon-coupled.</b> Only ever named from {@link PixelmonEconomyHook}, which the JVM does not
+ * load until Pixelmon has been confirmed present.</p>
  */
 public class TerasBankManager implements BankAccountManager {
 
