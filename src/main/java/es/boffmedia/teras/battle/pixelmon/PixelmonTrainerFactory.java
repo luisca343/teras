@@ -6,10 +6,13 @@ import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
 import com.pixelmonmod.pixelmon.api.pokemon.boss.BossTier;
 import com.pixelmonmod.pixelmon.api.pokemon.boss.BossTierRegistry;
 import com.pixelmonmod.pixelmon.api.storage.NPCPartyStorage;
+import com.pixelmonmod.pixelmon.battles.controller.ai.BattleAI;
 import com.pixelmonmod.pixelmon.battles.controller.participants.EntityParticipant;
 import com.pixelmonmod.pixelmon.entities.npcs.NPC;
+import es.boffmedia.teras.battle.config.AiMode;
 import es.boffmedia.teras.battle.config.BattleConfig;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.awt.Color;
@@ -46,9 +49,24 @@ final class PixelmonTrainerFactory {
                 .entity(npc)
                 .storage(storage)
                 .bossTier(tier)
+                .aiMode(aiKey(config.getAiMode()))
                 .canMega(config.allowsMega())
                 .canDynamax(config.allowsDynamax())
                 .build();
+    }
+
+    /**
+     * The config's AI as a Pixelmon {@code BattleAI} key. Pixelmon registers no tactical AI, so
+     * {@code TACTICAL} resolves to {@code ADVANCED} (its {@code AdvancedAI} extends {@code TacticalAI}).
+     * {@code EntityParticipant.Builder} otherwise defaults to {@code RANDOM}, whose {@code getNextSwitch}
+     * throws when a side has no switch available.
+     */
+    static ResourceKey<BattleAI> aiKey(AiMode mode) {
+        return switch (mode) {
+            case AGGRESSIVE -> BattleAI.AGGRESSIVE;
+            case ADVANCED, TACTICAL -> BattleAI.ADVANCED;
+            case DEFAULT -> BattleAI.RANDOM;
+        };
     }
 
     static NPC spawnTrainerNpc(ServerPlayer player, BattleConfig config, Pokemon renderPlaceholder,

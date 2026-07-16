@@ -84,6 +84,14 @@ public final class BattleOutcomeHandler {
         if (logro == null || logro.isBlank()) {
             return;
         }
+        if (replay == null || replay.isBlank()) {
+            Teras.LOGGER.warn("Battle '{}': replay log is empty — SmartRotom will reject the report",
+                    config.getNombreArchivo());
+        }
+        if (team1.isEmpty() || team2.isEmpty()) {
+            Teras.LOGGER.warn("Battle '{}': team capture is empty — SmartRotom will reject the report",
+                    config.getNombreArchivo());
+        }
         SmartRotomService.saveBattle(new SmartRotomService.BattleReport(
                 player.getUUID().toString(), logro, playerWon,
                 player.getName().getString(), trainerName(config), team1, team2, replay));

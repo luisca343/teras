@@ -31,6 +31,7 @@ import es.boffmedia.teras.battle.config.BattleConfig;
 import es.boffmedia.teras.battle.config.BattleMode;
 import es.boffmedia.teras.battle.lifecycle.BattleOutcomeHandler;
 import es.boffmedia.teras.battle.model.TeamMember;
+import es.boffmedia.teras.battle.pixelmon.log.BattleLogRegistry;
 import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -168,6 +169,8 @@ public class PixelmonBattleProvider implements BattleProvider {
                         if (err != null) {
                             Teras.LOGGER.error("Battle '{}' failed to start", label, err);
                             discard(spawnedEntities); // end handler won't fire
+                        } else {
+                            BattleLogRegistry.register(bc);
                         }
                     });
         } catch (Exception e) {
@@ -192,13 +195,15 @@ public class PixelmonBattleProvider implements BattleProvider {
                 builder.endHandler(buildEndHandler(player, config, spawnedEntities));
             };
             TerasTeamPreview.stash(player.getUUID(), new TerasTeamPreview.PendingBattle(
-                    customizer, config.allowsMega(), config.allowsDynamax()));
+                    customizer, PixelmonTrainerFactory.aiKey(config.getAiMode()),
+                    config.allowsMega(), config.allowsDynamax()));
 
             TeamSelectionRegistry.builder()
                     .members(player, rival.getEntity())
                     .showOpponentTeam()
                     .closeable()
                     .rules(rules)
+                    .battleStartConsumer(BattleLogRegistry::register)
                     .cancelConsumer(ts -> {
                         TerasTeamPreview.discard(player.getUUID());
                         discard(spawnedEntities);
@@ -247,16 +252,15 @@ public class PixelmonBattleProvider implements BattleProvider {
             List<TeamMember> team1 = new ArrayList<>();
             List<TeamMember> team2 = new ArrayList<>();
             captureTeams(controller, player.getUUID(), team1, team2);
-            BattleOutcomeHandler.onConfigBattleEnd(player, config, won, captureLog(controller), team1, team2);
+            BattleOutcomeHandler.onConfigBattleEnd(player, config, won,
+                    BattleLogRegistry.finish(controller), team1, team2);
             discard(spawnedEntities);
         };
     }
 
     /**
      * Fills {@code team1} with the player's own battle Pokémon and {@code team2} with every opposing
-     * participant's, both as engine-neutral {@link TeamMember}s for the SmartRotom report. Ally
-     * participants on the player's side (multi battles) are skipped so {@code team1} matches the
-     * reported player name. Never throws.
+     * participant's. Allies on the player's side (multi battles) are skipped. Never throws.
      */
     private static void captureTeams(BattleController controller, UUID playerId,
                                      List<TeamMember> team1, List<TeamMember> team2) {
@@ -300,7 +304,7 @@ public class PixelmonBattleProvider implements BattleProvider {
         }
     }
 
-    /** Native stat order [HP, ATK, DEF, SPA, SPD, SPE], matching the DTO's arrays. */
+    /** {@link TeamMember} stat order. */
     private static final BattleStatsType[] STAT_ORDER = {
             BattleStatsType.HP, BattleStatsType.ATTACK, BattleStatsType.DEFENSE,
             BattleStatsType.SPECIAL_ATTACK, BattleStatsType.SPECIAL_DEFENSE, BattleStatsType.SPEED};
@@ -368,7 +372,7 @@ public class PixelmonBattleProvider implements BattleProvider {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
-    /** Pixelmon reports a base/no form as {@code null}, {@code ""}, or {@code "base"/"normal"}. */
+    /** Pixelmon names a base form {@code null}, {@code ""}, {@code "base"} or {@code "normal"}. */
     private static boolean isBaseForm(String form) {
         if (form == null || form.isBlank()) {
             return true;
@@ -382,26 +386,6 @@ public class PixelmonBattleProvider implements BattleProvider {
             return "";
         }
         return Character.toUpperCase(value.charAt(0)) + value.substring(1).toLowerCase(Locale.ROOT);
-    }
-
-    /** Pixelmon's human-readable action log as replay text (not Showdown protocol). Never throws. */
-    private static String captureLog(BattleController controller) {
-        try {
-            if (controller == null || controller.battleLog == null) {
-                return null;
-            }
-            StringBuilder sb = new StringBuilder();
-            for (var action : controller.battleLog.getAllActions()) {
-                if (action != null) {
-                    action.appendLog(sb);
-                    sb.append('\n');
-                }
-            }
-            return sb.isEmpty() ? null : sb.toString();
-        } catch (Exception e) {
-            Teras.LOGGER.warn("Failed to capture Pixelmon battle log: {}", e.toString());
-            return null;
-        }
     }
 
     /** Chat reveal of the rival team (species + level) — the preview fallback for wild battles. */

@@ -54,8 +54,10 @@ public final class HttpText {
         long now = System.currentTimeMillis();
         CacheEntry cached = TEXT_CACHE.get(urlString);
         if (cached != null && cached.expiresAt() > now) {
+            Teras.LOGGER.info("[Teras HTTP] --> GET {} (cache hit, {} bytes)", urlString, cached.body().length());
             return cached.body();
         }
+        Teras.LOGGER.info("[Teras HTTP] --> GET {}", urlString);
 
         URL url;
         try {
@@ -74,10 +76,12 @@ public final class HttpText {
             con.setConnectTimeout(CONNECT_TIMEOUT_MS);
             con.setReadTimeout(READ_TIMEOUT_MS);
             con.addRequestProperty("User-Agent", "Mozilla/4.0");
+            int code = con.getResponseCode();
             try (InputStream in = con.getInputStream();
                  BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
                 body = br.lines().collect(Collectors.joining("\n"));
             }
+            Teras.LOGGER.info("[Teras HTTP] <-- {} GET {}\n         response: {}", code, urlString, body);
         } catch (IOException e) {
             Teras.LOGGER.error("Error fetching {}", urlString, e);
             return null;
@@ -104,6 +108,11 @@ public final class HttpText {
             if (!isTransportAllowed(url)) {
                 return;
             }
+            String token = TerasConfig.getApiToken();
+            // Debug: full request line + body so the exact payload sent to SmartRotom is visible.
+            Teras.LOGGER.info("[Teras HTTP] --> POST {} (auth={}, {} bytes)\n         body: {}",
+                    urlString, (token != null && !token.isEmpty()) ? "bearer" : "none",
+                    jsonBody.getBytes(StandardCharsets.UTF_8).length, jsonBody);
             HttpURLConnection con = null;
             try {
                 con = (HttpURLConnection) url.openConnection();
@@ -113,7 +122,6 @@ public final class HttpText {
                 con.setDoOutput(true);
                 con.setRequestProperty("User-Agent", "Teras-SmartRotom");
                 con.setRequestProperty("Content-Type", "application/json");
-                String token = TerasConfig.getApiToken();
                 if (token != null && !token.isEmpty()) {
                     con.setRequestProperty("Authorization", "Bearer " + token);
                 }
@@ -121,6 +129,9 @@ public final class HttpText {
                     os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
                 }
                 int code = con.getResponseCode();
+                String response = readBody(code < 400 ? con.getInputStream() : con.getErrorStream());
+                Teras.LOGGER.info("[Teras HTTP] <-- {} POST {}\n         response: {}",
+                        code, urlString, response);
                 if (code >= 400) {
                     Teras.LOGGER.warn("POST {} -> HTTP {}", urlString, code);
                 }
@@ -132,6 +143,18 @@ public final class HttpText {
                 }
             }
         });
+    }
+
+    /** Reads a response/error stream to a UTF-8 string for debug logging; {@code ""} on any failure. */
+    private static String readBody(InputStream in) {
+        if (in == null) {
+            return "";
+        }
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            return br.lines().collect(Collectors.joining("\n"));
+        } catch (IOException e) {
+            return "";
+        }
     }
 
     /** Fail-closed HTTPS policy shared with SmartRotom (see {@link TerasConfig#isRequireHttps()}). */

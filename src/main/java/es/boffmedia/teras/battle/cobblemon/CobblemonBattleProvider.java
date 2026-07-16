@@ -191,10 +191,8 @@ public class CobblemonBattleProvider implements BattleProvider {
     }
 
     /**
-     * Fills {@code team1} with the player's own team and {@code team2} with every actor on the opposing
-     * side(s), as engine-neutral {@link TeamMember}s for the SmartRotom report. Ally actors on the
-     * player's side (multi battles) are skipped so {@code team1} matches the reported player name.
-     * Never throws.
+     * Fills {@code team1} with the player's own team and {@code team2} with every actor on the
+     * opposing side(s). Allies on the player's side (multi battles) are skipped. Never throws.
      */
     private static void captureTeams(PokemonBattle battle, UUID playerId,
                                      List<TeamMember> team1, List<TeamMember> team2) {
@@ -235,7 +233,7 @@ public class CobblemonBattleProvider implements BattleProvider {
         }
     }
 
-    /** Native stat order [HP, ATK, DEF, SPA, SPD, SPE], matching the DTO's arrays. */
+    /** {@link TeamMember} stat order. */
     private static final Stats[] STAT_ORDER = {
             Stats.HP, Stats.ATTACK, Stats.DEFENCE,
             Stats.SPECIAL_ATTACK, Stats.SPECIAL_DEFENCE, Stats.SPEED};
@@ -295,7 +293,7 @@ public class CobblemonBattleProvider implements BattleProvider {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
-    /** Cobblemon's default form is named {@code "Normal"}; report it (and any blank) as an empty form. */
+    /** Cobblemon names the default form {@code "Normal"}. */
     private static boolean isBaseForm(FormData form) {
         if (form == null || form.getName() == null || form.getName().isBlank()) {
             return true;

@@ -5,6 +5,7 @@
   "plugin": "es.boffmedia.teras.mixin.TerasMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BattleLogMixin",
     "ParticipantSelectionAccessor",
     "TeamSelectionMixin"
   ],

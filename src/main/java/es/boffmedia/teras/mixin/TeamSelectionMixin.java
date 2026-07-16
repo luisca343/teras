@@ -47,8 +47,9 @@ public abstract class TeamSelectionMixin {
         return configured;
     }
 
-    /** Sets gimmick flags on the rebuilt NPC (its builder defaults canMega/canDynamax to false).
-     *  Peeks the stash; the later {@code rules()} redirect consumes it. */
+    /** Sets the trainer AI and gimmick flags on the rebuilt NPC (its builder defaults canMega/canDynamax
+     *  to false and the AI to {@code RANDOM}). Peeks the stash; the later {@code rules()} redirect
+     *  consumes it. */
     @Redirect(
             method = "startBattle",
             at = @At(
@@ -59,7 +60,8 @@ public abstract class TeamSelectionMixin {
         if (player != null) {
             TerasTeamPreview.PendingBattle pending = TerasTeamPreview.peek(player.getUUID());
             if (pending != null) {
-                builder = builder.canMega(pending.canMega()).canDynamax(pending.canDynamax());
+                builder = builder.aiMode(pending.aiMode())
+                        .canMega(pending.canMega()).canDynamax(pending.canDynamax());
             }
         }
         return builder.build();

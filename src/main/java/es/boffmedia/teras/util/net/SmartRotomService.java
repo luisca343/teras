@@ -42,8 +42,7 @@ public final class SmartRotomService {
                                     String name1, String name2,
                                     List<TeamMember> team1, List<TeamMember> team2, String replay) {}
 
-    /** Caller-facing battle report; {@code server} is added by {@link #saveBattle}. The backend
-     *  requires {@code team1}/{@code team2} to be non-empty arrays (it 400s otherwise). */
+    /** Caller-facing battle report; {@code server} is added by {@link #saveBattle}. */
     public record BattleReport(String uuid, String logro, boolean victoria,
                                String name1, String name2,
                                List<TeamMember> team1, List<TeamMember> team2, String replay) {}
