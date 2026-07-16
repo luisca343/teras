@@ -50,6 +50,14 @@ public class Teras {
     }
 
     private void onCommonSetup(FMLCommonSetupEvent event) {
-        event.enqueueWork(TerasConfig::load);
+        event.enqueueWork(() -> {
+            TerasConfig.load();
+            // Quest system: no-op unless CustomNPCs is installed. QuestBridge is the only class named
+            // here, so no `noppes` class is loaded on a server without it.
+            es.boffmedia.teras.quests.QuestBridge.registerIfPresent();
+            // Economy: takes over Pixelmon's bank so PokeDollars are the starbank balance. Same
+            // isolation — EconomyBridge names no Pixelmon class until it has checked for the mod.
+            es.boffmedia.teras.economy.EconomyBridge.registerIfPresent();
+        });
     }
 }

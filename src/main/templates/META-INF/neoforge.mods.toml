@@ -34,6 +34,28 @@ versionRange = "[9.3,)"
 ordering = "AFTER"
 side = "BOTH"
 
+# Optional: the other supported battle engine. BattleProviders picks whichever of Pixelmon/Cobblemon
+# is loaded; with neither present the battle commands report no engine. AFTER so the engine registers
+# before BattleProviders resolves.
+[[dependencies.${mod_id}]]
+modId = "cobblemon"
+type = "optional"
+versionRange = "[1.7,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# Optional: the quest system (NPC catalog, dialog events, getMisiones) reads CustomNPCs' quest/dialog
+# API. QuestBridge no-ops without it and getMisiones returns an empty list, so this is not required.
+# AFTER: NpcAPI.Instance() must exist by the time common setup registers our handlers on its bus.
+# NOTE: this is CustomNPCs-Unofficial (CurseForge project 1052708) — the original project (221826)
+# never left 1.16 — but it keeps the same `customnpcs` mod id and `noppes.npcs.api` packages.
+[[dependencies.${mod_id}]]
+modId = "customnpcs"
+type = "optional"
+versionRange = "[1.21.1,)"
+ordering = "AFTER"
+side = "BOTH"
+
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"

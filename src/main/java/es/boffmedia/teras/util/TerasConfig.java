@@ -44,6 +44,10 @@ public final class TerasConfig {
     /** Base URL of the SmartRotom HTTP API (used by the deferred server-side integrations). */
     private static final String DEFAULT_API_URL = "http://api.boffmedia.es/smartrotom";
 
+    /** Loopback — the fail-safe default bind for the inbound HTTP API. */
+    private static final String DEFAULT_HTTP_BIND = "127.0.0.1";
+    private static final int DEFAULT_HTTP_PORT = 8137;
+
     // Server/world identifier the SmartRotom web keys on. Empty until load() sets it.
     private static String id = "";
     private static String home = DEFAULT_HOME;
@@ -51,6 +55,17 @@ public final class TerasConfig {
     // Server-side secret (bearer token for outbound API requests). Stays empty on clients.
     private static String apiToken = "";
     private static boolean requireHttps = false;
+
+    // ---- Inbound HTTP API (see http/TerasHttpServer). Server-side only; off by default. ----
+    private static boolean httpEnabled = false;
+    private static String httpBind = DEFAULT_HTTP_BIND;
+    private static int httpPort = DEFAULT_HTTP_PORT;
+    /**
+     * Bearer token callers must present. Distinct from {@link #apiToken} on purpose: that one is an
+     * outbound credential we send to SmartRotom, this one guards traffic coming in. Reusing a single
+     * secret for both directions would mean a leak in either place compromises the other.
+     */
+    private static String httpToken = "";
 
     public static void load() {
         try {
@@ -74,6 +89,10 @@ public final class TerasConfig {
             if (has(json, "API_URL")) apiUrl = json.get("API_URL").getAsString();
             if (has(json, "apiToken")) apiToken = json.get("apiToken").getAsString();
             if (has(json, "requireHttps")) requireHttps = json.get("requireHttps").getAsBoolean();
+            if (has(json, "httpEnabled")) httpEnabled = json.get("httpEnabled").getAsBoolean();
+            if (has(json, "httpBind")) httpBind = json.get("httpBind").getAsString();
+            if (has(json, "httpPort")) httpPort = json.get("httpPort").getAsInt();
+            if (has(json, "httpToken")) httpToken = json.get("httpToken").getAsString();
 
             // The server/world id must be stable across restarts. If an existing file has none,
             // mint one and write it back (preserving any unknown fields already in the file).
@@ -85,6 +104,16 @@ public final class TerasConfig {
                 json.addProperty("id", id);
                 dirty = true;
                 Teras.LOGGER.info("config/teras/config.json had no 'id'; generated server id '{}'", id);
+            }
+
+            // Never run the inbound API unauthenticated: mint a token rather than start without one.
+            // The value is only written to the config file, never logged.
+            if (httpEnabled && httpToken.isBlank()) {
+                httpToken = randomToken();
+                json.addProperty("httpToken", httpToken);
+                dirty = true;
+                Teras.LOGGER.info("httpEnabled but no 'httpToken'; generated one in "
+                        + "config/teras/config.json (read it from there to configure the caller)");
             }
 
             if (home == null || home.isBlank()) {
@@ -113,6 +142,10 @@ public final class TerasConfig {
         json.addProperty("API_URL", apiUrl);
         json.addProperty("apiToken", apiToken);
         json.addProperty("requireHttps", requireHttps);
+        json.addProperty("httpEnabled", httpEnabled);
+        json.addProperty("httpBind", httpBind);
+        json.addProperty("httpPort", httpPort);
+        json.addProperty("httpToken", httpToken);
         Files.writeString(path, GSON.toJson(json));
     }
 
@@ -122,9 +155,18 @@ public final class TerasConfig {
 
     /** 8-char alphanumeric, matching 1.16.5 {@code RandomStringUtils.random(8, true, true)}. */
     private static String randomId() {
+        return randomString(8);
+    }
+
+    /** 48 chars from a {@link SecureRandom} alphabet — a bearer token, not a human-typed value. */
+    private static String randomToken() {
+        return randomString(48);
+    }
+
+    private static String randomString(int length) {
         final String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        StringBuilder sb = new StringBuilder(8);
-        for (int i = 0; i < 8; i++) sb.append(chars.charAt(RANDOM.nextInt(chars.length())));
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) sb.append(chars.charAt(RANDOM.nextInt(chars.length())));
         return sb.toString();
     }
 
@@ -134,6 +176,16 @@ public final class TerasConfig {
     public static String getApiUrl() { return apiUrl; }
     public static String getApiToken() { return apiToken; }
     public static boolean isRequireHttps() { return requireHttps; }
+
+    public static boolean isHttpEnabled() { return httpEnabled; }
+    public static String getHttpBind() { return httpBind; }
+    public static int getHttpPort() { return httpPort; }
+    public static String getHttpToken() { return httpToken; }
+
+    /** True when {@link #getHttpBind()} is anything other than loopback — i.e. reachable off-box. */
+    public static boolean isHttpBindPublic() {
+        return !"127.0.0.1".equals(httpBind) && !"localhost".equals(httpBind) && !"::1".equals(httpBind);
+    }
 
     /** SmartRotoms are whitelisted to the smartrotom site only (matches 1.16.5 isSiteAllowed). */
     public static boolean isSiteAllowed(String url) {

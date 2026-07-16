@@ -34,6 +34,7 @@ public final class TerasNet {
         registrar.playToServer(ChatMessagePayload.TYPE, ChatMessagePayload.STREAM_CODEC, TerasNet::handleChat);
         registrar.playToServer(UserDataRequestPayload.TYPE, UserDataRequestPayload.STREAM_CODEC, TerasNet::handleUserDataRequest);
         registrar.playToServer(SpawnsRequestPayload.TYPE, SpawnsRequestPayload.STREAM_CODEC, TerasNet::handleSpawnsRequest);
+        registrar.playToServer(MisionesRequestPayload.TYPE, MisionesRequestPayload.STREAM_CODEC, TerasNet::handleMisionesRequest);
         // Client-only body is isolated behind a lambda -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -51,6 +52,10 @@ public final class TerasNet {
 
     public static void requestSpawns(long requestId) {
         PacketDistributor.sendToServer(new SpawnsRequestPayload(requestId));
+    }
+
+    public static void requestMisiones(long requestId) {
+        PacketDistributor.sendToServer(new MisionesRequestPayload(requestId));
     }
 
     // ---- Server-side handlers ----
@@ -114,6 +119,32 @@ public final class TerasNet {
                         + "note it needs NeoForge >= 21.1.200.)", sp.getGameProfile().getName());
             }
             PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), spawnsJson));
+        });
+    }
+
+    private static void handleMisionesRequest(MisionesRequestPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            // The in-game page's route to quests — the one needing no config and no network, so it is
+            // what single-player and LAN worlds use (the HTTP API is off by default and has no backend
+            // there). Calls the same QuestService the HTTP route does, so the two always agree.
+            //
+            // AUTHORITY: the player comes from the connection, never from the request, so a client can
+            // only ever read its own quests. That's why this payload carries no uuid, unlike the HTTP
+            // route — which is server-to-server and authenticated by bearer token instead.
+            //
+            // Same isolation as getSpawns above: QuestService touches CustomNPCs, so it is only
+            // referenced behind the ModList check and never classloaded when the mod is absent. We
+            // always reply (even empty) so the JS callback resolves instead of hanging — which is
+            // exactly how the 1.16.5 getMisiones failed.
+            String json = "{\"misiones\":[],\"categorias\":{}}";
+            if (es.boffmedia.teras.quests.QuestBridge.isAvailable()) {
+                json = es.boffmedia.teras.quests.QuestService.getMisionesJson(sp);
+            } else {
+                Teras.LOGGER.warn("getMisiones requested by {} but CustomNPCs is not loaded on this "
+                        + "server; returning an empty quest list.", sp.getGameProfile().getName());
+            }
+            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), json));
         });
     }
 }

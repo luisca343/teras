@@ -73,6 +73,11 @@ dependencies {
     compileOnly("curse.maven:cobblemon-687131:7553231") { transitive = false }
     compileOnly "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
 
+    // CustomNPCs-Unofficial (NeoForge 1.21.1.20251230, CurseForge file 7411561) — the original
+    // CustomNPCs (project 221826) never left 1.16. Provides the quest/dialog/NPC API the Misiones
+    // system builds on. compileOnly: the server supplies it, and Teras degrades without it.
+    compileOnly "curse.maven:customnpcs-unofficial-1052708:7411561"
+
     // --- Deferred until 1.21.1 coordinates are confirmed ---
     // compileOnly "curse.maven:journeymap-32274:<fileId>"
 

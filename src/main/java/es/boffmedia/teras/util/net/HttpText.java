@@ -91,6 +91,61 @@ public final class HttpText {
         return body;
     }
 
+    /**
+     * Authenticated {@code GET}, <b>uncached</b>, returning the body or {@code null} on any
+     * transport/policy failure or a {@code >= 400} status.
+     *
+     * <p>Separate from {@link #fetchCached} on both counts deliberately: that method caches for
+     * {@link #CACHE_TTL_MS} and sends no credentials, which suits static remote config but not
+     * authenticated live state like a balance, where a stale read is a wrong answer.</p>
+     *
+     * <p><b>Blocks the calling thread.</b> Callers must already be off the server thread.</p>
+     */
+    public static String getAuthed(String urlString) {
+        if (urlString == null) {
+            return null;
+        }
+        URL url;
+        try {
+            url = new URL(urlString);
+        } catch (MalformedURLException e) {
+            Teras.LOGGER.error("Malformed GET URL: {}", urlString, e);
+            return null;
+        }
+        if (!isTransportAllowed(url)) {
+            return null;
+        }
+        String token = TerasConfig.getApiToken();
+        Teras.LOGGER.info("[Teras HTTP] --> GET {} (auth={})",
+                urlString, (token != null && !token.isEmpty()) ? "bearer" : "none");
+        HttpURLConnection con = null;
+        try {
+            con = (HttpURLConnection) url.openConnection();
+            con.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            con.setReadTimeout(READ_TIMEOUT_MS);
+            con.setRequestProperty("User-Agent", "Teras-SmartRotom");
+            con.setRequestProperty("Accept", "application/json");
+            if (token != null && !token.isEmpty()) {
+                con.setRequestProperty("Authorization", "Bearer " + token);
+            }
+            int code = con.getResponseCode();
+            String body = readBody(code < 400 ? con.getInputStream() : con.getErrorStream());
+            Teras.LOGGER.info("[Teras HTTP] <-- {} GET {}\n         response: {}", code, urlString, body);
+            if (code >= 400) {
+                Teras.LOGGER.warn("GET {} -> HTTP {}", urlString, code);
+                return null;
+            }
+            return body;
+        } catch (IOException e) {
+            Teras.LOGGER.error("Error GETting {}: {}", urlString, e.getMessage());
+            return null;
+        } finally {
+            if (con != null) {
+                con.disconnect();
+            }
+        }
+    }
+
     /** Fire-and-forget JSON {@code POST} on {@link Teras#EXECUTOR}, with the bearer token and HTTPS
      *  policy. Failures are logged, not thrown. */
     public static void postJson(String urlString, String jsonBody) {

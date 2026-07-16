@@ -47,23 +47,6 @@ public final class QueryHelper {
         return PENDING.remove(requestId);
     }
 
-    private enum QueryType {
-        ADD_WAYPOINT,
-        GET_USER_DATA,
-        GET_WAYPOINTS,
-        OPEN_PC,
-        GET_SPAWNS,
-        SET_CALL,
-        LEAVE_CALL,
-        CHAT_MESSAGE,
-        GET_PLAYERS,
-        GET_MISIONES,
-        DAR_CAJA,
-        TAKE_SCREENSHOT,
-        GET_ZOOM_LEVEL,
-        SET_ZOOM_LEVEL,
-    }
-
     public static boolean handleQuery(CefBrowser browser, long id, String query,
                                       boolean persistent, JsQueryCallback callback) {
         Teras.LOGGER.info("SmartRotom query received: {}", query);
@@ -78,10 +61,10 @@ public final class QueryHelper {
             return true;
         }
 
-        final QueryType queryType;
-        try {
-            queryType = QueryType.valueOf(type.toUpperCase());
-        } catch (IllegalArgumentException e) {
+        // Tolerant of case and underscores: the web sends camelCase ("getMisiones"), which the old
+        // valueOf(type.toUpperCase()) could never match against GET_MISIONES. See QueryType.fromQuery.
+        final QueryType queryType = QueryType.fromQuery(type);
+        if (queryType == null) {
             Teras.LOGGER.error("Unknown query type: {}", query);
             callback.failure(0, "Unknown query type: " + query);
             return true;
@@ -106,13 +89,15 @@ public final class QueryHelper {
                     // replies with the spawn list under the same id.
                     es.boffmedia.teras.net.TerasNet.requestSpawns(register(callback));
                     return true;
+                case GET_MISIONES:
+                    es.boffmedia.teras.net.TerasNet.requestMisiones(register(callback));
+                    return true;
 
                 // --- Handlers below need more networking / Pixelmon / JourneyMap: ported next phase ---
                 case OPEN_PC:
                 case DAR_CAJA:
                 case SET_CALL:
                 case LEAVE_CALL:
-                case GET_MISIONES:
                     return notPorted(queryType, callback, "server networking");
                 case ADD_WAYPOINT:
                 case GET_WAYPOINTS:
