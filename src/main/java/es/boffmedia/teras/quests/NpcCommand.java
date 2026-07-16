@@ -11,12 +11,19 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 /**
- * {@code /npcs escanear} — sweeps every world for CustomNPCs, refreshes the catalog, and publishes it
- * to SmartRotom. Port of the 1.16.5 {@code /test npc} subcommand, which was the only trigger for the
- * full scan.
+ * {@code /npcs escanear} — sweeps every world for CustomNPCs and refreshes the persisted catalog.
+ * Port of the 1.16.5 {@code /test npc} subcommand, which was the only trigger for the full scan.
  *
- * <p>Admin-only (permission level 2, the same bar {@code chatMessage} uses) because it publishes NPC
- * positions to an external service.</p>
+ * <p>The catalog is what gives each dialog its {@code npcLocations} (name, skin, coordinates) when
+ * {@code QuestService} builds {@code /quests/all}, so run this after moving or adding NPCs. Dialog
+ * opens keep it current for NPCs players actually talk to; this catches the rest.</p>
+ *
+ * <p>No longer POSTs to SmartRotom: NPC data now reaches the backend inside the quest catalog, so the
+ * separate {@code /smartrotom/misiones/npcs} push was redundant (and its body never matched the
+ * backend's {@code UpdateNPCsDto} anyway).</p>
+ *
+ * <p>Admin-only (permission level 2, the same bar {@code chatMessage} uses): it walks every loaded
+ * entity and rewrites a config file.</p>
  *
  * <p>This class is registered unconditionally — it holds no CustomNPCs types itself, and the command
  * body checks {@link QuestBridge#isAvailable()} before reaching {@link NpcScanner}, so the mod's
@@ -42,11 +49,10 @@ public final class NpcCommand {
             source.sendFailure(Component.literal("CustomNPCs no está instalado en este servidor"));
             return 0;
         }
-        // The scan walks every loaded level's entities, so it stays on the server thread; the upload
-        // itself is fire-and-forget on Teras.EXECUTOR (see HttpText.postJson).
+        // Walks every loaded level's entities, so it runs on the command (server) thread.
         int count = QuestScan.run();
         source.sendSuccess(() -> Component.literal(
-                "Catálogo de NPCs actualizado y enviado a SmartRotom (" + count + " diálogos)"), true);
+                "Catálogo de NPCs actualizado (" + count + " diálogos)"), true);
         return 1;
     }
 
@@ -55,9 +61,7 @@ public final class NpcCommand {
         private QuestScan() {}
 
         static int run() {
-            var catalog = NpcScanner.scanAll();
-            es.boffmedia.teras.util.net.SmartRotomService.updateNpcs(catalog);
-            return catalog.size();
+            return NpcScanner.scanAll().size();
         }
     }
 }

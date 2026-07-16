@@ -1,12 +1,12 @@
 package es.boffmedia.teras.quests;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.quests.model.DialogInfo;
 import es.boffmedia.teras.quests.model.QuestInfo;
 import es.boffmedia.teras.quests.model.QuestObjective;
 import es.boffmedia.teras.quests.model.QuestRequirement;
 import es.boffmedia.teras.quests.model.QuestReward;
 import noppes.npcs.api.IContainer;
-import noppes.npcs.api.entity.ICustomNpc;
 import noppes.npcs.api.entity.IPlayer;
 import noppes.npcs.api.handler.data.IDialog;
 import noppes.npcs.api.handler.data.IQuest;
@@ -18,11 +18,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Translates CustomNPCs' {@code IQuest}/{@code IDialog}/{@code ICustomNpc} into the CustomNPCs-free
- * {@link es.boffmedia.teras.quests.model} DTOs. This is the only place the two worlds meet, which is
- * what lets the model package load on a server without CustomNPCs.
+ * Translates CustomNPCs' {@code IQuest}/{@code IDialog} into the CustomNPCs-free
+ * {@link es.boffmedia.teras.quests.model} DTOs — the only place the two worlds meet, which is what
+ * lets the model package load (and be unit-tested) without the mod.
  *
- * <p>Merges the 1.16.5 {@code QuestDataBase} + both {@code QuestData} constructors.</p>
+ * <p>Merges the 1.16.5 {@code QuestData(IQuest, IDialog)} and {@code DialogData(IDialog)}
+ * constructors.</p>
  */
 public final class QuestBuilder {
     private QuestBuilder() {}
@@ -30,26 +31,31 @@ public final class QuestBuilder {
     /** How many quest/dialog prerequisite slots a CustomNPCs {@code Availability} carries. */
     private static final int AVAILABILITY_SLOTS = 4;
 
-    /** The quest's definition plus the NPC that offers it — the shape cached in {@code misiones.json}. */
-    public static QuestInfo definition(IQuest quest, ICustomNpc<?> npc) {
-        QuestInfo info = new QuestInfo();
-        info.setId(quest.getId());
-        info.setName(quest.getName());
-        info.setLogText(quest.getLogText());
-        info.setCompleteText(quest.getCompleteText());
-        info.setRepeatable(quest.getIsRepeatable());
-        info.setType(quest.getType());
-        info.setNextQuest(quest.getNextQuest() != null ? quest.getNextQuest().getId() : -1);
-        info.setCategory(quest.getCategory() != null ? quest.getCategory().getName() : "");
+    /**
+     * A quest's definition. Requirements come off the <b>dialog's</b> availability, not the quest's —
+     * a quest is gated by the dialog that offers it, which is why the catalog walks dialogs.
+     */
+    public static QuestInfo definition(IQuest quest, IDialog dialog) {
+        return QuestInfo.definition(
+                quest.getId(),
+                quest.getName(),
+                quest.getLogText(),
+                quest.getCompleteText(),
+                quest.getIsRepeatable(),
+                quest.getType(),
+                quest.getNextQuest() != null ? quest.getNextQuest().getId() : -1,
+                quest.getCategory() != null ? quest.getCategory().getName() : "",
+                requirements(dialog));
+    }
 
-        if (npc != null) {
-            info.setNpcName(npc.getDisplay().getName());
-            info.setX(npc.getX());
-            info.setY(npc.getY());
-            info.setZ(npc.getZ());
-            info.setSkin(NpcCatalog.extractTextureName(npc.getDisplay().getSkinTexture()));
-        }
-        return info;
+    /** A dialog, including its text — the thing the board's "Bitácora" renders. */
+    public static DialogInfo dialog(IDialog dialog) {
+        return new DialogInfo(
+                dialog.getId(),
+                dialog.getName(),
+                dialog.getText(),
+                dialog.getQuest() != null ? dialog.getQuest().getId() : -1,
+                requirements(dialog));
     }
 
     /**
@@ -77,6 +83,22 @@ public final class QuestBuilder {
         req.addScoreboardRequirement(availability.scoreboard2Objective,
                 name(availability.scoreboard2Type), availability.scoreboard2Value);
         return req;
+    }
+
+    /**
+     * Whether {@code player} currently satisfies {@code dialog}'s availability. This is 1.16.5's
+     * {@code availability.isAvailable(wrapper)} — <b>not</b> {@code canQuestBeAccepted}, which asks a
+     * different question (whether the quest itself may be started) and disagrees for quests gated
+     * purely by dialog conditions like faction or daytime.
+     */
+    public static boolean isAvailable(IDialog dialog, IPlayer<?> player) {
+        try {
+            return dialog.getAvailability() instanceof Availability availability
+                    && availability.isAvailable(player);
+        } catch (Exception e) {
+            // 1.16.5 swallowed this to false; a broken availability must not hide every other quest.
+            return false;
+        }
     }
 
     /**

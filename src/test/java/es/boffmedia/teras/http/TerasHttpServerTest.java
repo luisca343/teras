@@ -86,12 +86,21 @@ class TerasHttpServerTest {
     }
 
     @Test
-    void failsClosedWhenNoTokenIsConfigured() {
-        // Belt and braces: the server refuses to start tokenless, but the primitive must never treat
-        // an empty configured token as "anything goes".
-        assertFalse(TerasHttpServer.isTokenValid("Bearer ", ""));
-        assertFalse(TerasHttpServer.isTokenValid("Bearer anything", ""));
-        assertFalse(TerasHttpServer.isTokenValid("Bearer anything", "   "));
-        assertFalse(TerasHttpServer.isTokenValid("Bearer anything", null));
+    void blankConfiguredTokenMeansNoAuth() {
+        // Deliberate, and the one place this API is fail-OPEN. Wungill's WINGULL_API was
+        // unauthenticated and the SmartRotom backend still sends no Authorization header, so requiring
+        // a token by default would 401 the entire live pipeline. Blank token => everything passes;
+        // TerasHttpServer logs a warning at startup, louder if the bind is public.
+        assertTrue(TerasHttpServer.isTokenValid(null, ""));
+        assertTrue(TerasHttpServer.isTokenValid("Bearer anything", ""));
+        assertTrue(TerasHttpServer.isTokenValid(null, "   "));
+        assertTrue(TerasHttpServer.isTokenValid(null, null));
+    }
+
+    @Test
+    void aConfiguredTokenIsEnforced() {
+        // ...and the moment a token IS set, the door shuts — including for callers sending nothing.
+        assertFalse(TerasHttpServer.isTokenValid(null, "s3cret"));
+        assertTrue(TerasHttpServer.isTokenValid("Bearer s3cret", "s3cret"));
     }
 }

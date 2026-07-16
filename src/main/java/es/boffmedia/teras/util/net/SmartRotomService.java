@@ -6,13 +6,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import es.boffmedia.teras.battle.model.TeamMember;
-import es.boffmedia.teras.quests.model.NpcData;
 import es.boffmedia.teras.util.TerasConfig;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -33,18 +31,10 @@ public final class SmartRotomService {
                 GSON.toJson(new TrainerDefeat(TerasConfig.getId(), playerId.toString(), money)));
     }
 
-    /**
-     * Publishes the NPC-dialog catalog. Port of the 1.16.5 {@code SmartRotomService.updateNPCs}; the
-     * body keeps that shape ({@code server} + {@code npcs} keyed by dialog id), which is what
-     * {@code /smartrotom/misiones/npcs} expects.
-     */
-    public static void updateNpcs(Map<Integer, List<NpcData>> npcs) {
-        if (npcs == null || npcs.isEmpty()) {
-            return;
-        }
-        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/misiones/npcs",
-                GSON.toJson(new UpdateNpcsBody(TerasConfig.getId(), npcs)));
-    }
+    // NOTE: no NPC push. 1.16.5 POSTed the catalog to /smartrotom/misiones/npcs, but NPC data now
+    // reaches the backend inside the quest catalog itself (dialogs[].npcLocations on GET /quests/all),
+    // so a separate push would be a second, divergent source of the same data. Its body never matched
+    // the backend's UpdateNPCsDto anyway. See docs/QUESTS.md.
 
     public static void saveBattle(BattleReport report) {
         if (report == null) {
@@ -154,8 +144,6 @@ public final class SmartRotomService {
     private record BancoBody(String server, String uuid, String operacion, BigDecimal cantidad) {}
 
     private record TrainerDefeat(String server, String uuid, int money) {}
-
-    private record UpdateNpcsBody(String server, Map<Integer, List<NpcData>> npcs) {}
 
     private record BattleReportBody(String server, String uuid, String logro, boolean victoria,
                                     String name1, String name2,

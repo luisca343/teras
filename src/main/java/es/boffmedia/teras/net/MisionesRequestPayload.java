@@ -10,7 +10,8 @@ import net.minecraft.resources.ResourceLocation;
 /**
  * Client -> server: request this player's quest list. The server reads the CustomNPCs quest state and
  * replies with a {@link McefResponsePayload} echoing {@code requestId} and carrying a
- * {@code MisionesResponse} JSON, which resolves the pending JS callback.
+ * {@code UserQuestData} JSON — the catalog and the player's progress already merged, since
+ * single-player has no SmartRotom backend to merge them. That resolves the pending JS callback.
  *
  * <p>This is the in-game SmartRotom page's route to quests, and the only one that works with **no
  * configuration and no network** — single-player worlds and LAN servers, where the HTTP API

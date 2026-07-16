@@ -5,7 +5,6 @@ import com.sun.net.httpserver.HttpServer;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.util.TerasConfig;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -16,49 +15,58 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
- * A small read-only HTTP API exposed by the Minecraft server, for the SmartRotom backend to pull live
- * state that would otherwise go stale between pushes.
+ * The read-only HTTP API the SmartRotom backend pulls quest state from — a <b>drop-in replacement for
+ * the old Wungill {@code WINGULL_API}</b>, which served these same routes off
+ * {@code com.sun.net.httpserver} on port 34370 from the 1.16.5 hybrid server.
  *
- * <pre>GET /quests/user/{uuid}  ->  200 MisionesResponse JSON</pre>
+ * <pre>
+ * GET /quests/all         -> {success, message, data:{quests, categories, dialogs}}   (wrapped)
+ * GET /quests/user/{uuid} -> {quests:{questId: QuestProgress}, categories:{...}}      (bare)
+ * </pre>
  *
- * <p>This is the only place Teras <b>listens</b> — everything else (SmartRotomService/HttpText) is
- * outbound. It replaces the {@code getMisiones} mcef query, which round-tripped through the in-game
- * browser's JS bridge.</p>
+ * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
+ * backend reads {@code response.data.data.quests} for the catalog and {@code response.data.quests} for
+ * the user. "Fixing" it here breaks the live pipeline. Point {@code WINGULL_API} at this server and
+ * the whole backend + 4h cache + board works unchanged.
+ *
+ * <p>This is the only place Teras listens; everything else ({@code SmartRotomService}/{@code HttpText})
+ * is outbound.</p>
  *
  * <h2>Security posture</h2>
- * Designed for <b>server-to-server</b> calls from the SmartRotom backend, not from a browser: there
- * are no CORS headers, so a page cannot read it cross-origin.
+ * Built for <b>server-to-server</b> calls, not browsers — no CORS headers, so a page can't read it
+ * cross-origin.
  * <ul>
- *   <li><b>Off by default</b> ({@code httpEnabled: false}) — a server that doesn't opt in never binds.</li>
- *   <li><b>Binds loopback by default</b> ({@code httpBind: "127.0.0.1"}). Widening it is an explicit
- *       config act and is logged as a warning.</li>
- *   <li><b>Never unauthenticated:</b> every request needs {@code Authorization: Bearer <httpToken>},
- *       compared in constant time. Enabling without a token mints one (see {@code TerasConfig});
- *       a blank token at startup refuses to bind rather than serving openly.</li>
- *   <li><b>Read-only.</b> Only GET is routed; anything else is a 405.</li>
+ *   <li><b>Off by default</b> ({@code httpEnabled: false}); single-player never binds a socket.</li>
+ *   <li><b>Loopback by default</b> ({@code httpBind: "127.0.0.1"}); widening it logs a warning.</li>
+ *   <li><b>Auth is opt-in</b>: a blank {@code httpToken} means no auth, matching Wungill (whose API was
+ *       unauthenticated) so the backend needs no change. Set a token and it's enforced in constant
+ *       time. ⚠️ Blank token + public bind = world-readable quest data; firewall it or tunnel.</li>
+ *   <li><b>Read-only</b>: only GET is routed.</li>
  * </ul>
- * There is no TLS here — terminate it at a reverse proxy, or keep the bind private and tunnel.
+ * No TLS — terminate at a proxy or keep the bind private.
  *
  * <h2>Threading</h2>
- * Handlers run on {@link Teras#EXECUTOR}, not the server thread, so reading quest state directly
- * would race the game loop. Every read hops onto the server thread via
- * {@link MinecraftServer#submit(java.util.function.Supplier)} and waits with a timeout, so a stalled
- * server yields a 503 instead of pinning an HTTP thread forever.
+ * Handlers run on {@link Teras#EXECUTOR}, so reading quest state directly would race the game loop.
+ * Every read hops onto the server thread via {@link MinecraftServer#submit(Supplier)} and waits with a
+ * timeout, so a stalled server yields 503 rather than pinning HTTP threads.
  */
 @EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class TerasHttpServer {
     private TerasHttpServer() {}
 
+    private static final String QUESTS_ALL_PATH = "/quests/all";
     private static final String QUESTS_USER_PREFIX = "/quests/user/";
     private static final String BEARER_PREFIX = "Bearer ";
 
-    /** How long a request waits for the server thread before giving up. */
-    private static final long SERVER_THREAD_TIMEOUT_SECONDS = 5;
-    /** Grace period for in-flight requests when the server is stopping. */
+    /** The catalog walks every dialog, so it gets more room than a simple lookup. */
+    private static final long CATALOG_TIMEOUT_SECONDS = 20;
+    private static final long USER_TIMEOUT_SECONDS = 10;
     private static final int SHUTDOWN_DELAY_SECONDS = 1;
 
     private static HttpServer server;
@@ -68,31 +76,37 @@ public final class TerasHttpServer {
         if (!TerasConfig.isHttpEnabled()) {
             return;
         }
-        // Fail closed: an enabled-but-tokenless API would be an open read of player data.
-        if (TerasConfig.getHttpToken().isBlank()) {
-            Teras.LOGGER.error("httpEnabled is true but 'httpToken' is empty — refusing to start the "
-                    + "Teras HTTP API. Set a token in config/teras/config.json.");
-            return;
-        }
         MinecraftServer mc = event.getServer();
         try {
             server = HttpServer.create(
                     new InetSocketAddress(TerasConfig.getHttpBind(), TerasConfig.getHttpPort()), 0);
-            server.createContext("/quests/user/", exchange -> handleQuestsUser(exchange, mc));
+            // A single "/quests" context: HttpServer matches by longest prefix, so this catches both
+            // routes and anything else under /quests (which 404s) — the same shape Wungill used.
+            server.createContext("/quests", exchange -> handleQuests(exchange, mc));
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
-            Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /quests/user/{{uuid}})",
+            Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /quests/all, GET /quests/user/{{uuid}})",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
-            if (TerasConfig.isHttpBindPublic()) {
-                Teras.LOGGER.warn("Teras HTTP API is bound to '{}', which is reachable off this "
-                        + "machine, and it serves plaintext HTTP. Restrict it by firewall and/or put a "
-                        + "TLS-terminating proxy in front of it.", TerasConfig.getHttpBind());
-            }
+            warnAboutExposure();
         } catch (IOException e) {
             Teras.LOGGER.error("Failed to start the Teras HTTP API on {}:{}",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort(), e);
             server = null;
+        }
+    }
+
+    private static void warnAboutExposure() {
+        boolean open = TerasConfig.getHttpToken().isBlank();
+        if (open) {
+            Teras.LOGGER.warn("Teras HTTP API has no 'httpToken' — requests are UNAUTHENTICATED "
+                    + "(this matches the old Wungill API, so the SmartRotom backend works as-is). "
+                    + "Set 'httpToken' in config/teras/config.json to require a bearer token.");
+        }
+        if (TerasConfig.isHttpBindPublic()) {
+            Teras.LOGGER.warn("Teras HTTP API is bound to '{}', reachable off this machine, over "
+                            + "plaintext HTTP{}. Restrict it by firewall and/or front it with a TLS proxy.",
+                    TerasConfig.getHttpBind(), open ? " AND WITHOUT AUTHENTICATION" : "");
         }
     }
 
@@ -108,38 +122,45 @@ public final class TerasHttpServer {
 
     // ---- Routing ----
 
-    /** {@code GET /quests/user/{uuid}} — this player's quests, as {@code getMisiones} used to return. */
-    private static void handleQuestsUser(HttpExchange exchange, MinecraftServer mc) throws IOException {
+    private static void handleQuests(HttpExchange exchange, MinecraftServer mc) throws IOException {
         try {
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
                 respond(exchange, 405, error("Method not allowed"));
                 return;
             }
             if (!isAuthorized(exchange)) {
-                // No detail: an unauthenticated caller learns nothing about what exists here.
+                // No detail: an unauthorized caller learns nothing about what exists here.
                 respond(exchange, 401, error("Unauthorized"));
                 return;
             }
-
-            UUID uuid = parseUuidFromPath(exchange.getRequestURI().getPath());
-            if (uuid == null) {
-                respond(exchange, 400, error("Malformed player uuid"));
-                return;
-            }
-
             if (!es.boffmedia.teras.quests.QuestBridge.isAvailable()) {
                 respond(exchange, 503, error("Quest system unavailable (CustomNPCs not installed)"));
                 return;
             }
 
-            String json = questsFor(mc, uuid);
-            if (json == null) {
-                // Quest state is read through CustomNPCs' PlayerWrapper, which needs a live entity —
-                // so an offline player genuinely cannot be answered rather than returning stale data.
-                respond(exchange, 404, error("Player not online"));
+            String path = exchange.getRequestURI().getPath();
+            if (QUESTS_ALL_PATH.equals(path)) {
+                respond(exchange, 200, onServerThread(mc,
+                        es.boffmedia.teras.quests.QuestJson::catalogJson, CATALOG_TIMEOUT_SECONDS));
                 return;
             }
-            respond(exchange, 200, json);
+
+            UUID uuid = parseUuidFromPath(path);
+            if (uuid == null) {
+                respond(exchange, 400, error("Malformed player uuid"));
+                return;
+            }
+            Optional<String> json = onServerThread(mc,
+                    () -> es.boffmedia.teras.quests.QuestJson.progressJson(uuid), USER_TIMEOUT_SECONDS);
+            if (json.isEmpty()) {
+                // Unknown to this server: never logged in, so there is no saved progress to read.
+                respond(exchange, 404, error("Player not found"));
+                return;
+            }
+            respond(exchange, 200, json.get());
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
         } catch (Exception e) {
             Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
             respond(exchange, 500, error("Internal error"));
@@ -147,23 +168,17 @@ public final class TerasHttpServer {
     }
 
     /**
-     * Reads the player's quests <b>on the server thread</b>. Returns {@code null} when the player is
-     * offline, and propagates nothing — a timeout surfaces as a 503 to the caller.
+     * Runs {@code work} on the server thread and waits. Quest state is game state; reading it from an
+     * HTTP thread would race the tick loop.
      */
-    private static String questsFor(MinecraftServer mc, UUID uuid) {
+    private static <T> T onServerThread(MinecraftServer mc, Supplier<T> work, long timeoutSeconds) {
         try {
-            return mc.submit(() -> {
-                ServerPlayer player = mc.getPlayerList().getPlayer(uuid);
-                if (player == null) {
-                    return null;
-                }
-                return es.boffmedia.teras.quests.QuestService.getMisionesJson(player);
-            }).get(SERVER_THREAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return mc.submit(work).get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted reading quests", e);
+            throw new IllegalStateException("Interrupted waiting for the server thread", e);
         } catch (Exception e) {
-            throw new IllegalStateException("Timed out reading quests from the server thread", e);
+            throw new IllegalStateException("Timed out waiting for the server thread", e);
         }
     }
 
@@ -196,14 +211,16 @@ public final class TerasHttpServer {
 
     /**
      * Constant-time bearer check, so a wrong token can't be recovered by timing the comparison.
-     * A blank {@code expected} always fails: the server refuses to start without a token, but this
-     * makes the auth primitive itself fail closed rather than accepting {@code "Bearer "}.
+     *
+     * <p>A blank {@code expected} means <b>no auth configured</b> and everything passes — Wungill's
+     * API was unauthenticated and the backend sends no {@code Authorization} header, so requiring one
+     * by default would 401 the entire live pipeline. The startup warning covers the exposure.</p>
      */
     static boolean isTokenValid(String authHeader, String expected) {
-        if (authHeader == null || expected == null || expected.isBlank()) {
-            return false;
+        if (expected == null || expected.isBlank()) {
+            return true;
         }
-        if (!authHeader.startsWith(BEARER_PREFIX)) {
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             return false;
         }
         byte[] presented = authHeader.substring(BEARER_PREFIX.length()).getBytes(StandardCharsets.UTF_8);
@@ -213,7 +230,7 @@ public final class TerasHttpServer {
     // ---- Response helpers ----
 
     private static String error(String message) {
-        return "{\"error\":\"" + message.replace("\"", "'") + "\"}";
+        return "{\"success\":false,\"message\":\"" + message.replace("\"", "'") + "\",\"data\":null}";
     }
 
     private static void respond(HttpExchange exchange, int status, String body) {

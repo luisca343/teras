@@ -1,121 +1,75 @@
 package es.boffmedia.teras.quests.model;
 
-import java.util.List;
-import java.util.Objects;
-
 /**
- * One quest as the SmartRotom web sees it, and as it is cached in {@code config/teras/misiones.json}.
+ * One quest's <b>definition</b> half (on top of the per-player {@link QuestProgress} it extends):
+ * the player-independent data the SmartRotom backend caches for 4 hours. Port of the 1.16.5
+ * {@code QuestData}.
  *
- * <p>This consolidates the 1.16.5 {@code QuestDataBase} + the <b>two</b> unrelated {@code QuestData}
- * classes ({@code model.quests} and {@code util.objects.quests}) that had drifted apart. The union of
- * their live fields is kept, so the JSON written to {@code misiones.json} is unchanged; the dead
- * {@code PlayerQuests}/{@code DialogData} pair was dropped.</p>
+ * <p>Built two ways:</p>
+ * <ul>
+ *   <li><b>Catalog</b> ({@code GET /quests/all}) — {@link #definition} only: {@code status} is the
+ *       {@code NOT_STARTED} stub and the progress fields stay null, exactly as 1.16.5 sent them. The
+ *       backend fills those from {@code /quests/user/{uuid}}.</li>
+ *   <li><b>Merged</b> (the mcef {@code getMisiones}) — definition <i>plus</i> the progress fields set,
+ *       because single-player has no backend to do the merge.</li>
+ * </ul>
  *
- * <p>Kept free of CustomNPCs types on purpose — {@code QuestBuilder} does the translation — so this
- * class loads even when CustomNPCs is absent.</p>
+ * <p>Note there is no {@code skin}/{@code x}/{@code y}/{@code z} here: the giver's location lives on
+ * {@link DialogInfo#getNpcLocations()}, which is where {@code QuestList} put it.</p>
  */
-public class QuestInfo {
-    private int id = -1;
-    private String name = "";
-    private String skin = "";
-    private double x;
-    private double y;
-    private double z;
-    private String npcName = "";
-    private String category = "";
-    private int nextQuest = -1;
-    private int type;
-    private String completeText = "";
-    private String logText = "";
+public class QuestInfo extends QuestProgress {
+    private String name;
+    private String logText;
+    private String completeText;
     private boolean repeatable;
-    private int dialogId;
-    private QuestStatus status = QuestStatus.NOT_STARTED;
-    private List<QuestReward> rewards = List.of();
-    private List<QuestObjective> objectives = List.of();
+    private int type;
+    private int nextQuest;
+    private String category;
     private QuestRequirement requirements;
 
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
-
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-
-    public String getSkin() { return skin; }
-    public void setSkin(String skin) { this.skin = skin; }
-
-    public double getX() { return x; }
-    public void setX(double x) { this.x = x; }
-
-    public double getY() { return y; }
-    public void setY(double y) { this.y = y; }
-
-    public double getZ() { return z; }
-    public void setZ(double z) { this.z = z; }
-
-    public String getNpcName() { return npcName; }
-    public void setNpcName(String npcName) { this.npcName = npcName; }
-
-    public String getCategory() { return category; }
-    public void setCategory(String category) { this.category = category; }
-
-    public int getNextQuest() { return nextQuest; }
-    public void setNextQuest(int nextQuest) { this.nextQuest = nextQuest; }
-
-    public int getType() { return type; }
-    public void setType(int type) { this.type = type; }
-
-    public String getCompleteText() { return completeText; }
-    public void setCompleteText(String completeText) { this.completeText = completeText; }
-
-    public String getLogText() { return logText; }
-    public void setLogText(String logText) { this.logText = logText; }
-
-    public boolean isRepeatable() { return repeatable; }
-    public void setRepeatable(boolean repeatable) { this.repeatable = repeatable; }
-
-    public int getDialogId() { return dialogId; }
-    public void setDialogId(int dialogId) { this.dialogId = dialogId; }
-
-    public QuestStatus getStatus() { return status; }
-    public void setStatus(QuestStatus status) { this.status = status; }
-
-    public List<QuestReward> getRewards() { return rewards; }
-    public void setRewards(List<QuestReward> rewards) { this.rewards = rewards; }
-
-    public List<QuestObjective> getObjectives() { return objectives; }
-    public void setObjectives(List<QuestObjective> objectives) { this.objectives = objectives; }
-
-    public QuestRequirement getRequirements() { return requirements; }
-    public void setRequirements(QuestRequirement requirements) { this.requirements = requirements; }
+    private QuestInfo() {}
 
     /**
-     * Compares only the quest's <i>definition</i> — deliberately ignoring {@code status},
-     * {@code objectives} and {@code rewards}, which are per-player and would otherwise make every
-     * dialog open look like a change. This is the 1.16.5 dirty-check that decides whether
-     * {@code misiones.json} gets rewritten, preserved field-for-field.
+     * The catalog form: definition fields set, {@code status = NOT_STARTED}, progress fields null.
+     * Matches {@code new QuestData(quest, dialog)} in 1.16.5.
      */
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (!(obj instanceof QuestInfo other)) return false;
-        return id == other.id
-                && Objects.equals(npcName, other.npcName)
-                && Objects.equals(name, other.name)
-                && Objects.equals(skin, other.skin)
-                && Double.compare(x, other.x) == 0
-                && Double.compare(y, other.y) == 0
-                && Double.compare(z, other.z) == 0
-                && Objects.equals(category, other.category)
-                && nextQuest == other.nextQuest
-                && type == other.type
-                && Objects.equals(completeText, other.completeText)
-                && Objects.equals(logText, other.logText)
-                && repeatable == other.repeatable;
+    public static QuestInfo definition(int id, String name, String logText, String completeText,
+                                       boolean repeatable, int type, int nextQuest, String category,
+                                       QuestRequirement requirements) {
+        QuestInfo info = new QuestInfo();
+        info.id = id;
+        info.status = QuestStatus.NOT_STARTED;
+        info.name = name;
+        info.logText = logText;
+        info.completeText = completeText;
+        info.repeatable = repeatable;
+        info.type = type;
+        info.nextQuest = nextQuest;
+        info.category = category;
+        info.requirements = requirements;
+        return info;
     }
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(id, npcName, name, skin, x, y, z, category, nextQuest, type,
-                completeText, logText, repeatable);
+    /** Copies this definition and overlays a player's progress — the merge the backend would do. */
+    public QuestInfo mergedWith(QuestProgress progress) {
+        QuestInfo merged = definition(id, name, logText, completeText, repeatable, type, nextQuest,
+                category, requirements);
+        if (progress != null) {
+            merged.status = progress.getStatus();
+            merged.objectives = progress.getObjectives();
+            merged.rewards = progress.getRewards();
+            merged.dialogId = progress.getDialogId();
+            merged.npcName = progress.getNpcName();
+        }
+        return merged;
     }
+
+    public String getName() { return name; }
+    public String getLogText() { return logText; }
+    public String getCompleteText() { return completeText; }
+    public boolean isRepeatable() { return repeatable; }
+    public int getType() { return type; }
+    public int getNextQuest() { return nextQuest; }
+    public String getCategory() { return category; }
+    public QuestRequirement getRequirements() { return requirements; }
 }
