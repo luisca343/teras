@@ -6,7 +6,6 @@ import es.boffmedia.teras.client.renders.SmartRotomRenderer;
 import es.boffmedia.teras.init.ItemInit;
 import es.boffmedia.teras.items.SmartRotom;
 import es.boffmedia.teras.mcef.TerasMCEF;
-import es.boffmedia.teras.util.TerasConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
@@ -100,8 +99,8 @@ public final class ClientEvents {
         // Create the browser only for the item actually in a hand (identity match), so it's ready for
         // the in-hand renderer; other hotbar SmartRotoms are merely kept alive, not eagerly created.
         boolean held = (stack == mainHand || stack == offHand);
-        if (held && TerasMCEF.isReady() && TerasMCEF.getBrowser(id) == null) {
-            TerasMCEF.getOrCreateBrowser(id, TerasConfig.getHome());
+        if (held && TerasMCEF.isReady() && ServerConfig.isSynced() && TerasMCEF.getBrowser(id) == null) {
+            TerasMCEF.getOrCreateBrowser(id, ServerConfig.getHome());
         }
     }
 
@@ -109,5 +108,7 @@ public final class ClientEvents {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut ev) {
         // Free every Chromium instance when leaving a world/server.
         TerasMCEF.closeAll();
+        // The config belonged to the server we just left; the next one sends its own.
+        ServerConfig.clear();
     }
 }

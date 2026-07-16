@@ -4,7 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import es.boffmedia.teras.Teras;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -17,18 +20,25 @@ import java.security.SecureRandom;
  * {@code config/teras/config.json}:
  * <pre>{ "id": "...", "home": "...", "API_URL": "...", "apiToken": "...", "requireHttps": false }</pre>
  *
- * <p>Loaded on <b>both sides</b> during common setup (see {@code Teras#onCommonSetup}). If the file
- * does not exist it is <b>created with defaults</b> (ported from the old {@code getConfig()}), so an
- * admin has a template to edit. The default {@code home} points at the <b>real SmartRotom site</b>
- * ({@link #DEFAULT_HOME}) rather than a generic browser page.</p>
+ * <p>This is the <b>server's</b> configuration, and only the server's. It is loaded when a server
+ * starts — a dedicated server, or the integrated one behind a single-player world — and never on a
+ * client that is merely connecting somewhere: a player's own {@code config.json} describes the world
+ * <i>they</i> host, so honouring it while on someone else's server would point their SmartRotom at
+ * the wrong site. What the client needs travels over the wire instead, from the server it joined
+ * ({@code net.ServerConfigPayload} → {@code client.ServerConfig}); single-player goes through that
+ * same path, since the integrated server is still the server.</p>
+ *
+ * <p>If the file does not exist it is <b>created with defaults</b> (ported from the old
+ * {@code getConfig()}), so an admin has a template to edit. The default {@code home} points at the
+ * <b>real SmartRotom site</b> ({@link #DEFAULT_HOME}) rather than a generic browser page.</p>
  *
  * <p><b>{@code id} — the server/world identifier.</b> This is the value the SmartRotom web uses to
- * confirm which server a player is on: the <i>server</i> injects its own {@code id} into the
- * {@code getUserData} response as the {@code world} field (see {@code TerasNet#handleUserDataRequest}),
- * so a multiplayer client's local {@code id} is irrelevant — only the server's config {@code id}
- * counts. A random id is generated and persisted on first run; real deployments set it to the value
+ * confirm which server a player is on: the server injects its own {@code id} into the
+ * {@code getUserData} response as the {@code world} field (see {@code TerasNet#handleUserDataRequest}).
+ * A random id is generated and persisted on first run; real deployments set it to the value
  * registered with the SmartRotom backend.</p>
  */
+@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class TerasConfig {
     private TerasConfig() {}
 
@@ -46,7 +56,8 @@ public final class TerasConfig {
 
     /** Loopback — the fail-safe default bind for the inbound HTTP API. */
     private static final String DEFAULT_HTTP_BIND = "127.0.0.1";
-    private static final int DEFAULT_HTTP_PORT = 8137;
+    /** Wungill's {@code DEFAULT_PORT}: the mod is a drop-in for WINGULL_API, so keep its port. */
+    private static final int DEFAULT_HTTP_PORT = 34370;
 
     // Server/world identifier the SmartRotom web keys on. Empty until load() sets it.
     private static String id = "";
@@ -61,14 +72,31 @@ public final class TerasConfig {
     private static String httpBind = DEFAULT_HTTP_BIND;
     private static int httpPort = DEFAULT_HTTP_PORT;
     /**
-     * Bearer token callers must present. Distinct from {@link #apiToken} on purpose: that one is an
-     * outbound credential we send to SmartRotom, this one guards traffic coming in. Reusing a single
-     * secret for both directions would mean a leak in either place compromises the other.
+     * Bearer token callers must present, or blank for <b>no authentication</b> — which is what the old
+     * Wungill API did, and what the SmartRotom backend still expects (it sends no {@code Authorization}
+     * header). Set it and it's enforced; the server warns at startup while it's blank.
+     *
+     * <p>Distinct from {@link #apiToken} on purpose: that one is an outbound credential we send to
+     * SmartRotom, this one guards traffic coming in. Reusing a single secret for both directions would
+     * mean a leak in either place compromises the other.</p>
      */
     private static String httpToken = "";
 
+    /**
+     * Loaded before the world does, so everything downstream (the HTTP API at
+     * {@code ServerStartedEvent}, the join-time sync to clients) already has it.
+     */
+    @SubscribeEvent
+    public static void onServerAboutToStart(ServerAboutToStartEvent event) {
+        load();
+    }
+
     public static void load() {
         try {
+            // A client JVM starts an integrated server per world, so reset first: without this, keys
+            // absent from the new file would keep the previous world's values.
+            resetToDefaults();
+
             Path dir = FMLPaths.CONFIGDIR.get().resolve("teras");
             Path path = dir.resolve("config.json");
 
@@ -106,15 +134,9 @@ public final class TerasConfig {
                 Teras.LOGGER.info("config/teras/config.json had no 'id'; generated server id '{}'", id);
             }
 
-            // Never run the inbound API unauthenticated: mint a token rather than start without one.
-            // The value is only written to the config file, never logged.
-            if (httpEnabled && httpToken.isBlank()) {
-                httpToken = randomToken();
-                json.addProperty("httpToken", httpToken);
-                dirty = true;
-                Teras.LOGGER.info("httpEnabled but no 'httpToken'; generated one in "
-                        + "config/teras/config.json (read it from there to configure the caller)");
-            }
+            // NOTE: no token is minted here. A blank httpToken deliberately means "no auth", matching
+            // the Wungill API the SmartRotom backend was written against — generating one would 401
+            // every backend call. TerasHttpServer warns at startup instead. See docs/HTTP_API.md.
 
             if (home == null || home.isBlank()) {
                 Teras.LOGGER.warn("config/teras/config.json has no 'home'; falling back to {}", DEFAULT_HOME);
@@ -132,6 +154,18 @@ public final class TerasConfig {
         } catch (Exception e) {
             Teras.LOGGER.error("Failed to load Teras config", e);
         }
+    }
+
+    private static void resetToDefaults() {
+        id = "";
+        home = DEFAULT_HOME;
+        apiUrl = DEFAULT_API_URL;
+        apiToken = "";
+        requireHttps = false;
+        httpEnabled = false;
+        httpBind = DEFAULT_HTTP_BIND;
+        httpPort = DEFAULT_HTTP_PORT;
+        httpToken = "";
     }
 
     private static void writeDefault(Path dir, Path path) throws IOException {
@@ -156,11 +190,6 @@ public final class TerasConfig {
     /** 8-char alphanumeric, matching 1.16.5 {@code RandomStringUtils.random(8, true, true)}. */
     private static String randomId() {
         return randomString(8);
-    }
-
-    /** 48 chars from a {@link SecureRandom} alphabet — a bearer token, not a human-typed value. */
-    private static String randomToken() {
-        return randomString(48);
     }
 
     private static String randomString(int length) {

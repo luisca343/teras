@@ -3,6 +3,7 @@ package es.boffmedia.teras.client;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.mcef.JsQueryCallback;
 import es.boffmedia.teras.net.McefResponsePayload;
+import es.boffmedia.teras.net.ServerConfigPayload;
 import es.boffmedia.teras.util.QueryHelper;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -25,5 +26,10 @@ public final class ClientNetHandler {
                         payload.requestId(), payload.json());
             }
         });
+    }
+
+    /** Stores the config of the server we just joined; see {@link ServerConfig}. */
+    public static void onServerConfig(ServerConfigPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> ServerConfig.accept(payload));
     }
 }

@@ -35,9 +35,19 @@ public final class TerasNet {
         registrar.playToServer(UserDataRequestPayload.TYPE, UserDataRequestPayload.STREAM_CODEC, TerasNet::handleUserDataRequest);
         registrar.playToServer(SpawnsRequestPayload.TYPE, SpawnsRequestPayload.STREAM_CODEC, TerasNet::handleSpawnsRequest);
         registrar.playToServer(MisionesRequestPayload.TYPE, MisionesRequestPayload.STREAM_CODEC, TerasNet::handleMisionesRequest);
-        // Client-only body is isolated behind a lambda -> client class (never loaded on the server).
+        // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
+        registrar.playToClient(ServerConfigPayload.TYPE, ServerConfigPayload.STREAM_CODEC,
+                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onServerConfig(payload, context));
+    }
+
+    // ---- Server-side send helpers ----
+
+    /** Hands the joining player this server's config; see {@link ServerConfigPayload}. */
+    public static void sendConfig(ServerPlayer player) {
+        PacketDistributor.sendToPlayer(player, new ServerConfigPayload(
+                es.boffmedia.teras.util.TerasConfig.getHome()));
     }
 
     // ---- Client-side send helpers (called from QueryHelper on the client) ----
@@ -127,19 +137,20 @@ public final class TerasNet {
             if (!(context.player() instanceof ServerPlayer sp)) return;
             // The in-game page's route to quests — the one needing no config and no network, so it is
             // what single-player and LAN worlds use (the HTTP API is off by default and has no backend
-            // there). Calls the same QuestService the HTTP route does, so the two always agree.
+            // there to merge the catalog with the player's progress). Returns the MERGED shape the
+            // backend would otherwise assemble, so the board reads one shape on both paths.
             //
             // AUTHORITY: the player comes from the connection, never from the request, so a client can
             // only ever read its own quests. That's why this payload carries no uuid, unlike the HTTP
-            // route — which is server-to-server and authenticated by bearer token instead.
+            // route — which is server-to-server and gated by the bearer token instead.
             //
-            // Same isolation as getSpawns above: QuestService touches CustomNPCs, so it is only
+            // Same isolation as getSpawns above: QuestJson touches CustomNPCs, so it is only
             // referenced behind the ModList check and never classloaded when the mod is absent. We
             // always reply (even empty) so the JS callback resolves instead of hanging — which is
             // exactly how the 1.16.5 getMisiones failed.
-            String json = "{\"misiones\":[],\"categorias\":{}}";
+            String json = es.boffmedia.teras.quests.QuestJson.EMPTY_MERGED;
             if (es.boffmedia.teras.quests.QuestBridge.isAvailable()) {
-                json = es.boffmedia.teras.quests.QuestService.getMisionesJson(sp);
+                json = es.boffmedia.teras.quests.QuestJson.mergedJson(sp.getUUID());
             } else {
                 Teras.LOGGER.warn("getMisiones requested by {} but CustomNPCs is not loaded on this "
                         + "server; returning an empty quest list.", sp.getGameProfile().getName());

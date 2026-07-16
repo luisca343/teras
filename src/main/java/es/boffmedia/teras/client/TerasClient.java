@@ -5,7 +5,6 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.gui.PantallaSmartRotom;
 import es.boffmedia.teras.items.SmartRotom;
 import es.boffmedia.teras.mcef.TerasMCEF;
-import es.boffmedia.teras.util.TerasConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
@@ -44,7 +43,11 @@ public final class TerasClient {
             Teras.LOGGER.warn("SmartRotom has no id yet; skipping open");
             return;
         }
-        MCEFBrowser browser = TerasMCEF.getOrCreateBrowser(id, TerasConfig.getHome());
+        if (!ServerConfig.isSynced()) {
+            Teras.LOGGER.warn("SmartRotom pressed before the server sent its config; skipping open");
+            return;
+        }
+        MCEFBrowser browser = TerasMCEF.getOrCreateBrowser(id, ServerConfig.getHome());
         if (browser == null) {
             Teras.LOGGER.warn("SmartRotom browser unavailable for id={}", id);
             return;

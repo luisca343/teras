@@ -2,7 +2,6 @@ package es.boffmedia.teras;
 
 import es.boffmedia.teras.init.ComponentInit;
 import es.boffmedia.teras.init.ItemInit;
-import es.boffmedia.teras.util.TerasConfig;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -41,8 +40,8 @@ public class Teras {
         ItemInit.CREATIVE_TABS.register(modBus);
         ComponentInit.COMPONENTS.register(modBus);
 
-        // Config is side-agnostic and needed on both sides (server: the world/server `id`;
-        // client: the browser `home`), so it loads in common setup rather than client-only setup.
+        // Config belongs to whoever runs the server, so it loads at server start (TerasConfig), not
+        // here: a client connected to a remote server has no business reading its own copy.
         modBus.addListener(this::onCommonSetup);
 
         // Client-only wiring lives in TerasClient, gated by dist at registration time.
@@ -51,7 +50,6 @@ public class Teras {
 
     private void onCommonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
-            TerasConfig.load();
             // Quest system: no-op unless CustomNPCs is installed. QuestBridge is the only class named
             // here, so no `noppes` class is loaded on a server without it.
             es.boffmedia.teras.quests.QuestBridge.registerIfPresent();
