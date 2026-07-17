@@ -18,13 +18,29 @@ import es.boffmedia.teras.util.TerasConfig;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Client for the SmartRotom battle endpoints. Every payload carries a top-level {@code server} =
- * {@link TerasConfig#getId()}, which the backend's {@code MinecraftMiddleware} requires (it 403s
- * otherwise, before routing). Calls are fire-and-forget over {@link HttpText#postJson}.
+ * Client for the SmartRotom economy, Pokédex and battle endpoints. The wire contract is not uniform:
+ *
+ * <ul>
+ *   <li><b>Tripwire routes</b> — {@code trainerdefeat}, {@code pokemon/register},
+ *       {@code achievement/battle-achievement}, {@code starbank/shop} — carry a top-level
+ *       {@code server} = {@link TerasConfig#getId()}, which the backend's {@code MinecraftMiddleware}
+ *       requires (403 otherwise, before routing).</li>
+ *   <li><b>Bearer-only routes</b> — {@code starbank/set-balance}, {@code caja/*} — carry <b>no</b>
+ *       {@code server} field: they are on the middleware exclude list and authenticate solely by
+ *       {@code Authorization: Bearer <TerasConfig.apiToken>}. Sending {@code server} 400s them
+ *       (the DTOs reject unknown properties).</li>
+ * </ul>
+ *
+ * <p>Writes whose result is ignored (rewards, mirrors) are fire-and-forget async over
+ * {@link HttpText#postJson}, which also attaches the bearer. Reads and writes that must observe the
+ * outcome block on {@link HttpText#getAuthed}/{@link HttpText#postJsonAuthed} and must run off the
+ * server thread.</p>
+ *
+ * <p>The backend is the authority — see {@code boffmedia/docs/STARBANK.md} (economy) and
+ * {@code boffmedia/docs/DARCAJA.md} (grants).</p>
  */
 public final class SmartRotomService {
     private SmartRotomService() {}
@@ -35,6 +51,10 @@ public final class SmartRotomService {
         if (playerId == null || money <= 0) {
             return;
         }
+        // Fire-and-forget on EXECUTOR: this is called from the server thread (BattleOutcomeHandler)
+        // and the result is ignored, so it must not block — postJsonAuthed would stall the tick up to
+        // the read timeout when the API is slow. postJson already attaches the bearer, so trainerdefeat
+        // stays authenticated for the ENFORCE_MONEY_AUTH flip without the synchronous round-trip.
         HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/starbank/trainerdefeat",
                 GSON.toJson(new TrainerDefeat(TerasConfig.getId(), playerId.toString(), money)));
     }
@@ -88,20 +108,55 @@ public final class SmartRotomService {
 
     // ---- starbank (economy) ----------------------------------------------------------------
     //
-    // ⚠️ UNVERIFIED WIRE CONTRACT. The shapes below are reconstructed from the 1.16.5 Wungill plugin
-    // (BancoQuery / WungillEconomy) and have NOT been confirmed against the current backend. Two known
-    // discrepancies, both resolved here in favour of the newer evidence:
-    //
-    //   1. Wungill sent the server id as `idMundo`; `defeatTrainer` above (written against the current
-    //      backend) sends it as top-level `server`, which MinecraftMiddleware requires or it 403s.
-    //      These calls follow `server`.
-    //   2. Wungill posted a redundant `starbank/actualizar` alongside every operation, carrying the
-    //      *pre*-mutation balance. That looks like a bug rather than contract, so it is not reproduced.
-    //
-    // Confirm against SmartRotom before enabling in production; see WUNGILL_MIGRATION.md.
+    // The backend has no deposit/withdraw/set-amount routes; money moves only through the routes
+    // below (see docs/STARBANK.md). All write via postJsonAuthed (Bearer) to authenticate as the
+    // trusted server — guarded routes require it, tripwire-only routes ignore it.
 
-    /** Starbank operations, mirroring the 1.16.5 {@code BancoQuery.operacion} values. */
-    private enum Op { DEPOSITAR, RETIRAR, SET }
+    /** Exact {@code /shop} operation values: anything other than {@code COMPRA} is a SALE server-side. */
+    private static final String SHOP_BUY = "COMPRA";
+    private static final String SHOP_SELL = "VENTA";
+
+    /**
+     * Mirrors one Pixelmon shopkeeper transaction: a buy debits the player into the System sink, a
+     * sell credits them from it. <b>Blocks</b> — call from {@link es.boffmedia.teras.Teras#EXECUTOR}.
+     * The backend charges/pays {@code unitPrice * count} and re-checks balance on a buy; a 409 is
+     * harmless (the in-game trade already completed, the next balance load reconciles).
+     */
+    public static void shopTransaction(UUID playerId, boolean buy, String npcName, String itemName,
+                                       long unitPrice, int count) {
+        if (playerId == null || unitPrice <= 0 || count <= 0) {
+            return;
+        }
+        ShopBody body = new ShopBody(TerasConfig.getId(), playerId.toString(),
+                npcName == null ? "" : npcName, itemName == null ? "" : itemName,
+                buy ? SHOP_BUY : SHOP_SELL, unitPrice, count);
+        String response = HttpText.postJsonAuthed(
+                TerasConfig.getApiUrl() + "/smartrotom/starbank/shop", GSON.toJson(body));
+        if (response == null) {
+            Teras.LOGGER.warn("Shop {} for {} ({}x {} @ {}) did not reach starbank",
+                    buy ? SHOP_BUY : SHOP_SELL, playerId, count, itemName, unitPrice);
+        }
+    }
+
+    /**
+     * Sets a player's main-account balance to an absolute {@code target}. <b>Blocks</b> — call from
+     * {@link es.boffmedia.teras.Teras#EXECUTOR}. Returns {@code true} iff the API answered 2xx.
+     *
+     * <p>Passthrough only: the backend diffs against the row-locked balance and ledgers the AJUSTE, so
+     * no client-side delta math. Carries no {@code server} field (excluded route). The route takes an
+     * integer, so a fractional target is rounded.</p>
+     */
+    public static boolean setBalance(UUID playerId, BigDecimal target, String concept) {
+        if (playerId == null || target == null || target.signum() < 0) {
+            return false;
+        }
+        long balance = target.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
+        SetBalanceBody body = new SetBalanceBody(playerId.toString(), balance,
+                (concept == null || concept.isBlank()) ? null : concept);
+        String response = HttpText.postJsonAuthed(
+                TerasConfig.getApiUrl() + "/smartrotom/starbank/set-balance", GSON.toJson(body));
+        return response != null;
+    }
 
     /**
      * Reads the authoritative balance. <b>Blocks</b> — call from {@link es.boffmedia.teras.Teras#EXECUTOR}.
@@ -111,13 +166,17 @@ public final class SmartRotomService {
      * <p>1.16.5 {@code getDineroFromBBDD} hit {@code GET banco/{uuid}/{server}} and did a bare
      * {@code Double.parseDouble} on the body, so an error page became a {@code NumberFormatException}.
      * Here a non-numeric body is a {@code null} instead.</p>
+     *
+     * <p>The route is {@code GET /smartrotom/starbank/balance/{uuid}} — no {@code server} segment (the
+     * facade keys off the player's main account, not the world) — and its body is wrapped in the API's
+     * global {@code {success, statusCode, data}} envelope, so the balance is at {@code data.balance}.</p>
      */
     public static BigDecimal fetchBalance(UUID playerId) {
         if (playerId == null) {
             return null;
         }
         String body = HttpText.getAuthed(
-                TerasConfig.getApiUrl() + "/banco/" + playerId + "/" + TerasConfig.getId());
+                TerasConfig.getApiUrl() + "/smartrotom/starbank/balance/" + playerId);
         if (body == null) {
             return null;
         }
@@ -320,6 +379,12 @@ public final class SmartRotomService {
                 return null;
             }
             JsonObject obj = parsed.getAsJsonObject();
+            // Global envelope: {success, statusCode, data:{balance}}. Unwrap `data` when it's an object
+            // before the flat-shape scan, so nested balance/dinero win over a stray top-level number.
+            JsonElement data = obj.get("data");
+            if (data != null && data.isJsonObject()) {
+                obj = data.getAsJsonObject();
+            }
             for (String key : new String[] {"balance", "dinero", "data"}) {
                 JsonElement value = obj.get(key);
                 if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
@@ -332,27 +397,12 @@ public final class SmartRotomService {
         }
     }
 
-    public static void deposit(UUID playerId, BigDecimal amount) {
-        postBanco(Op.DEPOSITAR, playerId, amount);
-    }
+    /** {@code /shop} body. {@code operation} is {@link #SHOP_BUY}/{@link #SHOP_SELL}. */
+    private record ShopBody(String server, String uuid, String npcName, String itemName,
+                            String operation, long unitPrice, int count) {}
 
-    public static void withdraw(UUID playerId, BigDecimal amount) {
-        postBanco(Op.RETIRAR, playerId, amount);
-    }
-
-    public static void setBalance(UUID playerId, BigDecimal amount) {
-        postBanco(Op.SET, playerId, amount);
-    }
-
-    private static void postBanco(Op op, UUID playerId, BigDecimal amount) {
-        if (playerId == null || amount == null) {
-            return;
-        }
-        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/starbank/" + op.name().toLowerCase(Locale.ROOT),
-                GSON.toJson(new BancoBody(TerasConfig.getId(), playerId.toString(), op.name(), amount)));
-    }
-
-    private record BancoBody(String server, String uuid, String operacion, BigDecimal cantidad) {}
+    /** {@code /set-balance} body — note: no {@code server} field (excluded route). */
+    private record SetBalanceBody(String uuid, long balance, String concept) {}
 
     private record TrainerDefeat(String server, String uuid, int money) {}
 

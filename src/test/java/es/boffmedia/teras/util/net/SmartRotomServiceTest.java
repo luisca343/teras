@@ -43,6 +43,18 @@ class SmartRotomServiceTest {
         assertEquals(new BigDecimal("500"), SmartRotomService.parseBalance("{\"data\":500}"));
     }
 
+    /**
+     * Unlike the caja routes, the starbank balance GET does <b>not</b> {@code @SkipEnvelope}, so the
+     * live body is {@code {success, statusCode, data:{balance}}} and the number sits at
+     * {@code data.balance}. Fixing the URL without reading through the envelope reproduces the original
+     * "balance stays unknown" symptom with a 200 instead of a 404.
+     */
+    @Test
+    void parsesTheEnvelopedBalanceUnderData() {
+        assertEquals(new BigDecimal("1500"), SmartRotomService.parseBalance(
+                "{\"success\":true,\"statusCode\":200,\"data\":{\"balance\":1500}}"));
+    }
+
     @Test
     void preservesPrecisionRatherThanTruncatingToInt() {
         // 1.16.5 stored money as an int (WungillData.setDinero cast a double down), so any fractional

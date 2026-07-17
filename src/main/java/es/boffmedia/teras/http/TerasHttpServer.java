@@ -1,8 +1,11 @@
 package es.boffmedia.teras.http;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.economy.EconomyStore;
 import es.boffmedia.teras.util.TerasConfig;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -12,6 +15,7 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -31,6 +35,9 @@ import java.util.function.Supplier;
  * GET  /quests/user/{uuid} -> {quests:{questId: QuestProgress}, categories:{...}}     (bare)
  * POST /givepokemon        -> {data:{given:true}}      body {uuid, pokespec, sendMessage}
  * POST /giveitems          -> {data:{given:N}}         body {uuid, items:[{id, amount, …}]}
+ * POST /updateBalance      -> {data:{success:true}}    body {balance, type, uuid}   (mirror in)
+ * POST /getCurrentBalance  -> {data:balance}           body {uuid, amount}          (add, return new)
+ * POST /money              -> {data:{money:balance}}   body {uuid}
  * </pre>
  *
  * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
@@ -74,6 +81,9 @@ public final class TerasHttpServer {
     private static final String QUESTS_USER_PREFIX = "/quests/user/";
     private static final String GIVE_POKEMON_PATH = "/givepokemon";
     private static final String GIVE_ITEMS_PATH = "/giveitems";
+    private static final String UPDATE_BALANCE_PATH = "/updateBalance";
+    private static final String GET_CURRENT_BALANCE_PATH = "/getCurrentBalance";
+    private static final String MONEY_PATH = "/money";
     private static final String BEARER_PREFIX = "Bearer ";
 
     /** The catalog walks every dialog, so it gets more room than a simple lookup. */
@@ -109,11 +119,19 @@ public final class TerasHttpServer {
             // without reviewing that flag in the same change.
             server.createContext(GIVE_POKEMON_PATH, exchange -> handleGivePokemon(exchange, mc));
             server.createContext(GIVE_ITEMS_PATH, exchange -> handleGiveItems(exchange, mc));
+            // Economy bridge — the drop-in for Wungill's WINGULL_API economy routes, which the backend
+            // still calls after a starbank-side change (updateBalance) and on trainer defeat
+            // (getCurrentBalance). EconomyStore is engine-free and thread-safe, so these are registered
+            // unconditionally and served straight on the HTTP thread — no server-thread hop.
+            server.createContext(UPDATE_BALANCE_PATH, TerasHttpServer::handleUpdateBalance);
+            server.createContext(GET_CURRENT_BALANCE_PATH, TerasHttpServer::handleGetCurrentBalance);
+            server.createContext(MONEY_PATH, TerasHttpServer::handleMoney);
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
             Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /ping, GET /quests/all, "
-                            + "GET /quests/user/{{uuid}}, POST /givepokemon, POST /giveitems)",
+                            + "GET /quests/user/{{uuid}}, POST /givepokemon, POST /giveitems, "
+                            + "POST /updateBalance, POST /getCurrentBalance, POST /money)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -257,6 +275,83 @@ public final class TerasHttpServer {
         } catch (Exception e) {
             Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
             respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /**
+     * The backend pushes an authoritative balance here after a starbank-side change the game did not
+     * originate — a web transfer, an admin set, another player paying you. {@link EconomyStore#accept}
+     * mirrors it into the cache so the in-game PokéDollar balance reflects it without a re-login. The
+     * ledger write already happened on the backend; this is only the mirror, so nothing is written back.
+     * Body {@code {balance, type, uuid}} (type is ignored — always the main account).
+     */
+    private static void handleUpdateBalance(HttpExchange exchange) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonParser.parseString(readBody(exchange)).getAsJsonObject();
+            UUID uuid = UUID.fromString(body.get("uuid").getAsString());
+            BigDecimal balance = body.get("balance").getAsBigDecimal();
+            EconomyStore.accept(uuid, balance);
+            Teras.LOGGER.info("updateBalance: mirrored {} -> {}", uuid, balance);
+            respond(exchange, 200, "{\"data\":{\"success\":true}}");
+        } catch (RuntimeException e) {
+            respond(exchange, 400, error("Malformed updateBalance body"));
+        }
+    }
+
+    /**
+     * Legacy Wungill contract used only by the backend's trainer-defeat flow: "add {@code amount} to the
+     * player's balance and return the new total". The backend diffs the returned value against the
+     * starbank balance and ledgers that difference, so this must return the <b>post-credit</b> balance.
+     *
+     * <p>At call time the reward has not landed anywhere, so the cache equals the starbank balance and
+     * {@code get() + amount} is the correct target; we mirror the credit into the cache (like a shop
+     * deposit) so the reward shows in-game at once. When the balance is not loaded we answer 409 rather
+     * than {@code amount}-over-zero — the backend then falls back to its own stored balance + reward,
+     * instead of us telling it to overwrite a real balance with just the reward. Body {@code {uuid, amount}}.</p>
+     */
+    private static void handleGetCurrentBalance(HttpExchange exchange) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonParser.parseString(readBody(exchange)).getAsJsonObject();
+            UUID uuid = UUID.fromString(body.get("uuid").getAsString());
+            BigDecimal amount = (body.has("amount") && !body.get("amount").isJsonNull())
+                    ? body.get("amount").getAsBigDecimal() : BigDecimal.ZERO;
+            if (!EconomyStore.isLoaded(uuid)) {
+                respond(exchange, 409, error("Balance not loaded"));
+                return;
+            }
+            if (amount.signum() > 0) {
+                // mirrorDeposit, not deposit: the backend originated this credit and ledgers the diff
+                // itself — the write-through funnel would report it back and double-count.
+                EconomyStore.mirrorDeposit(uuid, amount);
+            }
+            respond(exchange, 200, "{\"data\":" + EconomyStore.get(uuid).toPlainString() + "}");
+        } catch (RuntimeException e) {
+            respond(exchange, 400, error("Malformed getCurrentBalance body"));
+        }
+    }
+
+    /**
+     * Legacy Wungill balance read: returns {@code {money}} for a player (the backend reads
+     * {@code data.money}). Pure cache read, no mutation; an unknown balance reads as 0, which the
+     * backend already treats as 0. Body {@code {uuid}}.
+     */
+    private static void handleMoney(HttpExchange exchange) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonParser.parseString(readBody(exchange)).getAsJsonObject();
+            UUID uuid = UUID.fromString(body.get("uuid").getAsString());
+            respond(exchange, 200,
+                    "{\"data\":{\"money\":" + EconomyStore.get(uuid).toPlainString() + "}}");
+        } catch (RuntimeException e) {
+            respond(exchange, 400, error("Malformed money body"));
         }
     }
 
