@@ -25,6 +25,16 @@ versionRange = "[2.1.6,)"
 ordering = "AFTER"
 side = "CLIENT"
 
+# Optional (client): WaterMedia 3.x powers the PictureFrame in-world displays. Only the client renders
+# them, so the server never needs it; without it, frames stay blank but nothing else is affected.
+# AFTER so WaterMedia's API is initialised before FrameRenderer first creates a player.
+[[dependencies.${mod_id}]]
+modId = "watermedia"
+type = "optional"
+versionRange = "[3.0,)"
+ordering = "AFTER"
+side = "CLIENT"
+
 # Optional: the SmartRotom getSpawns query reads Pixelmon's spawner. Everything else (the browser)
 # works without it, and getSpawns degrades to [] if Pixelmon is absent, so this is not required.
 [[dependencies.${mod_id}]]

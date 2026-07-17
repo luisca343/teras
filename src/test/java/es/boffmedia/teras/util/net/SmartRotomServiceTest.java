@@ -146,4 +146,40 @@ class SmartRotomServiceTest {
         assertEquals(new ObjetoMC("minecraft:diamond", 0), grant.objetos().get(0));
         assertEquals(new PokemonSpec("Incineroar", 1), grant.pokemon().get(0));
     }
+
+    // ---- parseReservation (darCaja reserve) ----
+    //
+    // Same grant contract as parseGrant, plus the reservationId off the root. The one distinction that
+    // matters: reservationId == null means "nothing owed, do not confirm"; a non-null id with a
+    // non-empty grant means "deliver, then confirm this".
+
+    @Test
+    void parsesReservationIdAlongsideTheGrant() {
+        SmartRotomService.Reservation reservation = SmartRotomService.parseReservation(
+                "{\"reservationId\":\"abc-123\",\"objetos\":[{\"id\":\"minecraft:diamond\",\"cantidad\":5}],"
+                        + "\"pokemon\":[{\"spec\":\"Pikachu\",\"cantidad\":1}]}");
+        assertNotNull(reservation);
+        assertEquals("abc-123", reservation.reservationId());
+        assertEquals(1, reservation.grant().objetos().size());
+        assertEquals(1, reservation.grant().pokemon().size());
+    }
+
+    /** Nothing owed: reservationId is JSON null, both lists empty. Callers must not confirm this. */
+    @Test
+    void parsesANullReservationIdAsNothingOwed() {
+        SmartRotomService.Reservation reservation = SmartRotomService.parseReservation(
+                "{\"reservationId\":null,\"objetos\":[],\"pokemon\":[]}");
+        assertNotNull(reservation);
+        assertNull(reservation.reservationId());
+        assertTrue(reservation.grant().isEmpty());
+    }
+
+    /** A body that isn't a caja response is null (grant nothing), exactly as parseGrant. */
+    @Test
+    void returnsNullWhenTheReservationBodyIsNotACajaResponse() {
+        assertNull(SmartRotomService.parseReservation(null));
+        assertNull(SmartRotomService.parseReservation(""));
+        assertNull(SmartRotomService.parseReservation("{\"reservationId\":\"abc\"}"));
+        assertNull(SmartRotomService.parseReservation("<html><body>502 Bad Gateway</body></html>"));
+    }
 }

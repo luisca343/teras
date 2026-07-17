@@ -65,6 +65,13 @@ dependencies {
     compileOnly "com.cinemamod:mcef:${mcef_version}"
     runtimeOnly "com.cinemamod:mcef-neoforge:${mcef_version}"
 
+    // WaterMedia 3.0.0.21 (CurseForge file 8342332) — the media engine behind the PictureFrame
+    // in-world displays: MRL + MediaPlayer + GLEngine (FFMPEG-backed, no VLC install). compileOnly:
+    // the player installs WaterMedia as its own mod (the user runs it for FancyMenu compat), so we
+    // compile against org.watermedia.api.* and it is present at runtime. transitive=false — cursemaven
+    // synthesises the POM from CurseForge relations and would otherwise drag in arbitrary versions.
+    compileOnly("curse.maven:watermedia-869524:8342332") { transitive = false }
+
     // --- Battle engines: both compileOnly. Exactly one is present at runtime; the mod detects
     //     which via ModList and selects the matching BattleProvider (see pixelmon/battle/api). ---
 

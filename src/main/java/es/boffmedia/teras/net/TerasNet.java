@@ -3,6 +3,7 @@ package es.boffmedia.teras.net;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import es.boffmedia.teras.Teras;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -46,6 +47,7 @@ public final class TerasNet {
         registrar.playToServer(MisionesRequestPayload.TYPE, MisionesRequestPayload.STREAM_CODEC, TerasNet::handleMisionesRequest);
         registrar.playToServer(DarCajaPayload.TYPE, DarCajaPayload.STREAM_CODEC, TerasNet::handleDarCajaRequest);
         registrar.playToServer(DexRegisterPayload.TYPE, DexRegisterPayload.STREAM_CODEC, TerasNet::handleDexRegister);
+        registrar.playToServer(FrameConfigPayload.TYPE, FrameConfigPayload.STREAM_CODEC, TerasNet::handleFrameConfig);
         // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -87,6 +89,11 @@ public final class TerasNet {
     /** Asks the server to register the Pokémon the player just scanned; see {@link DexRegisterPayload}. */
     public static void registerDex(int entityId) {
         PacketDistributor.sendToServer(new DexRegisterPayload(entityId));
+    }
+
+    /** Sends a picture frame's edited configuration to the server; see {@link FrameConfigPayload}. */
+    public static void sendFrameConfig(FrameConfigPayload payload) {
+        PacketDistributor.sendToServer(payload);
     }
 
     // ---- Server-side handlers ----
@@ -202,9 +209,10 @@ public final class TerasNet {
      * owed", because the phrase is not well-defined across sources that disagree about what
      * {@code used} means.</p>
      *
-     * <p>The backend <b>spends before we deliver</b>, so a disconnect between the two loses the reward
-     * (DARCAJA.md §7 — two-phase reserve/confirm is the follow-up). The audit lines below are the only
-     * record when that happens.</p>
+     * <p>Delivery is two-phase (DARCAJA.md §7): <b>reserve</b> soft-locks the owed rows without
+     * spending, we deliver, then <b>confirm</b> spends them. If the player is gone before delivery we
+     * skip the confirm and the reservation expires back to claimable — the disconnect case is now
+     * recoverable, not lost.</p>
      */
     private static void handleDarCajaRequest(DarCajaPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -219,28 +227,32 @@ public final class TerasNet {
                 return;
             }
             java.util.UUID uuid = sp.getUUID();
-            // The claim blocks on HTTP; on this thread it would stall the tick. Hop out, then back:
+            // The reserve blocks on HTTP; on this thread it would stall the tick. Hop out, then back:
             // the grant touches the player's party/inventory and must land on the server thread again.
             Teras.EXECUTOR.execute(() -> {
-                es.boffmedia.teras.model.world.CajaGrant grant =
-                        es.boffmedia.teras.util.net.SmartRotomService.claimCaja(uuid, source, payload.ids());
-                server.execute(() -> deliverCaja(server, uuid, source, payload.requestId(), grant));
+                es.boffmedia.teras.util.net.SmartRotomService.Reservation reservation =
+                        es.boffmedia.teras.util.net.SmartRotomService.reserveCaja(uuid, source, payload.ids());
+                server.execute(() -> deliverCaja(server, uuid, source, payload.requestId(), reservation));
             });
         });
     }
 
-    /** Server thread: hands over what the backend granted, and says so exactly once. */
+    /** Server thread: hands over the reserved grant, says so exactly once, then confirms the spend. */
     private static void deliverCaja(MinecraftServer server, java.util.UUID uuid, String source,
-                                    long requestId, es.boffmedia.teras.model.world.CajaGrant grant) {
+                                    long requestId,
+                                    es.boffmedia.teras.util.net.SmartRotomService.Reservation reservation) {
         ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-        if (grant == null) {
-            Teras.LOGGER.warn("DarCaja: claim failed for {} (source '{}'); granting nothing", uuid, source);
+        if (reservation == null) {
+            // Reserve failed (transport/parse). Nothing was locked, so nothing is spent — recoverable.
+            Teras.LOGGER.warn("DarCaja: reserve failed for {} (source '{}'); granting nothing", uuid, source);
             if (sp != null) {
-                replyError(sp, requestId, "claim failed");
+                replyError(sp, requestId, "reserve failed");
             }
             return;
         }
-        if (grant.isEmpty()) {
+        es.boffmedia.teras.model.world.CajaGrant grant = reservation.grant();
+        if (reservation.reservationId() == null || grant.isEmpty()) {
+            // Nothing owed — nothing to confirm.
             Teras.LOGGER.info("DarCaja: {} is owed nothing from '{}'", uuid, source);
             if (sp != null) {
                 replyOk(sp, requestId, 0, 0);
@@ -248,10 +260,11 @@ public final class TerasNet {
             return;
         }
         if (sp == null) {
-            // The backend has already spent these and we have nobody to give them to. Nothing here
-            // redelivers them — this line is the only trace they existed.
-            Teras.LOGGER.error("DarCaja: {} disconnected before delivery; from '{}' SPENT AND LOST "
-                    + "objetos={} pokemon={}", uuid, source, grant.objetos(), grant.pokemon());
+            // Player gone before delivery. Do NOT confirm: the reservation expires in 5 min and the
+            // rows return to claimable, so the reward survives a re-claim. This is the whole point.
+            Teras.LOGGER.warn("DarCaja: {} disconnected before delivery from '{}'; reservation {} left to "
+                    + "expire (recoverable) objetos={} pokemon={}", uuid, source,
+                    reservation.reservationId(), grant.objetos(), grant.pokemon());
             return;
         }
         int items = grant.objetos().size();
@@ -262,6 +275,17 @@ public final class TerasNet {
         Teras.LOGGER.info("DarCaja: granted {} item stack(s) and {} Pokémon to {} ({}) from '{}'",
                 items, mons, sp.getGameProfile().getName(), uuid, source);
         replyOk(sp, requestId, items, mons);
+        // Delivered to an online player: spend it. Per-item give failures above are already logged and
+        // are permanent (bad spec, no engine, PC full) — confirming anyway is correct, since not
+        // confirming would loop reserve→expire→reserve forever. Back off the server thread; confirm blocks.
+        String reservationId = reservation.reservationId();
+        Teras.EXECUTOR.execute(() -> {
+            if (!es.boffmedia.teras.util.net.SmartRotomService.confirmCaja(uuid, reservationId)) {
+                Teras.LOGGER.error("DarCaja: delivered to {} from '{}' but confirm FAILED for reservation "
+                        + "{}; those rows may be re-delivered on a re-claim after the 5-min TTL (possible "
+                        + "dupe)", uuid, source, reservationId);
+            }
+        });
     }
 
     /** Gives each spec to the party (full → PC), returning how many landed. A failed give is lost. */
@@ -341,6 +365,39 @@ public final class TerasNet {
                 return;
             }
             provider.markSeen(sp, entity);
+        });
+    }
+
+    /** Squared reach for editing a frame: the block must be near the editor, with slack for lag. */
+    private static final double MAX_FRAME_EDIT_DISTANCE_SQR = 64.0 * 64.0;
+
+    private static void handleFrameConfig(FrameConfigPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            // AUTHORITY CHECK: media frames point at arbitrary URLs, so editing is a build-tool
+            // privilege — only creative or op players, never any client that forges the packet.
+            if (!sp.isCreative() && !sp.hasPermissions(CHAT_PERMISSION_LEVEL)) {
+                Teras.LOGGER.warn("Player {} tried to configure a frame without permission",
+                        sp.getGameProfile().getName());
+                sp.sendSystemMessage(Component.translatable("message.teras.frame_no_permission"));
+                return;
+            }
+            BlockPos pos = payload.pos();
+            if (!sp.level().isLoaded(pos)) return;
+            double distanceSqr = sp.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            if (distanceSqr > MAX_FRAME_EDIT_DISTANCE_SQR) {
+                Teras.LOGGER.warn("Frame edit from {} {} blocks away; ignoring",
+                        sp.getGameProfile().getName(), String.format("%.1f", Math.sqrt(distanceSqr)));
+                return;
+            }
+            if (sp.level().getBlockEntity(pos) instanceof es.boffmedia.teras.blockentity.FrameBlockEntity frame) {
+                frame.applyConfig(payload.url(), payload.minX(), payload.minY(), payload.maxX(), payload.maxY(),
+                        payload.rotation(), payload.flipX(), payload.flipY(),
+                        payload.bothSides(), payload.brightness(), payload.alpha(), payload.renderDistance(),
+                        payload.volume(), payload.minAudioDistance(), payload.maxAudioDistance(),
+                        payload.loop(), payload.playing(), payload.muted(), payload.lit(), payload.showFrame(),
+                        payload.anchorH(), payload.anchorV());
+            }
         });
     }
 }

@@ -1,0 +1,6 @@
+{
+  "__comment": "Intentionally empty: the media is drawn entirely by FrameRenderer. Only a particle texture is provided for break effects.",
+  "textures": {
+    "particle": "minecraft:block/gray_concrete"
+  }
+}

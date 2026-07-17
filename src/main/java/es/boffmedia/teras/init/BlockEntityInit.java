@@ -1,6 +1,7 @@
 package es.boffmedia.teras.init;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.blockentity.FrameBlockEntity;
 import es.boffmedia.teras.blockentity.FunkoBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -17,5 +18,10 @@ public final class BlockEntityInit {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FunkoBlockEntity>> FUNKO =
             BLOCK_ENTITIES.register("funko", () -> BlockEntityType.Builder
                     .of(FunkoBlockEntity::new, BlockInit.FUNKO.get())
+                    .build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FrameBlockEntity>> FRAME =
+            BLOCK_ENTITIES.register("picture_frame", () -> BlockEntityType.Builder
+                    .of(FrameBlockEntity::new, BlockInit.PICTURE_FRAME.get())
                     .build(null));
 }

@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "facing=north": { "model": "teras:block/picture_frame_empty" },
+    "facing=south": { "model": "teras:block/picture_frame_empty" },
+    "facing=east":  { "model": "teras:block/picture_frame_empty" },
+    "facing=west":  { "model": "teras:block/picture_frame_empty" },
+    "facing=up":    { "model": "teras:block/picture_frame_empty" },
+    "facing=down":  { "model": "teras:block/picture_frame_empty" }
+  }
+}

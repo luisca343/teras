@@ -1,0 +1,7 @@
+{
+  "__comment": "Placeholder inventory icon (vanilla item-frame sprite) until bespoke art exists. The placed block draws no model of its own; FrameRenderer handles the world display.",
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/item_frame"
+  }
+}

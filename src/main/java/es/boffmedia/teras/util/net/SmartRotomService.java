@@ -124,29 +124,35 @@ public final class SmartRotomService {
         return parseBalance(body);
     }
 
+    /** How many times {@link #confirmCaja} POSTs before giving up, and the pause between tries. The
+     *  backend's 5-minute reservation TTL is long enough to swallow these retries. */
+    private static final int CONFIRM_ATTEMPTS = 3;
+    private static final long CONFIRM_RETRY_DELAY_MS = 1_000L;
+
     /**
-     * Redeems what {@code playerId} is owed from {@code source} (narrowed to {@code ids} when
-     * non-empty), returning both the items to chest and the Pokémon to give. <b>Blocks</b> — call from
-     * {@link es.boffmedia.teras.Teras#EXECUTOR}.
+     * A {@code /caja/reserve} result: what the player is owed ({@link #grant}) plus the
+     * {@link #reservationId} that {@link #confirmCaja} spends. {@code reservationId} is {@code null}
+     * exactly when nothing was owed — do not confirm in that case.
+     */
+    public record Reservation(String reservationId, CajaGrant grant) {}
+
+    /**
+     * Soft-locks what {@code playerId} is owed from {@code source} (narrowed to {@code ids} when
+     * non-empty) <b>without spending it</b>, returning the grant and the reservation to confirm once
+     * delivered. <b>Blocks</b> — call from {@link es.boffmedia.teras.Teras#EXECUTOR}.
      *
-     * <p>Three-way result, and callers must keep the last two apart:</p>
-     * <ul>
-     *   <li>{@code null} — the claim failed (non-2xx, unreachable, unparseable, no {@code objetos}
-     *       key). <b>Grant nothing.</b> This deliberately cannot distinguish "already spent" from
-     *       "backend down": both mean the mod has not been told to hand anything over.</li>
-     *   <li>{@link CajaGrant#isEmpty() empty} — the claim succeeded and the player is owed nothing.
-     *       Also grant nothing, but this is not an error.</li>
-     *   <li>non-empty — grant exactly this.</li>
-     * </ul>
+     * <p>Returns {@code null} on any transport/parse failure (grant nothing, nothing was locked). A
+     * non-null {@link Reservation} with a {@code null} {@code reservationId} (and empty grant) means the
+     * reserve succeeded and the player was owed nothing — also grant nothing, but not an error.</p>
      *
      * <p>Unlike every other payload in this class, the body carries <b>no {@code server} field</b>.
      * That route is on the backend's {@code MinecraftMiddleware} exclude list precisely because the
      * mod sends none, and its DTO rejects unknown properties — sending one is a measured 400. {@code ids}
      * is sent only when non-empty; the DTO's {@code ids} is optional and mine omits it.</p>
      */
-    public static CajaGrant claimCaja(UUID playerId, String source, List<Integer> ids) {
+    public static Reservation reserveCaja(UUID playerId, String source, List<Integer> ids) {
         if (playerId == null || !HttpText.isValidIdentifier(source)) {
-            Teras.LOGGER.warn("DarCaja: refusing to claim with uuid={} source='{}'", playerId, source);
+            Teras.LOGGER.warn("DarCaja: refusing to reserve with uuid={} source='{}'", playerId, source);
             return null;
         }
         JsonObject body = new JsonObject();
@@ -158,11 +164,67 @@ public final class SmartRotomService {
             body.add("ids", idArray);
         }
         String response = HttpText.postJsonAuthed(
-                TerasConfig.getApiUrl() + "/smartrotom/caja/claim", GSON.toJson(body));
+                TerasConfig.getApiUrl() + "/smartrotom/caja/reserve", GSON.toJson(body));
         if (response == null) {
             return null;
         }
-        return parseGrant(response);
+        return parseReservation(response);
+    }
+
+    /**
+     * Finalizes (spends) a reservation. <b>Blocks</b> — call from {@link es.boffmedia.teras.Teras#EXECUTOR},
+     * after the grant has landed on an online player.
+     *
+     * <p>Idempotent server-side: a replay, or a confirm of an already-spent/expired reservation, spends
+     * nothing. Retries {@link #CONFIRM_ATTEMPTS} times over a few seconds because the only dupe window is
+     * "delivered but confirm never landed": a lost confirm lets the still-owed rows be re-delivered on a
+     * re-claim after the TTL. Returns {@code true} iff the API answered 2xx (transport success).</p>
+     */
+    public static boolean confirmCaja(UUID playerId, String reservationId) {
+        if (playerId == null || reservationId == null || reservationId.isBlank()) {
+            return false;
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("uuid", playerId.toString());
+        body.addProperty("reservationId", reservationId);
+        String json = GSON.toJson(body);
+        for (int attempt = 1; attempt <= CONFIRM_ATTEMPTS; attempt++) {
+            String response = HttpText.postJsonAuthed(
+                    TerasConfig.getApiUrl() + "/smartrotom/caja/confirm", json);
+            if (response != null) {
+                return true;
+            }
+            if (attempt < CONFIRM_ATTEMPTS) {
+                try {
+                    Thread.sleep(CONFIRM_RETRY_DELAY_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A {@code /caja/reserve} body into a {@link Reservation}, or {@code null} if it isn't one. Reuses
+     * {@link #parseGrant} for {@code objetos}/{@code pokemon} (identical shapes) and reads
+     * {@code reservationId} off the <b>root</b> — a string, or JSON null when nothing was owed.
+     */
+    static Reservation parseReservation(String body) {
+        CajaGrant grant = parseGrant(body);
+        if (grant == null) {
+            return null;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+            JsonElement id = root.get("reservationId");
+            String reservationId = (id != null && id.isJsonPrimitive() && id.getAsJsonPrimitive().isString())
+                    ? id.getAsString() : null;
+            return new Reservation(reservationId, grant);
+        } catch (JsonParseException e) {
+            return null;
+        }
     }
 
     /**

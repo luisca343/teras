@@ -4,6 +4,7 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.blocks.BloqueAguasTermales;
 import es.boffmedia.teras.blocks.BloqueTeras;
 import es.boffmedia.teras.blocks.Funko;
+import es.boffmedia.teras.blocks.PictureFrame;
 import es.boffmedia.teras.items.ObjetoColocable;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.Item;
@@ -35,6 +36,14 @@ public final class BlockInit {
             () -> new Funko(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.WOOL)
                     .sound(SoundType.WOOL)
+                    .strength(0.8F)
+                    .noOcclusion()));
+
+    /** Empty model — {@code FrameRenderer} draws the media. See {@link es.boffmedia.teras.blockentity.FrameBlockEntity}. */
+    public static final DeferredBlock<PictureFrame> PICTURE_FRAME = registerWithItem("picture_frame",
+            () -> new PictureFrame(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_GRAY)
+                    .sound(SoundType.METAL)
                     .strength(0.8F)
                     .noOcclusion()));
 
