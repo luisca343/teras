@@ -2,6 +2,7 @@ package es.boffmedia.teras.util;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.mcef.JsQueryCallback;
@@ -34,6 +35,15 @@ public final class QueryHelper {
             new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicLong NEXT_REQUEST_ID =
             new java.util.concurrent.atomic.AtomicLong();
+
+    /** The {@code source} of a darCaja query, or {@code null} if absent or not a plain string. */
+    static String readSource(JsonObject json) {
+        JsonElement source = json.get("source");
+        if (source == null || !source.isJsonPrimitive() || !source.getAsJsonPrimitive().isString()) {
+            return null;
+        }
+        return source.getAsString();
+    }
 
     /** Registers {@code callback} for a new async request and returns its id (for the request payload). */
     private static long register(JsQueryCallback callback) {
@@ -110,9 +120,23 @@ public final class QueryHelper {
                     es.boffmedia.teras.client.camera.CameraQueries.handleSetFlashlight(query, callback);
                     return true;
 
+                case DAR_CAJA: {
+                    // Async: the server asks the backend what this player is owed, grants it, and
+                    // replies under the same id. The page names a SOURCE, never items — see
+                    // DarCajaPayload. A page still sending 1.16.5's {objetos} lands here with no
+                    // source and is refused, rather than being granted what it asked for.
+                    String source = readSource(json);
+                    if (!es.boffmedia.teras.util.net.HttpText.isValidIdentifier(source)) {
+                        Teras.LOGGER.error("darCaja without a valid source: {}", query);
+                        callback.failure(400, "darCaja requires a source");
+                        return true;
+                    }
+                    es.boffmedia.teras.net.TerasNet.requestDarCaja(register(callback), source);
+                    return true;
+                }
+
                 // --- Handlers below need more networking / JourneyMap: ported next phase ---
                 case OPEN_PC:
-                case DAR_CAJA:
                 case SET_CALL:
                 case LEAVE_CALL:
                     return notPorted(queryType, callback, "server networking");

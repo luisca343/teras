@@ -44,6 +44,7 @@ public final class TerasNet {
         registrar.playToServer(UserDataRequestPayload.TYPE, UserDataRequestPayload.STREAM_CODEC, TerasNet::handleUserDataRequest);
         registrar.playToServer(SpawnsRequestPayload.TYPE, SpawnsRequestPayload.STREAM_CODEC, TerasNet::handleSpawnsRequest);
         registrar.playToServer(MisionesRequestPayload.TYPE, MisionesRequestPayload.STREAM_CODEC, TerasNet::handleMisionesRequest);
+        registrar.playToServer(DarCajaPayload.TYPE, DarCajaPayload.STREAM_CODEC, TerasNet::handleDarCajaRequest);
         registrar.playToServer(DexRegisterPayload.TYPE, DexRegisterPayload.STREAM_CODEC, TerasNet::handleDexRegister);
         // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
@@ -76,6 +77,11 @@ public final class TerasNet {
 
     public static void requestMisiones(long requestId) {
         PacketDistributor.sendToServer(new MisionesRequestPayload(requestId));
+    }
+
+    /** Asks the server to redeem what this player is owed from {@code source}; see {@link DarCajaPayload}. */
+    public static void requestDarCaja(long requestId, String source) {
+        PacketDistributor.sendToServer(new DarCajaPayload(requestId, source));
     }
 
     /** Asks the server to register the Pokémon the player just scanned; see {@link DexRegisterPayload}. */
@@ -123,6 +129,17 @@ public final class TerasNet {
             json.addProperty("y", sp.getY());
             json.addProperty("z", sp.getZ());
             json.addProperty("op", sp.hasPermissions(CHAT_PERMISSION_LEVEL));
+            // Which darCaja contract this jar speaks. The page branches on it: present -> it sends a
+            // {source} and lets the backend pick the items; ABSENT -> it falls back to 1.16.5's
+            // {objetos}, where the page names them. Both populations exist at once (the page redeploys
+            // instantly, jars update per player), so this must be advertised by the jar rather than
+            // flagged at build time — and absent has to keep meaning legacy.
+            //
+            // This must ship in the same build as handleDarCajaRequest. Advertise without implementing
+            // and the page sends {source} to a handler that cannot serve it; implement without
+            // advertising and it sends {objetos} after its legacy path already spent the rewards.
+            // Either way the player loses them.
+            json.addProperty("cajaProtocol", "source");
             PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), GSON.toJson(json)));
         });
     }
@@ -172,6 +189,92 @@ public final class TerasNet {
             }
             PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), json));
         });
+    }
+
+    /**
+     * Redeems what the sender is owed from {@code source} and gives it to them as chests.
+     *
+     * <p>AUTHORITY: the uuid comes off the connection, never the page — that is the whole security
+     * boundary. The page contributes only a source string; the backend picks the items. 1.16.5 took
+     * the item list from the client and granted it, which is what let a modified client mint anything.
+     * A blank or malformed source fails the request: there is no "everything owed", because the
+     * phrase is not well-defined across sources that disagree about what {@code used} means.</p>
+     *
+     * <p>The backend <b>spends before we deliver</b>, so a disconnect between the two loses the items
+     * (DARCAJA.md §7 — two-phase reserve/confirm is the follow-up). The audit line below is the only
+     * record when that happens.</p>
+     */
+    private static void handleDarCajaRequest(DarCajaPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            MinecraftServer server = sp.getServer();
+            if (server == null) return;
+            String source = payload.source();
+            if (!es.boffmedia.teras.util.net.HttpText.isValidIdentifier(source)) {
+                Teras.LOGGER.warn("DarCaja from {} with invalid source '{}'; granting nothing",
+                        sp.getGameProfile().getName(), source);
+                sendDarCajaReply(sp, payload.requestId(), errorJson("invalid source"));
+                return;
+            }
+            java.util.UUID uuid = sp.getUUID();
+            // The claim blocks on HTTP; on this thread it would stall the tick. Hop out, then back:
+            // the grant touches the player's inventory and must land on the server thread again.
+            Teras.EXECUTOR.execute(() -> {
+                java.util.List<es.boffmedia.teras.model.world.ObjetoMC> objetos =
+                        es.boffmedia.teras.util.net.SmartRotomService.claimCaja(uuid, source);
+                server.execute(() -> deliverCaja(server, uuid, source, payload.requestId(), objetos));
+            });
+        });
+    }
+
+    /** Server thread: hands over what the backend granted, and says so exactly once. */
+    private static void deliverCaja(MinecraftServer server, java.util.UUID uuid, String source,
+                                    long requestId,
+                                    java.util.List<es.boffmedia.teras.model.world.ObjetoMC> objetos) {
+        ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+        if (objetos == null) {
+            Teras.LOGGER.warn("DarCaja: claim failed for {} (source '{}'); granting nothing", uuid, source);
+            if (sp != null) {
+                sendDarCajaReply(sp, requestId, errorJson("claim failed"));
+            }
+            return;
+        }
+        if (objetos.isEmpty()) {
+            Teras.LOGGER.info("DarCaja: {} is owed nothing from '{}'", uuid, source);
+            if (sp != null) {
+                sendDarCajaReply(sp, requestId, okJson(0));
+            }
+            return;
+        }
+        if (sp == null) {
+            // The backend has already spent these and we have nobody to give them to. Nothing here
+            // redelivers them — this line is the only trace they existed.
+            Teras.LOGGER.error("DarCaja: {} disconnected before delivery; {} item(s) from '{}' were "
+                    + "SPENT AND LOST: {}", uuid, objetos.size(), source, objetos);
+            return;
+        }
+        es.boffmedia.teras.util.ChestCreationHelper.createAndGiveChests(sp, objetos);
+        Teras.LOGGER.info("DarCaja: granted {} item(s) to {} ({}) from '{}': {}",
+                objetos.size(), sp.getGameProfile().getName(), uuid, source, objetos);
+        sendDarCajaReply(sp, requestId, okJson(objetos.size()));
+    }
+
+    private static String okJson(int granted) {
+        JsonObject json = new JsonObject();
+        json.addProperty("status", "ok");
+        json.addProperty("objetos", granted);
+        return GSON.toJson(json);
+    }
+
+    private static String errorJson(String reason) {
+        JsonObject json = new JsonObject();
+        json.addProperty("status", "error");
+        json.addProperty("reason", reason);
+        return GSON.toJson(json);
+    }
+
+    private static void sendDarCajaReply(ServerPlayer sp, long requestId, String json) {
+        PacketDistributor.sendToPlayer(sp, new McefResponsePayload(requestId, json));
     }
 
     /**

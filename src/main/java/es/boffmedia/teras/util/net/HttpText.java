@@ -200,6 +200,71 @@ public final class HttpText {
         });
     }
 
+    /**
+     * Authenticated JSON {@code POST} returning the response body, or {@code null} on any
+     * transport/policy failure or a {@code >= 400} status.
+     *
+     * <p>{@link #postJson} already sends the same bearer token, so the name marks the family rather
+     * than the difference: this one <i>waits</i> and hands back the body. That is what a grant needs —
+     * it must be told what to give — and what fire-and-forget cannot express.</p>
+     *
+     * <p>Returning {@code null} for every failure is deliberate. A caller that grants items cannot
+     * distinguish "already claimed" from "backend down" and must not try: no body means give nothing.</p>
+     *
+     * <p><b>Blocks the calling thread.</b> Callers must already be off the server thread.</p>
+     */
+    public static String postJsonAuthed(String urlString, String jsonBody) {
+        if (urlString == null || jsonBody == null) {
+            return null;
+        }
+        URL url;
+        try {
+            url = new URL(urlString);
+        } catch (MalformedURLException e) {
+            Teras.LOGGER.error("Malformed POST URL: {}", urlString, e);
+            return null;
+        }
+        if (!isTransportAllowed(url)) {
+            return null;
+        }
+        String token = TerasConfig.getApiToken();
+        Teras.LOGGER.info("[Teras HTTP] --> POST {} (auth={}, {} bytes)\n         body: {}",
+                urlString, (token != null && !token.isEmpty()) ? "bearer" : "none",
+                jsonBody.getBytes(StandardCharsets.UTF_8).length, jsonBody);
+        HttpURLConnection con = null;
+        try {
+            con = (HttpURLConnection) url.openConnection();
+            con.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            con.setReadTimeout(READ_TIMEOUT_MS);
+            con.setRequestMethod("POST");
+            con.setDoOutput(true);
+            con.setRequestProperty("User-Agent", "Teras-SmartRotom");
+            con.setRequestProperty("Content-Type", "application/json");
+            con.setRequestProperty("Accept", "application/json");
+            if (token != null && !token.isEmpty()) {
+                con.setRequestProperty("Authorization", "Bearer " + token);
+            }
+            try (OutputStream os = con.getOutputStream()) {
+                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = con.getResponseCode();
+            String body = readBody(code < 400 ? con.getInputStream() : con.getErrorStream());
+            Teras.LOGGER.info("[Teras HTTP] <-- {} POST {}\n         response: {}", code, urlString, body);
+            if (code >= 400) {
+                Teras.LOGGER.warn("POST {} -> HTTP {}", urlString, code);
+                return null;
+            }
+            return body;
+        } catch (IOException e) {
+            Teras.LOGGER.error("Error POSTing to {}: {}", urlString, e.getMessage());
+            return null;
+        } finally {
+            if (con != null) {
+                con.disconnect();
+            }
+        }
+    }
+
     /** Reads a response/error stream to a UTF-8 string for debug logging; {@code ""} on any failure. */
     private static String readBody(InputStream in) {
         if (in == null) {

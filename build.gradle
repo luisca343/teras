@@ -46,10 +46,16 @@ repositories {
     // MCEF (CinemaMod)
     maven { url = uri('https://mcef-download.cinemamod.com/repositories/releases') }
     maven { url = uri('https://mcef-download.cinemamod.com/repositories/snapshots') }
-    // CurseForge (for Pixelmon / JourneyMap once their 1.21.1 coordinates are added)
+    // CurseForge (Pixelmon, Cobblemon, CustomNPCs, voicechat, backpacks)
     maven {
         url = 'https://cursemaven.com'
         content { includeGroup 'curse.maven' }
+    }
+    // JourneyMap API v2 — the interfaces are published here, NOT in the CurseForge mod jar
+    // (that ships only the impls: ClientWaypointFactoryImpl, PluginWrapper, ...).
+    maven {
+        url = 'https://maven.blamejared.com'
+        content { includeGroup 'info.journeymap' }
     }
 }
 
@@ -78,8 +84,31 @@ dependencies {
     // system builds on. compileOnly: the server supplies it, and Teras degrades without it.
     compileOnly "curse.maven:customnpcs-unofficial-1052708:7411561"
 
-    // --- Deferred until 1.21.1 coordinates are confirmed ---
-    // compileOnly "curse.maven:journeymap-32274:<fileId>"
+    // --- Optional integrations. All compileOnly + transitive=false: the server supplies them, each is
+    //     declared optional in neoforge.mods.toml, and every touch point is behind a ModList guard so
+    //     Teras degrades cleanly when they are absent. transitive=false because cursemaven synthesises
+    //     POMs from CurseForge's "required dependency" relations, which would drag in an arbitrary
+    //     file version of each — we pin the ones we actually compile against instead. ---
+
+    // JourneyMap API v2 (stable release, not the -SNAPSHOT) — getWaypoints/addWaypoint compile against
+    // this, not against the mod jar. JourneyMap 6.0.1 (CurseForge file 8448452) is the runtime the
+    // server supplies; its jar carries only impl classes, so it is deliberately NOT a dependency here.
+    // The 1.16.5 code used the v1 API (journeymap.client.api.*) plus the internal WaypointStore — both
+    // are gone in 6.x; everything is journeymap.api.v2.* now.
+    compileOnly "info.journeymap:journeymap-api-neoforge:2.0.0-1.21.1"
+
+    // Simple Voice Chat 2.6.20 (voicechat-neoforge-1.21.1-2.6.20.jar, file 8293091) — setCall/leaveCall
+    // and the Tocadiscos audio path.
+    compileOnly("curse.maven:voicechat-416089:8293091") { transitive = false }
+
+    // Backpacks — deliberately NOT dependencies. Traveler's and Sophisticated both register the
+    // standard NeoForge Capabilities.ItemHandler.ITEM on their backpack items, so the Pixelmon
+    // BattleItemScanner bridge reads either (and any other container mod) through vanilla NeoForge
+    // with no mod-specific imports. Audited coordinates, kept here in case that ever has to change:
+    //   curse.maven:travelersbackpack-321117:8120689      (10.1.36)
+    //   curse.maven:sophisticatedbackpacks-422301:8440487 (3.25.71.1997)
+    //   curse.maven:sophisticatedcore-618298:8440438      (1.4.75.2161, SB's hard dependency)
+    // See INTEGRATIONS.md for why, and for what the capability view does and does not show.
 
     // Unit tests for the engine-agnostic battle layer (config/mode/level parsing) — no Minecraft
     // or engine runtime required, so they run anywhere with `./gradlew test`.
@@ -88,6 +117,10 @@ dependencies {
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
     // Gson reaches the main sources transitively via Minecraft; the test sourceset needs it directly.
     testImplementation "com.google.code.gson:gson:2.10.1"
+    // Same for SLF4J. Anything touching Teras.LOGGER — which is most of the mod — fails to even class-load
+    // without it, so a test for such a class needs the API here. Pinned to what Minecraft 1.21.1 ships.
+    testImplementation "org.slf4j:slf4j-api:2.0.9"
+    testRuntimeOnly "org.slf4j:slf4j-nop:2.0.9"
 }
 
 tasks.named('test', Test) {

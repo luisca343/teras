@@ -9,9 +9,11 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.battle.model.TeamMember;
 import es.boffmedia.teras.dex.DexStatus;
 import es.boffmedia.teras.dex.api.DexScan;
+import es.boffmedia.teras.model.world.ObjetoMC;
 import es.boffmedia.teras.util.TerasConfig;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -117,6 +119,81 @@ public final class SmartRotomService {
             return null;
         }
         return parseBalance(body);
+    }
+
+    /**
+     * Redeems everything {@code playerId} is owed from {@code source}, returning what the backend says
+     * to grant. <b>Blocks</b> — call from {@link es.boffmedia.teras.Teras#EXECUTOR}.
+     *
+     * <p>Three-way result, and callers must keep the last two apart:</p>
+     * <ul>
+     *   <li>{@code null} — the claim failed (non-2xx, unreachable, unparseable, no {@code objetos}
+     *       key). <b>Grant nothing.</b> This deliberately cannot distinguish "already spent" from
+     *       "backend down": both mean the mod has not been told to hand anything over.</li>
+     *   <li>empty — the claim succeeded and the player is owed nothing. Also grant nothing, but this
+     *       is not an error.</li>
+     *   <li>non-empty — grant exactly this.</li>
+     * </ul>
+     *
+     * <p>Unlike every other payload in this class, the body carries <b>no {@code server} field</b>.
+     * That route is on the backend's {@code MinecraftMiddleware} exclude list precisely because the
+     * mod sends none, and its DTO rejects unknown properties — sending one is a measured 400.</p>
+     */
+    public static List<ObjetoMC> claimCaja(UUID playerId, String source) {
+        if (playerId == null || !HttpText.isValidIdentifier(source)) {
+            Teras.LOGGER.warn("DarCaja: refusing to claim with uuid={} source='{}'", playerId, source);
+            return null;
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("uuid", playerId.toString());
+        body.addProperty("source", source);
+        String response = HttpText.postJsonAuthed(
+                TerasConfig.getApiUrl() + "/smartrotom/caja/claim", GSON.toJson(body));
+        if (response == null) {
+            return null;
+        }
+        return parseObjetos(response);
+    }
+
+    /**
+     * The {@code objetos} array out of a caja response, or {@code null} if the body isn't one.
+     *
+     * <p>{@code objetos} is read off the <b>root</b>: that route opts out of the API's global
+     * {@code {success, statusCode, data}} envelope. Reading {@code data} would find nothing — and
+     * silently grant nothing on every claim.</p>
+     *
+     * <p>Entries missing an {@code id} are dropped rather than failing the whole grant; a missing
+     * {@code cantidad} is left at 0 for {@code ChestCreationHelper} to clamp.</p>
+     */
+    static List<ObjetoMC> parseObjetos(String body) {
+        try {
+            JsonElement parsed = JsonParser.parseString(body == null ? "" : body);
+            if (!parsed.isJsonObject()) {
+                return null;
+            }
+            JsonElement objetos = parsed.getAsJsonObject().get("objetos");
+            if (objetos == null || !objetos.isJsonArray()) {
+                return null;
+            }
+            List<ObjetoMC> result = new ArrayList<>();
+            for (JsonElement element : objetos.getAsJsonArray()) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                JsonObject entry = element.getAsJsonObject();
+                JsonElement id = entry.get("id");
+                if (id == null || !id.isJsonPrimitive() || id.getAsString().isEmpty()) {
+                    continue;
+                }
+                JsonElement cantidad = entry.get("cantidad");
+                int count = (cantidad != null && cantidad.isJsonPrimitive()
+                        && cantidad.getAsJsonPrimitive().isNumber()) ? cantidad.getAsInt() : 0;
+                result.add(new ObjetoMC(id.getAsString(), count));
+            }
+            return result;
+        } catch (JsonParseException | NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
