@@ -53,11 +53,7 @@ public class FunkoSkinParticle extends SingleQuadParticle {
         this.zd = this.zd * 0.4D + zd;
     }
 
-    /**
-     * Mirrors vanilla {@code PARTICLE_SHEET_TRANSLUCENT}, but bound to a skin instead of the particle
-     * atlas. 1.16.5 also set {@code RenderSystem.alphaFunc(516, 0.0039)}; the fixed-function alpha test
-     * is gone, and the particle shader already discards near-zero alpha, so it has no replacement here.
-     */
+    /** Vanilla {@code PARTICLE_SHEET_TRANSLUCENT}, bound to a skin instead of the particle atlas. */
     private static ParticleRenderType renderType(ResourceLocation skin) {
         return RENDER_TYPES.computeIfAbsent(skin, rl -> new ParticleRenderType() {
             @Override

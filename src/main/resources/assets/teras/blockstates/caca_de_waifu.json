@@ -1,0 +1,9 @@
+{
+  "variants":{
+    "facing=north": {"model": "teras:block/caca_de_waifu"},
+    "facing=south": { "model":"teras:block/caca_de_waifu", "y" : 180},
+    "facing=west": { "model":"teras:block/caca_de_waifu", "y" : 270},
+    "facing=east": { "model":"teras:block/caca_de_waifu", "y" : 90}
+
+  }
+}

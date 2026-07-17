@@ -18,9 +18,8 @@ import java.util.List;
 
 /**
  * Block item for the funko. Carries its skin in data components, which {@link BlockItem} hands to the
- * block entity on placement, so it behaves like {@code player_head}. Rendering in inventory/hand is
- * delegated to a client renderer registered in {@code FunkoClientExtensions} (1.16.5 wired that up
- * through {@code Item.Properties.setISTER}, which 1.21 replaced with client item extensions).
+ * block entity on placement, so it behaves like {@code player_head}. Inventory/hand rendering is
+ * registered in {@code FunkoClientExtensions}.
  */
 public class FunkoItem extends BlockItem {
 
@@ -38,11 +37,7 @@ public class FunkoItem extends BlockItem {
         return stack.get(ComponentInit.FUNKO_SKIN_FILE.get());
     }
 
-    /**
-     * Turns a name-only profile into one carrying textures, mirroring vanilla {@code PlayerHeadItem}.
-     * Only the server resolves (the profile caches are server-side), and the finished component then
-     * syncs with the stack — which is why an unresolved funko in an inventory fixes itself on load.
-     */
+    /** Only the server can resolve (the profile caches are server-side); the result syncs with the stack. */
     @Override
     public void verifyComponentsAfterLoad(ItemStack stack) {
         ResolvableProfile profile = getOwner(stack);

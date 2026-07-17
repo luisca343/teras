@@ -25,15 +25,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * A "funko" statue. The block itself renders nothing (its model is empty); the
- * {@code FunkoRenderer} draws the figure using whatever skin its block entity holds.
- * Rotatable so the figure faces the placer, like a player head.
- *
- * <p>Break/hit particles are sampled from the funko's skin rather than the block texture. On 1.16.5
- * that was an {@code addDestroyEffects}/{@code addHitEffects} override here, which forced this
- * common class to name a client-only particle helper; NeoForge 1.21 moved both onto
- * {@code IClientBlockExtensions}, so that logic now lives in {@code FunkoClientExtensions} and this
- * class stays dist-clean.</p>
+ * A "funko" statue. The block itself renders nothing (its model is empty); {@code FunkoRenderer}
+ * draws the figure using whatever skin its block entity holds. Rotatable so the figure faces the
+ * placer, like a player head. Skin-sampled break/hit particles live in {@code FunkoClientExtensions}.
  */
 public class Funko extends HorizontalDirectionalBlock implements EntityBlock {
 
@@ -84,12 +78,7 @@ public class Funko extends HorizontalDirectionalBlock implements EntityBlock {
         return Collections.singletonList(withSkinOf(builder.getOptionalParameter(LootContextParams.BLOCK_ENTITY)));
     }
 
-    /**
-     * A funko item carrying {@code blockEntity}'s skin. 1.16.5 hand-copied the skin into the stack's
-     * {@code BlockEntityTag}; the skin now lives in data components, so
-     * {@code FunkoBlockEntity.collectImplicitComponents} is the single source of truth and applies to
-     * drops, pick-block and {@code saveToItem} alike.
-     */
+    /** A funko item carrying {@code blockEntity}'s skin. */
     private ItemStack withSkinOf(@Nullable BlockEntity blockEntity) {
         ItemStack stack = new ItemStack(ItemInit.FUNKO.get());
         if (blockEntity instanceof FunkoBlockEntity funko) {

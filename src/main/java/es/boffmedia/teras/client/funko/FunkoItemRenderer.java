@@ -31,9 +31,8 @@ public class FunkoItemRenderer extends BlockEntityWithoutLevelRenderer {
                              MultiBufferSource buffers, int packedLight, int packedOverlay) {
         ResolvableProfile profile = FunkoItem.getOwner(stack);
         if (profile != null && !profile.isResolved()) {
-            // Mirrors vanilla's skull path: drop the placeholder, resolve off-thread, put it back. In
-            // multiplayer this no-ops (the profile caches are server-side) and the server's resolved
-            // profile arrives with the stack instead; single-player resolves here.
+            // No-ops in multiplayer (the profile caches are server-side); the server's resolved
+            // profile arrives with the stack instead. Single-player resolves here.
             stack.remove(DataComponents.PROFILE);
             profile.resolve().thenAcceptAsync(resolved -> stack.set(DataComponents.PROFILE, resolved),
                     Minecraft.getInstance());

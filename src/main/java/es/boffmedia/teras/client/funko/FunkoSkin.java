@@ -19,21 +19,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Client-side skin resolution for funkos. Two sources:
- * <ul>
- *     <li><b>Player</b> &mdash; a {@link ResolvableProfile}, run through the same skin manager vanilla
- *     uses for player heads.</li>
- *     <li><b>Local PNG</b> &mdash; loaded from {@code <gameDir>/Teras/skins/&lt;file&gt;} into a
- *     {@link DynamicTexture} and registered as a {@link ResourceLocation}. Cached; failures fall back
- *     to the default Steve skin.</li>
- * </ul>
- *
- * <p>1.16.5 also hand-rolled asynchronous <em>profile</em> resolution here — two static maps plus a
- * {@code Teras.EXECUTOR} job per name calling into the session service from each client. That is all
- * gone: profiles now arrive already resolved (the server resolves them, see
- * {@code FunkoBlockEntity#updateOwnerProfile} and {@code FunkoItem#verifyComponentsAfterLoad}) and
- * {@code SkinManager} does its own caching. The dead {@code availableSkinFiles()} and
- * {@code offlineUUID()} helpers (zero callers in 1.16.5) were not ported.</p>
+ * Resolves a funko's skin to a texture: either a {@link ResolvableProfile} through vanilla's skin
+ * manager, or a PNG loaded from {@code <gameDir>/Teras/skins/} into a {@link DynamicTexture}.
+ * Profiles arrive already resolved from the server. Cached; failures fall back to the default skin.
  */
 @OnlyIn(Dist.CLIENT)
 public final class FunkoSkin {
@@ -79,9 +67,8 @@ public final class FunkoSkin {
     private static ResourceLocation loadFileTexture(String file) {
         String name = file.toLowerCase().endsWith(".png") ? file : file + ".png";
         try {
-            // The component this comes from is attacker-controllable in the sense that it rides on an
-            // item stack: without this, a crafted `teras:funko_skin_file` of "../../.." could walk a
-            // *viewer's* client out of the skins folder and render an arbitrary PNG off their disk.
+            // The name rides on an item stack, so it is attacker-supplied: a crafted "../../.." would
+            // otherwise walk a viewer's client out of the skins folder into arbitrary PNGs on disk.
             Path dir = Minecraft.getInstance().gameDirectory.toPath().resolve(SKINS_FOLDER).toAbsolutePath().normalize();
             Path path = dir.resolve(name).toAbsolutePath().normalize();
             if (!path.startsWith(dir)) {

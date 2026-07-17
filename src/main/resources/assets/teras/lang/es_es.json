@@ -1,5 +1,15 @@
 {
   "item.teras.smartrotom": "SmartRotom",
+  "item.teras.cubo_aguas_termales": "Cubo de aguas termales",
   "block.teras.funko": "Funko",
+  "block.teras.lavender": "Lavanda",
+  "block.teras.aguas_termales": "Aguas termales",
+  "block.teras.twister_amarillo": "Alfombra de Twister Amarilla",
+  "block.teras.twister_azul": "Alfombra de Twister Azul",
+  "block.teras.twister_rojo": "Alfombra de Twister Roja",
+  "block.teras.twister_verde": "Alfombra de Twister Verde",
+  "block.teras.caca_de_waifu": "Caca de Waifu",
+  "block.teras.sake": "Sake",
+  "block.teras.itamilk": "Itamilk",
   "itemGroup.teras": "Teras"
 }

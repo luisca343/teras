@@ -34,10 +34,9 @@ public final class FunkoCommand {
     private FunkoCommand() {}
 
     /**
-     * A profile name must survive {@code ResolvableProfile}'s codecs, which cap it at 16 characters
-     * ({@code ExtraCodecs.PLAYER_NAME} on disk, {@code stringUtf8(16)} on the wire) and reject control
-     * characters. Rejecting here is what keeps a bad name from becoming an {@code EncoderException}
-     * when the stack syncs — 1.16.5 could store any string in NBT, so it never had to care.
+     * {@code ResolvableProfile}'s codecs cap the name at 16 characters ({@code ExtraCodecs.PLAYER_NAME}
+     * on disk, {@code stringUtf8(16)} on the wire). Rejecting here keeps a bad name from becoming an
+     * {@code EncoderException} when the stack syncs.
      */
     private static final SimpleCommandExceptionType INVALID_NAME =
             new SimpleCommandExceptionType(Component.literal("Nombre de jugador inválido (máx. 16 caracteres)"));
@@ -55,10 +54,9 @@ public final class FunkoCommand {
     }
 
     /**
-     * Resolves the name into a full profile before handing the item over, so the funko shows the right
-     * skin immediately. Without this the stack would carry a bare name and render as Steve until
-     * something resolved it — the client cannot (the profile caches are server-side), and
-     * {@code FunkoItem.verifyComponentsAfterLoad} would not fire until the item was reloaded.
+     * Resolves before handing the item over: the client cannot resolve, and
+     * {@code FunkoItem#verifyComponentsAfterLoad} would not fire until the item was reloaded, so
+     * without this the funko renders as Steve until then.
      */
     private static int givePlayerFunko(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String name = StringArgumentType.getString(context, "name");

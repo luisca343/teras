@@ -1,0 +1,9 @@
+{
+  "variants":{
+    "facing=north": {"model": "teras:block/itamilk"},
+    "facing=south": { "model":"teras:block/itamilk", "y" : 180},
+    "facing=west": { "model":"teras:block/itamilk", "y" : 270},
+    "facing=east": { "model":"teras:block/itamilk", "y" : 90}
+
+  }
+}

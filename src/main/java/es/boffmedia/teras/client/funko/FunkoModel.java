@@ -27,7 +27,6 @@ public final class FunkoModel {
 
     private static final float UV_SIZE = 16.0F;
 
-    /** Opaque white, ARGB. 1.16.5 took r/g/b/a floats here, but every call site passed white. */
     private static final int WHITE = 0xFFFFFFFF;
 
     private static final List<Quad> QUADS = new ArrayList<>();

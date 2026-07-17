@@ -3,6 +3,7 @@ package es.boffmedia.teras;
 import es.boffmedia.teras.init.BlockEntityInit;
 import es.boffmedia.teras.init.BlockInit;
 import es.boffmedia.teras.init.ComponentInit;
+import es.boffmedia.teras.init.FluidInit;
 import es.boffmedia.teras.init.ItemInit;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -37,9 +38,11 @@ public class Teras {
     });
 
     public Teras(IEventBus modBus, ModContainer container) {
-        // Registries. Blocks before items: ItemInit.FUNKO resolves BlockInit.FUNKO when it is built.
+        // Touch BlockInit first: its static init is what registers the per-Comida blocks *and* items.
         BlockInit.BLOCKS.register(modBus);
         BlockEntityInit.BLOCK_ENTITIES.register(modBus);
+        FluidInit.FLUID_TYPES.register(modBus);
+        FluidInit.FLUIDS.register(modBus);
         ItemInit.ITEMS.register(modBus);
         ItemInit.CREATIVE_TABS.register(modBus);
         ComponentInit.COMPONENTS.register(modBus);

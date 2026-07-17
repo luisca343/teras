@@ -18,24 +18,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 
 /**
- * Holds the skin a placed funko should display. Two mutually exclusive modes:
- * <ul>
- *     <li>{@code profile} &mdash; a player, resolved and rendered exactly like a player head.</li>
- *     <li>{@code skin_file} &mdash; a PNG filename inside {@code Teras/skins/}.</li>
- * </ul>
- *
- * <p><b>Storage moved from NBT to data components.</b> 1.16.5 kept both in the item's
- * {@code BlockEntityTag} under {@code SkinOwner}/{@code SkinFile}, mirroring vanilla skull semantics
- * so a funko could be minted with {@code player_head{SkullOwner:...}}-shaped NBT. 1.20.5 deleted
- * {@code BlockEntityTag}, and vanilla skulls moved to {@link DataComponents#PROFILE}, so the owner is
- * now that same vanilla component and the file is {@link ComponentInit#FUNKO_SKIN_FILE}. The intent
- * survives intact — and improves: {@code SkinOwner} accepted "either a resolved profile compound or a
- * bare player-name string", which is precisely what {@link ResolvableProfile#CODEC} already is, so
- * {@code /give @p teras:funko[minecraft:profile="Notch"]} works like {@code player_head}.</p>
- *
- * <p>Implicit components ({@link #applyImplicitComponents}/{@link #collectImplicitComponents}) make
- * placement, drops and pick-block carry the skin with no per-path copying — replacing 1.16.5's
- * hand-rolled {@code writeToItem}.</p>
+ * Holds the skin a placed funko displays: either a player {@code profile} (rendered exactly like a
+ * player head) or a {@code skin_file} PNG inside {@code Teras/skins/}. The two are mutually exclusive.
  */
 public class FunkoBlockEntity extends BlockEntity {
 
@@ -75,14 +59,10 @@ public class FunkoBlockEntity extends BlockEntity {
     }
 
     /**
-     * Resolves a name-only profile into one carrying texture properties, then re-syncs.
-     *
-     * <p>Only the server can do this: the profile caches behind {@link ResolvableProfile#resolve()}
-     * are installed by {@code SkullBlockEntity.setup} server-side, and the client's
-     * {@code SkinManager} keys its lookup on the profile's texture properties — so a client handed a
-     * bare name renders Steve. Hence the {@link #syncToClients()} once resolution lands, which is
-     * what 1.16.5 did too (vanilla skulls settle for {@code setChanged()} and can show a stale head
-     * until the chunk reloads).</p>
+     * Only the server can resolve: the caches behind {@link ResolvableProfile#resolve()} are
+     * installed server-side by {@code SkullBlockEntity.setup}, and the client's {@code SkinManager}
+     * keys its lookup on the profile's texture properties, so a client handed a bare name renders
+     * Steve. Hence the re-sync once resolution lands.
      */
     private void updateOwnerProfile() {
         if (this.owner != null && !this.owner.isResolved()) {

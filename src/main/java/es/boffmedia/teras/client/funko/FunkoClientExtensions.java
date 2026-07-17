@@ -22,11 +22,6 @@ import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsE
 /**
  * Client-only funko wiring: the block-entity renderer, the inventory/hand item renderer, and
  * skin-sampled break/hit particles.
- *
- * <p>Both extension points changed shape since 1.16.5. Break/hit particles were {@code Block}
- * overrides, and the item renderer was passed to {@code Item.Properties.setISTER}; NeoForge 1.21
- * moved both behind {@link RegisterClientExtensionsEvent}, which has the happy side effect of keeping
- * every client-only funko class out of {@code Funko} and {@code FunkoItem}.</p>
  */
 @EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class FunkoClientExtensions {

@@ -14,12 +14,10 @@ import java.util.UUID;
 /**
  * Custom item data components.
  *
- * <p>{@link #SMARTROTOM_ID} is the per-item SmartRotom instance id. It replaces the fragile 1.16.5
- * {@code PadID} scheme (a client-side {@code padList.size()+1} counter written into item NBT): here
- * it is a persistent, network-synchronised {@link UUID} assigned <b>server-side</b> (see
- * {@code SmartRotom#inventoryTick}). Each individual SmartRotom item therefore has its own stable id
- * and, on the client, its own {@link com.cinemamod.mcef.MCEFBrowser} — so two SmartRotoms show two
- * independent pages, exactly like the original per-item pads.</p>
+ * <p>{@link #SMARTROTOM_ID} is the per-item SmartRotom instance id: a persistent,
+ * network-synchronised {@link UUID} assigned <b>server-side</b> (see {@code SmartRotom#inventoryTick})
+ * so a client cannot spoof which browser is which. Each SmartRotom item therefore has its own stable
+ * id and, on the client, its own {@link com.cinemamod.mcef.MCEFBrowser}.</p>
  */
 public final class ComponentInit {
     private ComponentInit() {}
@@ -34,8 +32,8 @@ public final class ComponentInit {
                     .build());
 
     /**
-     * A funko's skin PNG inside {@code Teras/skins/} — the port of the 1.16.5 {@code SkinFile} NBT key.
-     * The other funko skin mode (a player) needs no component of its own: it reuses vanilla's
+     * A funko's skin PNG inside {@code Teras/skins/}. The other skin mode (a player) needs no
+     * component of its own: it reuses vanilla's
      * {@link net.minecraft.core.component.DataComponents#PROFILE}, exactly as player heads do.
      */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<String>> FUNKO_SKIN_FILE =

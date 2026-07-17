@@ -1,0 +1,6 @@
+{
+  "__comment": "Intentionally empty, like vanilla block/water: a LiquidBlock renders INVISIBLE and the fluid renderer draws it. Only the particle texture is used.",
+  "textures": {
+    "particle": "minecraft:block/water_still"
+  }
+}
