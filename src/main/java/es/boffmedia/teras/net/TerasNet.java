@@ -140,7 +140,7 @@ public final class TerasNet {
             // advertising and it sends {objetos} after its legacy path already spent the rewards.
             // Either way the player loses them.
             json.addProperty("cajaProtocol", "source");
-            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), GSON.toJson(json)));
+            PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(payload.requestId(), GSON.toJson(json)));
         });
     }
 
@@ -160,7 +160,7 @@ public final class TerasNet {
                         + "server; returning []. (Pixelmon is compileOnly — add it to the runtime, and "
                         + "note it needs NeoForge >= 21.1.200.)", sp.getGameProfile().getName());
             }
-            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), spawnsJson));
+            PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(payload.requestId(), spawnsJson));
         });
     }
 
@@ -187,7 +187,7 @@ public final class TerasNet {
                 Teras.LOGGER.warn("getMisiones requested by {} but CustomNPCs is not loaded on this "
                         + "server; returning an empty quest list.", sp.getGameProfile().getName());
             }
-            PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), json));
+            PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(payload.requestId(), json));
         });
     }
 
@@ -215,7 +215,7 @@ public final class TerasNet {
             if (!es.boffmedia.teras.util.net.HttpText.isValidIdentifier(source)) {
                 Teras.LOGGER.warn("DarCaja from {} with invalid source '{}'; granting nothing",
                         sp.getGameProfile().getName(), source);
-                sendDarCajaReply(sp, payload.requestId(), errorJson("invalid source"));
+                replyError(sp, payload.requestId(), "invalid source");
                 return;
             }
             java.util.UUID uuid = sp.getUUID();
@@ -236,14 +236,14 @@ public final class TerasNet {
         if (grant == null) {
             Teras.LOGGER.warn("DarCaja: claim failed for {} (source '{}'); granting nothing", uuid, source);
             if (sp != null) {
-                sendDarCajaReply(sp, requestId, errorJson("claim failed"));
+                replyError(sp, requestId, "claim failed");
             }
             return;
         }
         if (grant.isEmpty()) {
             Teras.LOGGER.info("DarCaja: {} is owed nothing from '{}'", uuid, source);
             if (sp != null) {
-                sendDarCajaReply(sp, requestId, okJson(0, 0));
+                replyOk(sp, requestId, 0, 0);
             }
             return;
         }
@@ -261,7 +261,7 @@ public final class TerasNet {
         int mons = deliverPokemon(sp, uuid, source, grant.pokemon());
         Teras.LOGGER.info("DarCaja: granted {} item stack(s) and {} Pokémon to {} ({}) from '{}'",
                 items, mons, sp.getGameProfile().getName(), uuid, source);
-        sendDarCajaReply(sp, requestId, okJson(items, mons));
+        replyOk(sp, requestId, items, mons);
     }
 
     /** Gives each spec to the party (full → PC), returning how many landed. A failed give is lost. */
@@ -291,23 +291,22 @@ public final class TerasNet {
         return given;
     }
 
-    private static String okJson(int objetos, int pokemon) {
+    /** Success reply: resolves the page's onSuccess. The {@code status} field is kept for logging and
+     *  any consumer that inspects the body; the transport {@code ok} flag is what the page branches on. */
+    private static void replyOk(ServerPlayer sp, long requestId, int objetos, int pokemon) {
         JsonObject json = new JsonObject();
         json.addProperty("status", "ok");
         json.addProperty("objetos", objetos);
         json.addProperty("pokemon", pokemon);
-        return GSON.toJson(json);
+        PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(requestId, GSON.toJson(json)));
     }
 
-    private static String errorJson(String reason) {
+    /** Failure reply: rejects the page's promise via onFailure, so a failed claim cannot read as done. */
+    private static void replyError(ServerPlayer sp, long requestId, String reason) {
         JsonObject json = new JsonObject();
         json.addProperty("status", "error");
         json.addProperty("reason", reason);
-        return GSON.toJson(json);
-    }
-
-    private static void sendDarCajaReply(ServerPlayer sp, long requestId, String json) {
-        PacketDistributor.sendToPlayer(sp, new McefResponsePayload(requestId, json));
+        PacketDistributor.sendToPlayer(sp, McefResponsePayload.error(requestId, GSON.toJson(json)));
     }
 
     /**
