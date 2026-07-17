@@ -128,15 +128,10 @@ public final class PixelmonShopSync {
     }
 
     /**
-     * The per-unit price this shop lists for {@code item} on the given side, or 0 when it lists no
-     * usable price. A shop can list the same item type more than once (a buy entry and a sell entry),
-     * so matching by {@link ItemStack#isSameItem} alone and taking the first hit can return the wrong
-     * side's price — 0 for a purchase against a sell-only entry, which silently dropped every buy.
-     *
-     * <p>So: prefer the entry actually priced for this operation ({@link ShopItem#isPurchasable()} /
-     * {@link ShopItem#isSellable()} with a positive price); fall back to the first same-type price seen,
-     * which still prices the common single-entry shop and guards against a stale purchasable/sellable
-     * flag.</p>
+     * The per-unit price this shop lists for {@code item} on the given side, or 0 when it lists none. A
+     * shop can list the same item type on both a buy and a sell entry, so prefer the entry priced for
+     * this operation ({@link ShopItem#isPurchasable()}/{@link ShopItem#isSellable()} with a positive
+     * price) and fall back to the first same-type price, which still prices a single-entry shop.
      */
     private static double unitPrice(ShopBuilder shop, ItemStack item, boolean buy) {
         if (shop == null) {

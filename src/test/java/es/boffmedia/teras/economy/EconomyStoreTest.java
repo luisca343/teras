@@ -85,9 +85,8 @@ class EconomyStoreTest {
 
     @Test
     void withdrawRefusesAndDoesNotMutateWhenFundsAreInsufficient() {
-        // The 1.16.5 bug this fixes: WungillEconomy.withdraw subtracted unconditionally and always
-        // returned SUCCESS, so PixelBank#take reported every purchase as paid and balances went
-        // negative.
+        // An insufficient withdraw must refuse and leave the balance untouched — never report success
+        // and let it go negative.
         EconomyStore.accept(player, new BigDecimal("10"));
 
         assertFalse(EconomyStore.withdraw(player, new BigDecimal("11")));

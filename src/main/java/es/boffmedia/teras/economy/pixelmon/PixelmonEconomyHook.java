@@ -14,13 +14,12 @@ import java.util.UUID;
  *
  * <p>Also keeps the client's PokéDollar counter in sync: Pixelmon caches the <i>displayed</i> balance
  * separately from the account, so swapping the manager changes {@code getBalance()} but never refreshes
- * the number on screen (it reads 0 until a balance packet is sent). We register a listener that pushes
- * every {@code EconomyStore} change to the client via {@code BankAccount.updatePlayer()} — the port of
- * the 1.16.5 Wungill {@code UpdateListener}.</p>
+ * the number on screen (it reads 0 until a balance packet is sent). A listener pushes every
+ * {@code EconomyStore} change to the client via {@code BankAccount.updatePlayer()}.</p>
  *
  * <p><b>Pixelmon-coupled.</b> Only ever named from {@code EconomyBridge}, behind its mod-presence
- * check. The check cannot live in this class: naming a Pixelmon type anywhere in a method body makes
- * the verifier load it when the <i>enclosing</i> class is verified, which is before any guard runs.</p>
+ * check — the check cannot live here, as naming a Pixelmon type in a method body makes the verifier
+ * load it when the enclosing class is verified, before any guard runs.</p>
  */
 public final class PixelmonEconomyHook {
     private PixelmonEconomyHook() {}
@@ -34,9 +33,8 @@ public final class PixelmonEconomyHook {
 
     /**
      * Pushes the player's current {@link EconomyStore} balance to their client so the on-screen counter
-     * matches the bank. Hops to the server thread ({@code updatePlayer} sends a packet), and is a no-op
-     * when the player is offline ({@code updatePlayer} resolves the player and returns if absent) or
-     * before the server is up. {@code updatePlayer()} reads {@link TerasBankAccount#getBalance()}.
+     * matches the bank. Hops to the server thread ({@code updatePlayer} sends a packet); a no-op when the
+     * player is offline or before the server is up.
      */
     private static void refreshClient(UUID playerId) {
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();

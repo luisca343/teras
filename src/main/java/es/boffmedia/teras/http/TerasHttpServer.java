@@ -119,10 +119,9 @@ public final class TerasHttpServer {
             // without reviewing that flag in the same change.
             server.createContext(GIVE_POKEMON_PATH, exchange -> handleGivePokemon(exchange, mc));
             server.createContext(GIVE_ITEMS_PATH, exchange -> handleGiveItems(exchange, mc));
-            // Economy bridge — the drop-in for Wungill's WINGULL_API economy routes, which the backend
-            // still calls after a starbank-side change (updateBalance) and on trainer defeat
-            // (getCurrentBalance). EconomyStore is engine-free and thread-safe, so these are registered
-            // unconditionally and served straight on the HTTP thread — no server-thread hop.
+            // Economy bridge: the backend calls these after a starbank-side change (updateBalance) and
+            // on trainer defeat (getCurrentBalance). EconomyStore is engine-free and thread-safe, so
+            // they register unconditionally and serve on the HTTP thread with no server-thread hop.
             server.createContext(UPDATE_BALANCE_PATH, TerasHttpServer::handleUpdateBalance);
             server.createContext(GET_CURRENT_BALANCE_PATH, TerasHttpServer::handleGetCurrentBalance);
             server.createContext(MONEY_PATH, TerasHttpServer::handleMoney);
@@ -280,10 +279,9 @@ public final class TerasHttpServer {
 
     /**
      * The backend pushes an authoritative balance here after a starbank-side change the game did not
-     * originate — a web transfer, an admin set, another player paying you. {@link EconomyStore#accept}
-     * mirrors it into the cache so the in-game PokéDollar balance reflects it without a re-login. The
-     * ledger write already happened on the backend; this is only the mirror, so nothing is written back.
-     * Body {@code {balance, type, uuid}} (type is ignored — always the main account).
+     * originate (a web transfer, an admin set, another player paying you); {@link EconomyStore#accept}
+     * mirrors it into the cache so the in-game balance reflects it without a re-login. Mirror only — the
+     * ledger write already happened on the backend. Body {@code {balance, type, uuid}} (type ignored).
      */
     private static void handleUpdateBalance(HttpExchange exchange) throws IOException {
         if (!beginWrite(exchange)) {
@@ -302,15 +300,11 @@ public final class TerasHttpServer {
     }
 
     /**
-     * Legacy Wungill contract used only by the backend's trainer-defeat flow: "add {@code amount} to the
-     * player's balance and return the new total". The backend diffs the returned value against the
-     * starbank balance and ledgers that difference, so this must return the <b>post-credit</b> balance.
-     *
-     * <p>At call time the reward has not landed anywhere, so the cache equals the starbank balance and
-     * {@code get() + amount} is the correct target; we mirror the credit into the cache (like a shop
-     * deposit) so the reward shows in-game at once. When the balance is not loaded we answer 409 rather
-     * than {@code amount}-over-zero — the backend then falls back to its own stored balance + reward,
-     * instead of us telling it to overwrite a real balance with just the reward. Body {@code {uuid, amount}}.</p>
+     * Trainer-defeat flow: add {@code amount} to the player's balance and return the new total. The
+     * backend diffs the returned value against the starbank balance and ledgers the difference, so this
+     * must return the <b>post-credit</b> balance. An unloaded balance answers 409 (not {@code amount})
+     * so the backend falls back to its own stored balance rather than overwriting with just the reward.
+     * Body {@code {uuid, amount}}.
      */
     private static void handleGetCurrentBalance(HttpExchange exchange) throws IOException {
         if (!beginWrite(exchange)) {
@@ -326,8 +320,8 @@ public final class TerasHttpServer {
                 return;
             }
             if (amount.signum() > 0) {
-                // mirrorDeposit, not deposit: the backend originated this credit and ledgers the diff
-                // itself — the write-through funnel would report it back and double-count.
+                // mirrorDeposit, not deposit: the backend ledgers this credit itself — the funnel
+                // would report it back and double-count.
                 EconomyStore.mirrorDeposit(uuid, amount);
             }
             respond(exchange, 200, "{\"data\":" + EconomyStore.get(uuid).toPlainString() + "}");
@@ -337,9 +331,8 @@ public final class TerasHttpServer {
     }
 
     /**
-     * Legacy Wungill balance read: returns {@code {money}} for a player (the backend reads
-     * {@code data.money}). Pure cache read, no mutation; an unknown balance reads as 0, which the
-     * backend already treats as 0. Body {@code {uuid}}.
+     * Balance read: returns {@code {money}} for a player. Pure cache read, no mutation; an unknown
+     * balance reads as 0. Body {@code {uuid}}.
      */
     private static void handleMoney(HttpExchange exchange) throws IOException {
         if (!beginWrite(exchange)) {

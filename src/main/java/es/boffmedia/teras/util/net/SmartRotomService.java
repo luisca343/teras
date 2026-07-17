@@ -51,10 +51,8 @@ public final class SmartRotomService {
         if (playerId == null || money <= 0) {
             return;
         }
-        // Fire-and-forget on EXECUTOR: this is called from the server thread (BattleOutcomeHandler)
-        // and the result is ignored, so it must not block — postJsonAuthed would stall the tick up to
-        // the read timeout when the API is slow. postJson already attaches the bearer, so trainerdefeat
-        // stays authenticated for the ENFORCE_MONEY_AUTH flip without the synchronous round-trip.
+        // Fire-and-forget on EXECUTOR: called from the server thread with the result ignored, so it must
+        // not block (postJsonAuthed would stall the tick on a slow API). postJson still attaches the bearer.
         HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/starbank/trainerdefeat",
                 GSON.toJson(new TrainerDefeat(TerasConfig.getId(), playerId.toString(), money)));
     }
