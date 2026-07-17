@@ -1,14 +1,22 @@
 package es.boffmedia.teras.items;
 
 import es.boffmedia.teras.client.TerasClient;
+import es.boffmedia.teras.dex.api.DexProvider;
+import es.boffmedia.teras.dex.api.DexProviders;
+import es.boffmedia.teras.dex.api.DexScan;
 import es.boffmedia.teras.init.ComponentInit;
+import es.boffmedia.teras.net.TerasNet;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
 
@@ -18,11 +26,16 @@ import java.util.UUID;
  * restoring the 1.16.5 per-item pad behaviour (the old fragile client-side {@code PadID} counter is
  * replaced by a persistent, server-assigned {@link UUID}).
  *
- * <p>Right-click opens the SmartRotom screen for <em>this</em> item's browser. The 1.16.5 Pixelmon
- * dex-scan path ({@code openDex(...)} via raytrace) and the shift-click screenshot path are deferred
- * until the Pixelmon 1.21.1 dependency and the screenshot handler are wired in.</p>
+ * <p>Right-click does one of two things, as in 1.16.5: aimed at a Pokémon it scans it — the item's
+ * browser jumps to that dex entry in-hand and the server registers it as seen — and aimed at anything
+ * else it opens the SmartRotom screen. The shift-click screenshot path is still deferred until the
+ * screenshot handler is wired in.</p>
  */
 public class SmartRotom extends Item {
+
+    /** How far the dex scan reaches, in blocks. {@code TerasNet} re-checks this server-side. */
+    public static final double SCAN_RANGE = 25.0;
+
     public SmartRotom(Properties properties) {
         super(properties);
     }
@@ -45,10 +58,46 @@ public class SmartRotom extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-        if (level.isClientSide) {
-            TerasClient.openSmartRotom(stack);
+        // Client-driven: the scan follows the player's camera and targets their own browser. The server
+        // re-reads the species off the entity rather than trusting this scan (see DexRegisterPayload).
+        if (!level.isClientSide) {
+            return InteractionResultHolder.pass(stack);
+        }
+
+        Entity target = rayTracedEntity(player);
+        DexScan scan = scanOf(target);
+        if (scan != null) {
+            // Shown from the client's own read so the page doesn't wait on a round-trip.
+            TerasClient.openDex(stack, scan);
+            TerasNet.registerDex(target.getId());
             return InteractionResultHolder.success(stack);
         }
-        return InteractionResultHolder.pass(stack);
+
+        TerasClient.openSmartRotom(stack);
+        return InteractionResultHolder.success(stack);
+    }
+
+    /** The scan for {@code target}, or {@code null} if it isn't a Pokémon (or no engine is installed). */
+    private static DexScan scanOf(Entity target) {
+        if (target == null) {
+            return null;
+        }
+        DexProvider provider = DexProviders.get();
+        return provider == null ? null : provider.scan(target);
+    }
+
+    /**
+     * The entity under the player's crosshair within {@link #SCAN_RANGE}, or {@code null}. Filters on
+     * {@link Entity#isPickable()} rather than on being a Pokémon: this item loads on every client, so
+     * it must name no engine class — the provider answers that.
+     */
+    private static Entity rayTracedEntity(Player player) {
+        Vec3 eye = player.getEyePosition(1.0F);
+        Vec3 look = player.getViewVector(1.0F).scale(SCAN_RANGE);
+        Vec3 end = eye.add(look);
+        AABB box = player.getBoundingBox().expandTowards(look).inflate(1.0);
+        EntityHitResult hit = ProjectileUtil.getEntityHitResult(
+                player, eye, end, box, Entity::isPickable, SCAN_RANGE * SCAN_RANGE);
+        return hit == null ? null : hit.getEntity();
     }
 }

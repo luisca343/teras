@@ -63,6 +63,9 @@ public class Teras {
             // Economy: takes over the engine's bank (Pixelmon only; Cobblemon has none) so in-game
             // currency is the starbank balance. Same isolation — EconomyBridge names no engine class.
             es.boffmedia.teras.economy.EconomyBridge.registerIfPresent();
+            // Pokédex: mirrors every dex registration to SmartRotom, for whichever engine is present.
+            // Same isolation — DexBridge names no engine class.
+            es.boffmedia.teras.dex.DexBridge.registerIfPresent();
         });
     }
 }

@@ -1,8 +1,10 @@
 package es.boffmedia.teras.client;
 
 import com.cinemamod.mcef.MCEFBrowser;
+import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.gui.PantallaSmartRotom;
+import es.boffmedia.teras.dex.api.DexScan;
 import es.boffmedia.teras.items.SmartRotom;
 import es.boffmedia.teras.mcef.TerasMCEF;
 import net.minecraft.client.Minecraft;
@@ -22,6 +24,9 @@ import java.util.UUID;
 public final class TerasClient {
     private TerasClient() {}
 
+    /** Only used to JS-escape scan strings before they reach {@code executeJavaScript}. */
+    private static final Gson GSON = new Gson();
+
     @net.neoforged.bus.api.SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
         // Config is loaded in common setup (both sides); here we only do the client-only MCEF wiring.
@@ -31,27 +36,53 @@ public final class TerasClient {
         });
     }
 
+    /**
+     * Points this item's browser at the scanned Pokémon's dex entry, <b>without</b> opening the screen:
+     * the SmartRotom shows the entry in-hand, and taking over the view would hide the Pokémon just
+     * aimed at.
+     */
+    public static void openDex(ItemStack stack, DexScan scan) {
+        if (browserFor(stack) == null) {
+            return;
+        }
+        // Gson, not concatenation: the form reaches JS as a string literal.
+        TerasMCEF.runJS(SmartRotom.getId(stack),
+                "openDex(" + scan.dex() + ", " + GSON.toJson(scan.form()) + ")");
+    }
+
     /** Opens the SmartRotom browser screen for the given item's own browser instance. */
     public static void openSmartRotom(ItemStack stack) {
-        if (!TerasMCEF.isReady()) {
-            Teras.LOGGER.warn("SmartRotom pressed but MCEF not ready yet");
+        MCEFBrowser browser = browserFor(stack);
+        if (browser == null) {
             return;
+        }
+        Minecraft.getInstance().setScreen(new PantallaSmartRotom(browser));
+    }
+
+    /**
+     * This item's browser, creating it if needed, or {@code null} if it can't exist yet (MCEF still
+     * starting, no id assigned, config not yet synced) — each case logged. The dex scan needs the
+     * browser without the screen open, so the guards live here rather than in {@link #openSmartRotom}.
+     */
+    private static MCEFBrowser browserFor(ItemStack stack) {
+        if (!TerasMCEF.isReady()) {
+            Teras.LOGGER.warn("SmartRotom used but MCEF not ready yet");
+            return null;
         }
         UUID id = SmartRotom.getId(stack);
         if (id == null) {
             // The server assigns the id in inventoryTick; it should be synced before the item is used.
-            Teras.LOGGER.warn("SmartRotom has no id yet; skipping open");
-            return;
+            Teras.LOGGER.warn("SmartRotom has no id yet; skipping");
+            return null;
         }
         if (!ServerConfig.isSynced()) {
-            Teras.LOGGER.warn("SmartRotom pressed before the server sent its config; skipping open");
-            return;
+            Teras.LOGGER.warn("SmartRotom used before the server sent its config; skipping");
+            return null;
         }
         MCEFBrowser browser = TerasMCEF.getOrCreateBrowser(id, ServerConfig.getHome());
         if (browser == null) {
             Teras.LOGGER.warn("SmartRotom browser unavailable for id={}", id);
-            return;
         }
-        Minecraft.getInstance().setScreen(new PantallaSmartRotom(browser));
+        return browser;
     }
 }

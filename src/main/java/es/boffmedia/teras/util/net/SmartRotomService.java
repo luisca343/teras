@@ -5,7 +5,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.battle.model.TeamMember;
+import es.boffmedia.teras.dex.DexStatus;
+import es.boffmedia.teras.dex.api.DexScan;
 import es.boffmedia.teras.util.TerasConfig;
 
 import java.math.BigDecimal;
@@ -35,6 +38,37 @@ public final class SmartRotomService {
     // reaches the backend inside the quest catalog itself (dialogs[].npcLocations on GET /quests/all),
     // so a separate push would be a second, divergent source of the same data. Its body never matched
     // the backend's UpdateNPCsDto anyway. See docs/QUESTS.md.
+
+    /**
+     * Mirrors one Pokédex registration to the backend.
+     *
+     * <p><b>Call this from an engine's dex-change listener and nowhere else</b> ({@code dex.*.*DexSync}):
+     * that event is the one place a registration is known to have happened exactly once. See
+     * {@code docs/DEX.md}.</p>
+     */
+    public static void registerPokedex(UUID playerId, DexScan scan, DexStatus status) {
+        if (playerId == null || scan == null || status == null) {
+            return;
+        }
+        if (scan.dex() <= 0) {
+            // The backend keys registrations by national dex number; a custom species has none.
+            Teras.LOGGER.warn("Skipping Pokédex registration for {}: species has no national dex number "
+                    + "(form={}, palette={})", playerId, scan.form(), scan.palette());
+            return;
+        }
+        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/pokemon/register",
+                registrationBody(TerasConfig.getId(), playerId, scan, status));
+    }
+
+    /**
+     * The request body for {@link #registerPokedex}, split out (like {@link #parseBalance}) so the wire
+     * contract can be asserted without a Minecraft runtime, config, or network. These field names are
+     * the contract.
+     */
+    static String registrationBody(String server, UUID playerId, DexScan scan, DexStatus status) {
+        return GSON.toJson(new PokedexRegistration(server, playerId.toString(), scan.dex(),
+                scan.form(), scan.palette(), status.wireValue()));
+    }
 
     public static void saveBattle(BattleReport report) {
         if (report == null) {
@@ -144,6 +178,10 @@ public final class SmartRotomService {
     private record BancoBody(String server, String uuid, String operacion, BigDecimal cantidad) {}
 
     private record TrainerDefeat(String server, String uuid, int money) {}
+
+    /** Wire shape of {@code /smartrotom/pokemon/register}; see {@link #registerPokedex}. */
+    private record PokedexRegistration(String server, String uuid, int pokemonId, String form,
+                                       String palette, int status) {}
 
     private record BattleReportBody(String server, String uuid, String logro, boolean victoria,
                                     String name1, String name2,

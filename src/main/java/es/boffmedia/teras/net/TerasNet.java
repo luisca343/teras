@@ -29,6 +29,14 @@ public final class TerasNet {
     private static final Gson GSON = new Gson();
     private static final int CHAT_PERMISSION_LEVEL = 2; // OP/gamemaster, matches 1.16.5
 
+    /**
+     * Server-side bound on a dex scan, squared: the item's range plus slack for movement between the
+     * client's raytrace and the packet landing.
+     */
+    private static final double MAX_DEX_SCAN_DISTANCE_SQR =
+            (es.boffmedia.teras.items.SmartRotom.SCAN_RANGE + 8.0)
+                    * (es.boffmedia.teras.items.SmartRotom.SCAN_RANGE + 8.0);
+
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
@@ -36,6 +44,7 @@ public final class TerasNet {
         registrar.playToServer(UserDataRequestPayload.TYPE, UserDataRequestPayload.STREAM_CODEC, TerasNet::handleUserDataRequest);
         registrar.playToServer(SpawnsRequestPayload.TYPE, SpawnsRequestPayload.STREAM_CODEC, TerasNet::handleSpawnsRequest);
         registrar.playToServer(MisionesRequestPayload.TYPE, MisionesRequestPayload.STREAM_CODEC, TerasNet::handleMisionesRequest);
+        registrar.playToServer(DexRegisterPayload.TYPE, DexRegisterPayload.STREAM_CODEC, TerasNet::handleDexRegister);
         // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -67,6 +76,11 @@ public final class TerasNet {
 
     public static void requestMisiones(long requestId) {
         PacketDistributor.sendToServer(new MisionesRequestPayload(requestId));
+    }
+
+    /** Asks the server to register the Pokémon the player just scanned; see {@link DexRegisterPayload}. */
+    public static void registerDex(int entityId) {
+        PacketDistributor.sendToServer(new DexRegisterPayload(entityId));
     }
 
     // ---- Server-side handlers ----
@@ -157,6 +171,41 @@ public final class TerasNet {
                         + "server; returning an empty quest list.", sp.getGameProfile().getName());
             }
             PacketDistributor.sendToPlayer(sp, new McefResponsePayload(payload.requestId(), json));
+        });
+    }
+
+    /**
+     * Registers a SmartRotom-scanned Pokémon as seen in the sender's Pokédex.
+     *
+     * <p>AUTHORITY: the player comes from the connection, so a client can only write its own dex, and
+     * the species is read off the server's own entity — after checking it is in the player's level and
+     * within scan range, without which any loaded Pokémon on the server could be registered.</p>
+     *
+     * <p>No reply: the page was already opened from the client's own scan. The backend POST hangs off
+     * the engine's dex-changed event instead (see {@code docs/DEX.md}).</p>
+     */
+    private static void handleDexRegister(DexRegisterPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            es.boffmedia.teras.dex.api.DexProvider provider = es.boffmedia.teras.dex.api.DexProviders.get();
+            if (provider == null) {
+                Teras.LOGGER.warn("Dex registration from {} but no Pokémon engine is installed; ignoring",
+                        sp.getGameProfile().getName());
+                return;
+            }
+            net.minecraft.world.entity.Entity entity = sp.level().getEntity(payload.entityId());
+            if (entity == null || entity.isRemoved()) {
+                return;
+            }
+            double distanceSqr = entity.distanceToSqr(sp);
+            if (distanceSqr > MAX_DEX_SCAN_DISTANCE_SQR) {
+                Teras.LOGGER.warn("Dex registration from {} for an entity {} blocks away (max {}); ignoring",
+                        sp.getGameProfile().getName(),
+                        String.format("%.1f", Math.sqrt(distanceSqr)),
+                        String.format("%.0f", Math.sqrt(MAX_DEX_SCAN_DISTANCE_SQR)));
+                return;
+            }
+            provider.markSeen(sp, entity);
         });
     }
 }
