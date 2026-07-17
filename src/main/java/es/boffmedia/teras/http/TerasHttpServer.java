@@ -26,8 +26,11 @@ import java.util.function.Supplier;
  * {@code com.sun.net.httpserver} on port 34370 from the 1.16.5 hybrid server.
  *
  * <pre>
- * GET /quests/all         -> {success, message, data:{quests, categories, dialogs}}   (wrapped)
- * GET /quests/user/{uuid} -> {quests:{questId: QuestProgress}, categories:{...}}      (bare)
+ * GET  /ping               -> {success:true, message:"pong", data:null}  (no auth; liveness probe)
+ * GET  /quests/all         -> {success, message, data:{quests, categories, dialogs}}  (wrapped)
+ * GET  /quests/user/{uuid} -> {quests:{questId: QuestProgress}, categories:{...}}     (bare)
+ * POST /givepokemon        -> {data:{given:true}}      body {uuid, pokespec, sendMessage}
+ * POST /giveitems          -> {data:{given:N}}         body {uuid, items:[{id, amount, …}]}
  * </pre>
  *
  * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
@@ -46,10 +49,16 @@ import java.util.function.Supplier;
  *   <li><b>Loopback by default</b> ({@code httpBind: "127.0.0.1"}); widening it logs a warning.</li>
  *   <li><b>Auth is opt-in</b>: a blank {@code httpToken} means no auth, matching Wungill (whose API was
  *       unauthenticated) so the backend needs no change. Set a token and it's enforced in constant
- *       time. ⚠️ Blank token + public bind = world-readable quest data; firewall it or tunnel.</li>
- *   <li><b>Read-only</b>: only GET is routed.</li>
+ *       time.</li>
+ *   <li><b>Not read-only.</b> {@code /givepokemon} and {@code /giveitems} <b>write</b>: they hand a
+ *       player an arbitrary Pokémon or item stack. The backend authenticates none of this — it sends
+ *       no {@code Authorization} header at all (23 raw axios call sites, no shared client, so there is
+ *       nowhere to add one today) — which is why they must stay fail-open, and why requiring
+ *       {@code httpToken} would 401 every arcade claim.</li>
  * </ul>
- * No TLS — terminate at a proxy or keep the bind private.
+ * ⚠️ <b>Blank token + public bind therefore means anyone who can reach this port can mint items.</b>
+ * Nothing in this mod prevents that; only the network does. Keep the bind private or firewall the port
+ * to the backend — see {@link #warnAboutExposure()}. No TLS — terminate at a proxy.
  *
  * <h2>Threading</h2>
  * Handlers run on {@link Teras#EXECUTOR}, so reading quest state directly would race the game loop.
@@ -60,13 +69,18 @@ import java.util.function.Supplier;
 public final class TerasHttpServer {
     private TerasHttpServer() {}
 
+    private static final String PING_PATH = "/ping";
     private static final String QUESTS_ALL_PATH = "/quests/all";
     private static final String QUESTS_USER_PREFIX = "/quests/user/";
+    private static final String GIVE_POKEMON_PATH = "/givepokemon";
+    private static final String GIVE_ITEMS_PATH = "/giveitems";
     private static final String BEARER_PREFIX = "Bearer ";
 
     /** The catalog walks every dialog, so it gets more room than a simple lookup. */
     private static final long CATALOG_TIMEOUT_SECONDS = 20;
     private static final long USER_TIMEOUT_SECONDS = 10;
+    /** Under the backend's 10s axios timeout: past it the caller has given up while the row is spent. */
+    private static final long GIVE_TIMEOUT_SECONDS = 8;
     private static final int SHUTDOWN_DELAY_SECONDS = 1;
 
     private static HttpServer server;
@@ -80,13 +94,26 @@ public final class TerasHttpServer {
         try {
             server = HttpServer.create(
                     new InetSocketAddress(TerasConfig.getHttpBind(), TerasConfig.getHttpPort()), 0);
+            // Unauthenticated liveness probe: answers on the HTTP thread without touching game state, so
+            // it confirms the socket is bound even while the server thread is stalled (when a game-state
+            // read would 503). No auth so it's a pure "is this port reachable" check.
+            server.createContext(PING_PATH, TerasHttpServer::handlePing);
             // A single "/quests" context: HttpServer matches by longest prefix, so this catches both
             // routes and anything else under /quests (which 404s) — the same shape Wungill used.
             server.createContext("/quests", exchange -> handleQuests(exchange, mc));
+            // Separate contexts, not one "/give": HttpServer matches by longest prefix, so a shared
+            // prefix would also swallow /givefoo. Anything unrouted 404s — which /takepokemon and
+            // /takeitems RELY on: the backend's ATOMIC custody path uses their 404 to roll an order
+            // back and charge nothing. The game has givePokemon but no takePokemon, so shipping them
+            // would silently arm WIGGLYPOP_ATOMIC_CUSTODY and duplicate the mon. Do not add them here
+            // without reviewing that flag in the same change.
+            server.createContext(GIVE_POKEMON_PATH, exchange -> handleGivePokemon(exchange, mc));
+            server.createContext(GIVE_ITEMS_PATH, exchange -> handleGiveItems(exchange, mc));
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
-            Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /quests/all, GET /quests/user/{{uuid}})",
+            Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /ping, GET /quests/all, "
+                            + "GET /quests/user/{{uuid}}, POST /givepokemon, POST /giveitems)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -108,6 +135,12 @@ public final class TerasHttpServer {
                             + "plaintext HTTP{}. Restrict it by firewall and/or front it with a TLS proxy.",
                     TerasConfig.getHttpBind(), open ? " AND WITHOUT AUTHENTICATION" : "");
         }
+        if (open && TerasConfig.isHttpBindPublic()) {
+            Teras.LOGGER.warn("SECURITY: POST /givepokemon and /giveitems are UNAUTHENTICATED on a "
+                    + "public bind. Anyone who can reach {}:{} can grant any player any item or "
+                    + "Pokémon. Firewall this port to the backend only.",
+                    TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
+        }
     }
 
     @SubscribeEvent
@@ -121,6 +154,14 @@ public final class TerasHttpServer {
     }
 
     // ---- Routing ----
+
+    private static void handlePing(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            respond(exchange, 405, error("Method not allowed"));
+            return;
+        }
+        respond(exchange, 200, "{\"success\":true,\"message\":\"pong\",\"data\":null}");
+    }
 
     private static void handleQuests(HttpExchange exchange, MinecraftServer mc) throws IOException {
         try {
@@ -165,6 +206,75 @@ public final class TerasHttpServer {
             Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
             respond(exchange, 500, error("Internal error"));
         }
+    }
+
+    private static void handleGivePokemon(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            GiveRequests.PokemonGive req = GiveRequests.parsePokemon(readBody(exchange));
+            boolean given = onServerThread(mc,
+                    () -> es.boffmedia.teras.http.GiveService.givePokemon(mc, req), GIVE_TIMEOUT_SECONDS);
+            if (!given) {
+                Teras.LOGGER.error("givePokemon SPENT AND LOST for {}: spec '{}' was not delivered "
+                        + "(offline, unparseable, or no engine)", req.uuid(), req.pokespec());
+                respond(exchange, 422, error("Pokémon not delivered"));
+                return;
+            }
+            respond(exchange, 200, "{\"data\":{\"given\":true}}");
+        } catch (GiveRequests.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    private static void handleGiveItems(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            GiveRequests.ItemsGive req = GiveRequests.parseItems(readBody(exchange));
+            int given = onServerThread(mc,
+                    () -> es.boffmedia.teras.http.GiveService.giveItems(mc, req), GIVE_TIMEOUT_SECONDS);
+            if (given < 0) {
+                Teras.LOGGER.error("giveItems SPENT AND LOST for {}: {} was not delivered (player offline)",
+                        req.uuid(), req.items());
+                respond(exchange, 422, error("Player not online"));
+                return;
+            }
+            respond(exchange, 200, "{\"data\":{\"given\":" + given + "}}");
+        } catch (GiveRequests.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /** Shared POST preamble: rejects non-POST (405) and unauthorized (401). Returns false if handled. */
+    private static boolean beginWrite(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            respond(exchange, 405, error("Method not allowed"));
+            return false;
+        }
+        if (!isAuthorized(exchange)) {
+            respond(exchange, 401, error("Unauthorized"));
+            return false;
+        }
+        return true;
+    }
+
+    private static String readBody(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     }
 
     /**

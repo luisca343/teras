@@ -1,6 +1,7 @@
 package es.boffmedia.teras.util.net;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -9,7 +10,9 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.battle.model.TeamMember;
 import es.boffmedia.teras.dex.DexStatus;
 import es.boffmedia.teras.dex.api.DexScan;
+import es.boffmedia.teras.model.world.CajaGrant;
 import es.boffmedia.teras.model.world.ObjetoMC;
+import es.boffmedia.teras.model.world.PokemonSpec;
 import es.boffmedia.teras.util.TerasConfig;
 
 import java.math.BigDecimal;
@@ -122,24 +125,26 @@ public final class SmartRotomService {
     }
 
     /**
-     * Redeems everything {@code playerId} is owed from {@code source}, returning what the backend says
-     * to grant. <b>Blocks</b> — call from {@link es.boffmedia.teras.Teras#EXECUTOR}.
+     * Redeems what {@code playerId} is owed from {@code source} (narrowed to {@code ids} when
+     * non-empty), returning both the items to chest and the Pokémon to give. <b>Blocks</b> — call from
+     * {@link es.boffmedia.teras.Teras#EXECUTOR}.
      *
      * <p>Three-way result, and callers must keep the last two apart:</p>
      * <ul>
      *   <li>{@code null} — the claim failed (non-2xx, unreachable, unparseable, no {@code objetos}
      *       key). <b>Grant nothing.</b> This deliberately cannot distinguish "already spent" from
      *       "backend down": both mean the mod has not been told to hand anything over.</li>
-     *   <li>empty — the claim succeeded and the player is owed nothing. Also grant nothing, but this
-     *       is not an error.</li>
+     *   <li>{@link CajaGrant#isEmpty() empty} — the claim succeeded and the player is owed nothing.
+     *       Also grant nothing, but this is not an error.</li>
      *   <li>non-empty — grant exactly this.</li>
      * </ul>
      *
      * <p>Unlike every other payload in this class, the body carries <b>no {@code server} field</b>.
      * That route is on the backend's {@code MinecraftMiddleware} exclude list precisely because the
-     * mod sends none, and its DTO rejects unknown properties — sending one is a measured 400.</p>
+     * mod sends none, and its DTO rejects unknown properties — sending one is a measured 400. {@code ids}
+     * is sent only when non-empty; the DTO's {@code ids} is optional and mine omits it.</p>
      */
-    public static List<ObjetoMC> claimCaja(UUID playerId, String source) {
+    public static CajaGrant claimCaja(UUID playerId, String source, List<Integer> ids) {
         if (playerId == null || !HttpText.isValidIdentifier(source)) {
             Teras.LOGGER.warn("DarCaja: refusing to claim with uuid={} source='{}'", playerId, source);
             return null;
@@ -147,53 +152,86 @@ public final class SmartRotomService {
         JsonObject body = new JsonObject();
         body.addProperty("uuid", playerId.toString());
         body.addProperty("source", source);
+        if (ids != null && !ids.isEmpty()) {
+            JsonArray idArray = new JsonArray();
+            ids.forEach(idArray::add);
+            body.add("ids", idArray);
+        }
         String response = HttpText.postJsonAuthed(
                 TerasConfig.getApiUrl() + "/smartrotom/caja/claim", GSON.toJson(body));
         if (response == null) {
             return null;
         }
-        return parseObjetos(response);
+        return parseGrant(response);
     }
 
     /**
-     * The {@code objetos} array out of a caja response, or {@code null} if the body isn't one.
+     * The {@code objetos} and {@code pokemon} arrays out of a caja response, or {@code null} if the
+     * body isn't one.
      *
-     * <p>{@code objetos} is read off the <b>root</b>: that route opts out of the API's global
+     * <p>Both are read off the <b>root</b>: that route opts out of the API's global
      * {@code {success, statusCode, data}} envelope. Reading {@code data} would find nothing — and
-     * silently grant nothing on every claim.</p>
-     *
-     * <p>Entries missing an {@code id} are dropped rather than failing the whole grant; a missing
-     * {@code cantidad} is left at 0 for {@code ChestCreationHelper} to clamp.</p>
+     * silently grant nothing on every claim. {@code objetos} being a JSON array is the test for "this
+     * is a caja response"; {@code pokemon} may be absent (an older backend, or an item-only source) and
+     * is treated as empty, which keeps a mine claim working against either shape.</p>
      */
-    static List<ObjetoMC> parseObjetos(String body) {
+    static CajaGrant parseGrant(String body) {
         try {
             JsonElement parsed = JsonParser.parseString(body == null ? "" : body);
             if (!parsed.isJsonObject()) {
                 return null;
             }
-            JsonElement objetos = parsed.getAsJsonObject().get("objetos");
+            JsonObject root = parsed.getAsJsonObject();
+            JsonElement objetos = root.get("objetos");
             if (objetos == null || !objetos.isJsonArray()) {
                 return null;
             }
-            List<ObjetoMC> result = new ArrayList<>();
-            for (JsonElement element : objetos.getAsJsonArray()) {
-                if (!element.isJsonObject()) {
-                    continue;
-                }
-                JsonObject entry = element.getAsJsonObject();
-                JsonElement id = entry.get("id");
-                if (id == null || !id.isJsonPrimitive() || id.getAsString().isEmpty()) {
-                    continue;
-                }
-                JsonElement cantidad = entry.get("cantidad");
-                int count = (cantidad != null && cantidad.isJsonPrimitive()
-                        && cantidad.getAsJsonPrimitive().isNumber()) ? cantidad.getAsInt() : 0;
-                result.add(new ObjetoMC(id.getAsString(), count));
-            }
-            return result;
+            return new CajaGrant(parseObjetos(objetos.getAsJsonArray()), parsePokemon(root.get("pokemon")));
         } catch (JsonParseException | NumberFormatException e) {
             return null;
         }
+    }
+
+    /** Entries missing an {@code id} are dropped; a missing {@code cantidad} is left at 0 to be clamped. */
+    private static List<ObjetoMC> parseObjetos(JsonArray objetos) {
+        List<ObjetoMC> result = new ArrayList<>();
+        for (JsonElement element : objetos) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject entry = element.getAsJsonObject();
+            JsonElement id = entry.get("id");
+            if (id == null || !id.isJsonPrimitive() || id.getAsString().isEmpty()) {
+                continue;
+            }
+            result.add(new ObjetoMC(id.getAsString(), intOrDefault(entry.get("cantidad"), 0)));
+        }
+        return result;
+    }
+
+    /** Entries missing a {@code spec} are dropped; a missing {@code cantidad} means one. */
+    private static List<PokemonSpec> parsePokemon(JsonElement pokemon) {
+        List<PokemonSpec> result = new ArrayList<>();
+        if (pokemon == null || !pokemon.isJsonArray()) {
+            return result;
+        }
+        for (JsonElement element : pokemon.getAsJsonArray()) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject entry = element.getAsJsonObject();
+            JsonElement spec = entry.get("spec");
+            if (spec == null || !spec.isJsonPrimitive() || spec.getAsString().isBlank()) {
+                continue;
+            }
+            result.add(new PokemonSpec(spec.getAsString(), intOrDefault(entry.get("cantidad"), 1)));
+        }
+        return result;
+    }
+
+    private static int intOrDefault(JsonElement value, int fallback) {
+        return (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber())
+                ? value.getAsInt() : fallback;
     }
 
     /**

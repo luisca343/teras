@@ -45,6 +45,20 @@ public final class QueryHelper {
         return source.getAsString();
     }
 
+    /** The {@code ids} row selector of a darCaja query — empty when absent (mine claims the whole source). */
+    static java.util.List<Integer> readIds(JsonObject json) {
+        java.util.List<Integer> ids = new java.util.ArrayList<>();
+        JsonElement raw = json.get("ids");
+        if (raw != null && raw.isJsonArray()) {
+            for (JsonElement element : raw.getAsJsonArray()) {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+                    ids.add(element.getAsInt());
+                }
+            }
+        }
+        return ids;
+    }
+
     /** Registers {@code callback} for a new async request and returns its id (for the request payload). */
     private static long register(JsQueryCallback callback) {
         long id = NEXT_REQUEST_ID.incrementAndGet();
@@ -122,16 +136,16 @@ public final class QueryHelper {
 
                 case DAR_CAJA: {
                     // Async: the server asks the backend what this player is owed, grants it, and
-                    // replies under the same id. The page names a SOURCE, never items — see
-                    // DarCajaPayload. A page still sending 1.16.5's {objetos} lands here with no
-                    // source and is refused, rather than being granted what it asked for.
+                    // replies under the same id. The page names a SOURCE and an optional row-id
+                    // selector, never items — see DarCajaPayload. A page still sending 1.16.5's
+                    // {objetos} lands here with no source and is refused.
                     String source = readSource(json);
                     if (!es.boffmedia.teras.util.net.HttpText.isValidIdentifier(source)) {
                         Teras.LOGGER.error("darCaja without a valid source: {}", query);
                         callback.failure(400, "darCaja requires a source");
                         return true;
                     }
-                    es.boffmedia.teras.net.TerasNet.requestDarCaja(register(callback), source);
+                    es.boffmedia.teras.net.TerasNet.requestDarCaja(register(callback), source, readIds(json));
                     return true;
                 }
 

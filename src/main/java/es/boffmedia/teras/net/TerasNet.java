@@ -80,8 +80,8 @@ public final class TerasNet {
     }
 
     /** Asks the server to redeem what this player is owed from {@code source}; see {@link DarCajaPayload}. */
-    public static void requestDarCaja(long requestId, String source) {
-        PacketDistributor.sendToServer(new DarCajaPayload(requestId, source));
+    public static void requestDarCaja(long requestId, String source, java.util.List<Integer> ids) {
+        PacketDistributor.sendToServer(new DarCajaPayload(requestId, source, ids));
     }
 
     /** Asks the server to register the Pokémon the player just scanned; see {@link DexRegisterPayload}. */
@@ -192,16 +192,18 @@ public final class TerasNet {
     }
 
     /**
-     * Redeems what the sender is owed from {@code source} and gives it to them as chests.
+     * Redeems what the sender is owed from {@code source} (narrowed to {@code payload.ids()}) and gives
+     * it to them: items as chests, Pokémon to the party.
      *
      * <p>AUTHORITY: the uuid comes off the connection, never the page — that is the whole security
-     * boundary. The page contributes only a source string; the backend picks the items. 1.16.5 took
-     * the item list from the client and granted it, which is what let a modified client mint anything.
-     * A blank or malformed source fails the request: there is no "everything owed", because the
-     * phrase is not well-defined across sources that disagree about what {@code used} means.</p>
+     * boundary. The page contributes only a source string and a row-id selector; the backend picks the
+     * rewards. 1.16.5 took the item list from the client and granted it, which is what let a modified
+     * client mint anything. A blank or malformed source fails the request: there is no "everything
+     * owed", because the phrase is not well-defined across sources that disagree about what
+     * {@code used} means.</p>
      *
-     * <p>The backend <b>spends before we deliver</b>, so a disconnect between the two loses the items
-     * (DARCAJA.md §7 — two-phase reserve/confirm is the follow-up). The audit line below is the only
+     * <p>The backend <b>spends before we deliver</b>, so a disconnect between the two loses the reward
+     * (DARCAJA.md §7 — two-phase reserve/confirm is the follow-up). The audit lines below are the only
      * record when that happens.</p>
      */
     private static void handleDarCajaRequest(DarCajaPayload payload, IPayloadContext context) {
@@ -218,51 +220,82 @@ public final class TerasNet {
             }
             java.util.UUID uuid = sp.getUUID();
             // The claim blocks on HTTP; on this thread it would stall the tick. Hop out, then back:
-            // the grant touches the player's inventory and must land on the server thread again.
+            // the grant touches the player's party/inventory and must land on the server thread again.
             Teras.EXECUTOR.execute(() -> {
-                java.util.List<es.boffmedia.teras.model.world.ObjetoMC> objetos =
-                        es.boffmedia.teras.util.net.SmartRotomService.claimCaja(uuid, source);
-                server.execute(() -> deliverCaja(server, uuid, source, payload.requestId(), objetos));
+                es.boffmedia.teras.model.world.CajaGrant grant =
+                        es.boffmedia.teras.util.net.SmartRotomService.claimCaja(uuid, source, payload.ids());
+                server.execute(() -> deliverCaja(server, uuid, source, payload.requestId(), grant));
             });
         });
     }
 
     /** Server thread: hands over what the backend granted, and says so exactly once. */
     private static void deliverCaja(MinecraftServer server, java.util.UUID uuid, String source,
-                                    long requestId,
-                                    java.util.List<es.boffmedia.teras.model.world.ObjetoMC> objetos) {
+                                    long requestId, es.boffmedia.teras.model.world.CajaGrant grant) {
         ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-        if (objetos == null) {
+        if (grant == null) {
             Teras.LOGGER.warn("DarCaja: claim failed for {} (source '{}'); granting nothing", uuid, source);
             if (sp != null) {
                 sendDarCajaReply(sp, requestId, errorJson("claim failed"));
             }
             return;
         }
-        if (objetos.isEmpty()) {
+        if (grant.isEmpty()) {
             Teras.LOGGER.info("DarCaja: {} is owed nothing from '{}'", uuid, source);
             if (sp != null) {
-                sendDarCajaReply(sp, requestId, okJson(0));
+                sendDarCajaReply(sp, requestId, okJson(0, 0));
             }
             return;
         }
         if (sp == null) {
             // The backend has already spent these and we have nobody to give them to. Nothing here
             // redelivers them — this line is the only trace they existed.
-            Teras.LOGGER.error("DarCaja: {} disconnected before delivery; {} item(s) from '{}' were "
-                    + "SPENT AND LOST: {}", uuid, objetos.size(), source, objetos);
+            Teras.LOGGER.error("DarCaja: {} disconnected before delivery; from '{}' SPENT AND LOST "
+                    + "objetos={} pokemon={}", uuid, source, grant.objetos(), grant.pokemon());
             return;
         }
-        es.boffmedia.teras.util.ChestCreationHelper.createAndGiveChests(sp, objetos);
-        Teras.LOGGER.info("DarCaja: granted {} item(s) to {} ({}) from '{}': {}",
-                objetos.size(), sp.getGameProfile().getName(), uuid, source, objetos);
-        sendDarCajaReply(sp, requestId, okJson(objetos.size()));
+        int items = grant.objetos().size();
+        if (items > 0) {
+            es.boffmedia.teras.util.ChestCreationHelper.createAndGiveChests(sp, grant.objetos());
+        }
+        int mons = deliverPokemon(sp, uuid, source, grant.pokemon());
+        Teras.LOGGER.info("DarCaja: granted {} item stack(s) and {} Pokémon to {} ({}) from '{}'",
+                items, mons, sp.getGameProfile().getName(), uuid, source);
+        sendDarCajaReply(sp, requestId, okJson(items, mons));
     }
 
-    private static String okJson(int granted) {
+    /** Gives each spec to the party (full → PC), returning how many landed. A failed give is lost. */
+    private static int deliverPokemon(ServerPlayer sp, java.util.UUID uuid, String source,
+                                      java.util.List<es.boffmedia.teras.model.world.PokemonSpec> pokemon) {
+        if (pokemon.isEmpty()) {
+            return 0;
+        }
+        es.boffmedia.teras.give.api.GiveProvider provider = es.boffmedia.teras.give.api.GiveProviders.get();
+        if (provider == null) {
+            Teras.LOGGER.error("DarCaja: {} owed Pokémon from '{}' but no engine is installed; "
+                    + "SPENT AND LOST: {}", uuid, source, pokemon);
+            return 0;
+        }
+        int given = 0;
+        for (es.boffmedia.teras.model.world.PokemonSpec mon : pokemon) {
+            for (int i = 0; i < mon.cantidad(); i++) {
+                if (provider.givePokemon(sp, mon.spec(), true)) {
+                    given++;
+                } else {
+                    Teras.LOGGER.error("DarCaja: {} SPENT AND LOST a Pokémon '{}' from '{}' "
+                            + "(give failed — unparseable, engine mismatch, or storage full)",
+                            uuid, mon.spec(), source);
+                }
+            }
+        }
+        return given;
+    }
+
+    private static String okJson(int objetos, int pokemon) {
         JsonObject json = new JsonObject();
         json.addProperty("status", "ok");
-        json.addProperty("objetos", granted);
+        json.addProperty("objetos", objetos);
+        json.addProperty("pokemon", pokemon);
         return GSON.toJson(json);
     }
 

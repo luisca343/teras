@@ -4,12 +4,9 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.model.world.ObjetoMC;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -40,8 +37,6 @@ public final class ChestCreationHelper {
 
     /** Ten chests' worth — a cap on how much one grant can spawn. */
     private static final int MAX_TOTAL_ITEMS = CHEST_SLOTS * 10;
-
-    private static final int MAX_ITEM_COUNT = 64;
 
     /**
      * Gives the chests to {@code uuidString} if that player is online, and logs a warning if not.
@@ -92,8 +87,8 @@ public final class ChestCreationHelper {
     }
 
     /**
-     * Resolves each entry to a stack, dropping unregistered ids and clamping counts to
-     * [1, {@value #MAX_ITEM_COUNT}], with the total capped at {@value #MAX_TOTAL_ITEMS} entries.
+     * Resolves each entry to a stack via the shared {@link ItemResolver}, dropping ids it can't
+     * resolve and capping the total at {@value #MAX_TOTAL_ITEMS} entries.
      */
     private static List<ItemStack> toStacks(List<ObjetoMC> objetos) {
         List<ItemStack> stacks = new ArrayList<>();
@@ -102,21 +97,13 @@ public final class ChestCreationHelper {
                 Teras.LOGGER.warn("DarCaja payload exceeded {} items; truncating", MAX_TOTAL_ITEMS);
                 break;
             }
-            if (objeto == null || objeto.id() == null) {
+            if (objeto == null) {
                 continue;
             }
-            ResourceLocation id = ResourceLocation.tryParse(objeto.id());
-            if (id == null) {
-                Teras.LOGGER.warn("DarCaja: skipping malformed item id '{}'", objeto.id());
-                continue;
+            ItemStack stack = ItemResolver.resolve(objeto.id(), objeto.cantidad());
+            if (stack != null) {
+                stacks.add(stack);
             }
-            Item item = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
-            if (item == null) {
-                Teras.LOGGER.warn("DarCaja: skipping unknown item id '{}'", objeto.id());
-                continue;
-            }
-            int count = Math.max(1, Math.min(MAX_ITEM_COUNT, objeto.cantidad()));
-            stacks.add(new ItemStack(item, count));
         }
         return stacks;
     }
