@@ -29,7 +29,9 @@ enum QueryType {
     DAR_CAJA,
     TAKE_SCREENSHOT,
     GET_ZOOM_LEVEL,
-    SET_ZOOM_LEVEL;
+    SET_ZOOM_LEVEL,
+    GET_FLASHLIGHT,
+    SET_FLASHLIGHT;
 
     /** Normalized constant name -> constant. Built once; the enum is fixed at class-load. */
     private static final Map<String, QueryType> BY_NORMALIZED_NAME = new HashMap<>();

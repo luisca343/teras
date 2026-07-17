@@ -92,8 +92,25 @@ public final class QueryHelper {
                 case GET_MISIONES:
                     es.boffmedia.teras.net.TerasNet.requestMisiones(register(callback));
                     return true;
+                case TAKE_SCREENSHOT:
+                    // Async: resolves a frame later (the capture rides a render frame) and then off
+                    // the client thread entirely. See ScreenshotHandler.
+                    es.boffmedia.teras.client.camera.ScreenshotHandler.handleTakeScreenshot(query, callback);
+                    return true;
+                case GET_ZOOM_LEVEL:
+                    es.boffmedia.teras.client.camera.CameraQueries.handleGetZoomLevel(callback);
+                    return true;
+                case SET_ZOOM_LEVEL:
+                    es.boffmedia.teras.client.camera.CameraQueries.handleSetZoomLevel(query, callback);
+                    return true;
+                case GET_FLASHLIGHT:
+                    es.boffmedia.teras.client.camera.CameraQueries.handleGetFlashlight(callback);
+                    return true;
+                case SET_FLASHLIGHT:
+                    es.boffmedia.teras.client.camera.CameraQueries.handleSetFlashlight(query, callback);
+                    return true;
 
-                // --- Handlers below need more networking / Pixelmon / JourneyMap: ported next phase ---
+                // --- Handlers below need more networking / JourneyMap: ported next phase ---
                 case OPEN_PC:
                 case DAR_CAJA:
                 case SET_CALL:
@@ -102,11 +119,6 @@ public final class QueryHelper {
                 case ADD_WAYPOINT:
                 case GET_WAYPOINTS:
                     return notPorted(queryType, callback, "JourneyMap integration");
-                case TAKE_SCREENSHOT:
-                    return notPorted(queryType, callback, "ScreenshotHandler");
-                case GET_ZOOM_LEVEL:
-                case SET_ZOOM_LEVEL:
-                    return notPorted(queryType, callback, "CameraZoomHandler");
                 default:
                     return false;
             }

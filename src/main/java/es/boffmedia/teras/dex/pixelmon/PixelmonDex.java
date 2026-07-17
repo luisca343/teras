@@ -27,6 +27,7 @@ final class PixelmonDex {
         PaletteProperties palette = pokemon.getPalette();
         return DexScan.of(
                 species.getDex(),
+                species.getName(),
                 form == null ? null : form.getName(),
                 palette == null ? null : palette.getName());
     }

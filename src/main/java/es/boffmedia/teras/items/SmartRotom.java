@@ -26,10 +26,9 @@ import java.util.UUID;
  * restoring the 1.16.5 per-item pad behaviour (the old fragile client-side {@code PadID} counter is
  * replaced by a persistent, server-assigned {@link UUID}).
  *
- * <p>Right-click does one of two things, as in 1.16.5: aimed at a Pokémon it scans it — the item's
- * browser jumps to that dex entry in-hand and the server registers it as seen — and aimed at anything
- * else it opens the SmartRotom screen. The shift-click screenshot path is still deferred until the
- * screenshot handler is wired in.</p>
+ * <p>Right-click does one of three things, as in 1.16.5: shift-clicking with the camera page open fires
+ * the shutter; aiming at a Pokémon scans it — the item's browser jumps to that dex entry in-hand and
+ * the server registers it as seen; anything else opens the SmartRotom screen.</p>
  */
 public class SmartRotom extends Item {
 
@@ -62,6 +61,12 @@ public class SmartRotom extends Item {
         // re-reads the species off the entity rather than trusting this scan (see DexRegisterPayload).
         if (!level.isClientSide) {
             return InteractionResultHolder.pass(stack);
+        }
+
+        // Shift-click is the camera shutter, but only while this item's browser is on the camera page;
+        // otherwise it falls through to the scan.
+        if (player.isShiftKeyDown() && TerasClient.tryCameraShutter(stack)) {
+            return InteractionResultHolder.success(stack);
         }
 
         Entity target = rayTracedEntity(player);

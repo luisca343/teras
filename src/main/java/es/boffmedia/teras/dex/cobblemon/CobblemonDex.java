@@ -29,6 +29,7 @@ final class CobblemonDex {
         FormData form = pokemon.getForm();
         return DexScan.of(
                 species.getNationalPokedexNumber(),
+                species.getName(),
                 form == null ? null : form.getName(),
                 pokemon.getShiny() ? "shiny" : DexScan.NONE);
     }

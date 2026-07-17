@@ -23,7 +23,7 @@ class PokedexRegistrationBodyTest {
 
     private static JsonObject body(int dex, DexStatus status, String form, String palette) {
         return JsonParser.parseString(SmartRotomService.registrationBody(
-                        "teras-1", PLAYER, DexScan.of(dex, form, palette), status))
+                        "teras-1", PLAYER, DexScan.of(dex, "Rotom", form, palette), status))
                 .getAsJsonObject();
     }
 
