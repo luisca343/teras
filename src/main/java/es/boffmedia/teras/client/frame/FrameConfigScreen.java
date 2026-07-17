@@ -2,6 +2,7 @@ package es.boffmedia.teras.client.frame;
 
 import es.boffmedia.teras.blockentity.FrameBlockEntity;
 import es.boffmedia.teras.net.FrameConfigPayload;
+import es.boffmedia.teras.net.FramePlaybackPayload;
 import es.boffmedia.teras.net.TerasNet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -113,7 +114,8 @@ public class FrameConfigScreen extends Screen {
         ly += 26;
         label(leftX, ly - 10, "gui.teras.frame_timeline");
         addRenderableWidget(new FrameTimeline(leftX, ly, colW, 12,
-                () -> FrameMediaManager.peek(frame.getBlockPos())));
+                () -> FrameMediaManager.peek(frame.getBlockPos()),
+                ms -> sendPlayback(FramePlaybackPayload.SEEK, ms)));
 
         // --- Right column: display ---
         int ry = top + 30;
@@ -209,29 +211,18 @@ public class FrameConfigScreen extends Screen {
     private void togglePlay() {
         playing = !playing;
         playButton.setMessage(playLabel());
-        sendPlayback(playing);
+        sendPlayback(playing ? FramePlaybackPayload.PLAY : FramePlaybackPayload.PAUSE, 0L);
     }
 
     private void stop() {
         playing = false;
         playButton.setMessage(playLabel());
-        sendPlayback(false);
-        FrameMedia media = FrameMediaManager.peek(frame.getBlockPos());
-        if (media != null) {
-            media.seekTo(0L);
-        }
+        sendPlayback(FramePlaybackPayload.STOP, 0L);
     }
 
-    /** Flips only the play state on the committed config; box edits wait for Save. */
-    private void sendPlayback(boolean playing) {
-        TerasNet.sendFrameConfig(new FrameConfigPayload(
-                frame.getBlockPos(), frame.getUrl(),
-                frame.getMinX(), frame.getMinY(), frame.getMaxX(), frame.getMaxY(),
-                frame.getRotation(), frame.isFlipX(), frame.isFlipY(), frame.isBothSides(),
-                frame.getBrightness(), frame.getAlpha(), frame.getRenderDistance(),
-                frame.getVolume(), frame.getMinAudioDistance(), frame.getMaxAudioDistance(),
-                frame.isLoop(), playing, frame.isMuted(), frame.isLit(), frame.isShowFrame(),
-                frame.getAnchorH(), frame.getAnchorV()));
+    /** A live, synced playback command (all viewers follow), separate from the config Save. */
+    private void sendPlayback(byte action, long arg) {
+        TerasNet.sendFramePlayback(new FramePlaybackPayload(frame.getBlockPos(), action, arg));
     }
 
     private void save() {

@@ -46,6 +46,12 @@ public class FrameBlockEntity extends BlockEntity {
     private float maxAudioDistance = 20.0F;
     private boolean loop = true;
     private boolean playing = true;
+    // Server-authoritative playback clock for the shared cinema: while playing, the media position is
+    // anchorMediaMs + (currentGameTime - anchorGameTime)*50ms. Game time is shared by all clients, so
+    // every viewer computes the same timestamp and seeks its local player to it. Loop-wrap happens
+    // client-side (only the client knows the media duration). Re-anchored on play/pause/stop/seek/url.
+    private long anchorGameTime = 0L;
+    private long anchorMediaMs = 0L;
     private boolean muted = false;
     // Fullbright by default (a screen glows); off = modulated by the block's world light.
     private boolean lit = true;
@@ -91,6 +97,59 @@ public class FrameBlockEntity extends BlockEntity {
     public float getSizeY() { return maxY - minY; }
 
     /**
+     * The media position (ms, unbounded — the client loop-wraps with its own duration) that {@code
+     * gameTime} implies from the current anchor. Shared game time makes every viewer agree.
+     */
+    public long currentMediaMs(long gameTime) {
+        if (!playing) {
+            return anchorMediaMs;
+        }
+        long elapsedTicks = Math.max(0L, gameTime - anchorGameTime);
+        return anchorMediaMs + elapsedTicks * 50L;
+    }
+
+    // ---- Server-side playback controls (mutate anchors + play state, then re-sync) ----
+
+    /** Resume from where it was frozen. */
+    public void playbackPlay() {
+        if (level == null || playing) return;
+        anchorGameTime = level.getGameTime();
+        playing = true;
+        setChanged();
+        syncToClients();
+    }
+
+    /** Freeze at the current position. */
+    public void playbackPause() {
+        if (level == null || !playing) return;
+        long now = level.getGameTime();
+        anchorMediaMs = currentMediaMs(now);
+        anchorGameTime = now;
+        playing = false;
+        setChanged();
+        syncToClients();
+    }
+
+    /** Stop and rewind to the start (still synced — everyone jumps to 0). */
+    public void playbackStop() {
+        if (level == null) return;
+        anchorMediaMs = 0L;
+        anchorGameTime = level.getGameTime();
+        playing = false;
+        setChanged();
+        syncToClients();
+    }
+
+    /** Jump to {@code ms}, keeping the current play/pause state. */
+    public void playbackSeek(long ms) {
+        if (level == null) return;
+        anchorMediaMs = Math.max(0L, ms);
+        anchorGameTime = level.getGameTime();
+        setChanged();
+        syncToClients();
+    }
+
+    /**
      * Overwrites every configurable field and re-syncs. Called only server-side (from the config
      * payload handler). Ranges are clamped so a malformed packet cannot produce a NaN quad or an
      * unbounded render distance.
@@ -101,6 +160,12 @@ public class FrameBlockEntity extends BlockEntity {
                             float volume, float minAudioDistance, float maxAudioDistance,
                             boolean loop, boolean playing, boolean muted, boolean lit, boolean showFrame,
                             byte anchorH, byte anchorV) {
+        // Capture the playback state before overwriting it, so we can re-anchor the shared clock below.
+        long gameTime = level != null ? level.getGameTime() : 0L;
+        long posBefore = currentMediaMs(gameTime);
+        String oldUrl = this.url;
+        boolean wasPlaying = this.playing;
+
         this.url = url == null ? "" : url;
         // Clamp the display rectangle so a bad packet can't produce a NaN or absurdly large quad, and
         // keep max >= min on each axis.
@@ -125,6 +190,18 @@ public class FrameBlockEntity extends BlockEntity {
         this.showFrame = showFrame;
         this.anchorH = clampAnchor(anchorH);
         this.anchorV = clampAnchor(anchorV);
+
+        // Re-anchor the shared clock: a new url restarts at 0; a play/pause flip resumes/freezes; a
+        // pure visual edit leaves playback untouched so a running movie is not interrupted.
+        if (!this.url.equals(oldUrl)) {
+            this.anchorMediaMs = 0L;
+            this.anchorGameTime = gameTime;
+        } else if (this.playing != wasPlaying) {
+            this.anchorGameTime = gameTime;
+            if (!this.playing) {
+                this.anchorMediaMs = posBefore;
+            }
+        }
         setChanged();
         syncToClients();
     }
@@ -174,6 +251,8 @@ public class FrameBlockEntity extends BlockEntity {
         maxAudioDistance = readFloat(tag, "maxAudioDistance", 20.0F);
         loop = readBool(tag, "loop", true);
         playing = readBool(tag, "playing", true);
+        anchorGameTime = tag.getLong("anchorGameTime");
+        anchorMediaMs = tag.getLong("anchorMediaMs");
         muted = tag.getBoolean("muted");
         lit = readBool(tag, "lit", true);
         showFrame = readBool(tag, "showFrame", true);
@@ -201,6 +280,8 @@ public class FrameBlockEntity extends BlockEntity {
         tag.putFloat("maxAudioDistance", maxAudioDistance);
         tag.putBoolean("loop", loop);
         tag.putBoolean("playing", playing);
+        tag.putLong("anchorGameTime", anchorGameTime);
+        tag.putLong("anchorMediaMs", anchorMediaMs);
         tag.putBoolean("muted", muted);
         tag.putBoolean("lit", lit);
         tag.putBoolean("showFrame", showFrame);

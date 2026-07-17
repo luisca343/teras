@@ -48,6 +48,7 @@ public final class TerasNet {
         registrar.playToServer(DarCajaPayload.TYPE, DarCajaPayload.STREAM_CODEC, TerasNet::handleDarCajaRequest);
         registrar.playToServer(DexRegisterPayload.TYPE, DexRegisterPayload.STREAM_CODEC, TerasNet::handleDexRegister);
         registrar.playToServer(FrameConfigPayload.TYPE, FrameConfigPayload.STREAM_CODEC, TerasNet::handleFrameConfig);
+        registrar.playToServer(FramePlaybackPayload.TYPE, FramePlaybackPayload.STREAM_CODEC, TerasNet::handleFramePlayback);
         // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -93,6 +94,11 @@ public final class TerasNet {
 
     /** Sends a picture frame's edited configuration to the server; see {@link FrameConfigPayload}. */
     public static void sendFrameConfig(FrameConfigPayload payload) {
+        PacketDistributor.sendToServer(payload);
+    }
+
+    /** Sends a live playback command (play/pause/stop/seek) for a frame; see {@link FramePlaybackPayload}. */
+    public static void sendFramePlayback(FramePlaybackPayload payload) {
         PacketDistributor.sendToServer(payload);
     }
 
@@ -371,32 +377,54 @@ public final class TerasNet {
     /** Squared reach for editing a frame: the block must be near the editor, with slack for lag. */
     private static final double MAX_FRAME_EDIT_DISTANCE_SQR = 64.0 * 64.0;
 
+    /**
+     * The frame {@code sp} is allowed to edit/control at {@code pos}, or {@code null}. Editing media
+     * frames is a build-tool privilege (arbitrary URLs), so it is gated to creative/op and to a nearby
+     * block — never a forged packet from across the world.
+     */
+    private static es.boffmedia.teras.blockentity.FrameBlockEntity editableFrame(ServerPlayer sp, BlockPos pos) {
+        if (!sp.isCreative() && !sp.hasPermissions(CHAT_PERMISSION_LEVEL)) {
+            Teras.LOGGER.warn("Player {} tried to control a frame without permission", sp.getGameProfile().getName());
+            sp.sendSystemMessage(Component.translatable("message.teras.frame_no_permission"));
+            return null;
+        }
+        if (!sp.level().isLoaded(pos)) return null;
+        double distanceSqr = sp.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        if (distanceSqr > MAX_FRAME_EDIT_DISTANCE_SQR) {
+            Teras.LOGGER.warn("Frame command from {} {} blocks away; ignoring",
+                    sp.getGameProfile().getName(), String.format("%.1f", Math.sqrt(distanceSqr)));
+            return null;
+        }
+        return sp.level().getBlockEntity(pos) instanceof es.boffmedia.teras.blockentity.FrameBlockEntity frame
+                ? frame : null;
+    }
+
     private static void handleFrameConfig(FrameConfigPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer sp)) return;
-            // AUTHORITY CHECK: media frames point at arbitrary URLs, so editing is a build-tool
-            // privilege — only creative or op players, never any client that forges the packet.
-            if (!sp.isCreative() && !sp.hasPermissions(CHAT_PERMISSION_LEVEL)) {
-                Teras.LOGGER.warn("Player {} tried to configure a frame without permission",
-                        sp.getGameProfile().getName());
-                sp.sendSystemMessage(Component.translatable("message.teras.frame_no_permission"));
-                return;
-            }
-            BlockPos pos = payload.pos();
-            if (!sp.level().isLoaded(pos)) return;
-            double distanceSqr = sp.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-            if (distanceSqr > MAX_FRAME_EDIT_DISTANCE_SQR) {
-                Teras.LOGGER.warn("Frame edit from {} {} blocks away; ignoring",
-                        sp.getGameProfile().getName(), String.format("%.1f", Math.sqrt(distanceSqr)));
-                return;
-            }
-            if (sp.level().getBlockEntity(pos) instanceof es.boffmedia.teras.blockentity.FrameBlockEntity frame) {
-                frame.applyConfig(payload.url(), payload.minX(), payload.minY(), payload.maxX(), payload.maxY(),
-                        payload.rotation(), payload.flipX(), payload.flipY(),
-                        payload.bothSides(), payload.brightness(), payload.alpha(), payload.renderDistance(),
-                        payload.volume(), payload.minAudioDistance(), payload.maxAudioDistance(),
-                        payload.loop(), payload.playing(), payload.muted(), payload.lit(), payload.showFrame(),
-                        payload.anchorH(), payload.anchorV());
+            es.boffmedia.teras.blockentity.FrameBlockEntity frame = editableFrame(sp, payload.pos());
+            if (frame == null) return;
+            frame.applyConfig(payload.url(), payload.minX(), payload.minY(), payload.maxX(), payload.maxY(),
+                    payload.rotation(), payload.flipX(), payload.flipY(),
+                    payload.bothSides(), payload.brightness(), payload.alpha(), payload.renderDistance(),
+                    payload.volume(), payload.minAudioDistance(), payload.maxAudioDistance(),
+                    payload.loop(), payload.playing(), payload.muted(), payload.lit(), payload.showFrame(),
+                    payload.anchorH(), payload.anchorV());
+        });
+    }
+
+    private static void handleFramePlayback(FramePlaybackPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            es.boffmedia.teras.blockentity.FrameBlockEntity frame = editableFrame(sp, payload.pos());
+            if (frame == null) return;
+            switch (payload.action()) {
+                case FramePlaybackPayload.PLAY -> frame.playbackPlay();
+                case FramePlaybackPayload.PAUSE -> frame.playbackPause();
+                case FramePlaybackPayload.STOP -> frame.playbackStop();
+                case FramePlaybackPayload.SEEK -> frame.playbackSeek(payload.arg());
+                default -> Teras.LOGGER.warn("Unknown frame playback action {} from {}",
+                        payload.action(), sp.getGameProfile().getName());
             }
         });
     }

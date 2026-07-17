@@ -9,21 +9,27 @@ import net.minecraft.util.Mth;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 
+import java.util.function.LongConsumer;
 import java.util.function.Supplier;
 
 /**
- * A scrub bar for the frame editor: shows the local player's position and lets you drag to seek. The
- * seek is viewer-local (this client's playback only) — a synchronized cinema would need server tick
- * sync, which the frame does not yet do. Inert unless a seekable video with a known length is live.
+ * The shared-cinema scrub bar. It shows this client's synced position (which tracks the server clock)
+ * and, on release of a drag, issues a synced {@code SEEK} so every viewer jumps together — the drag
+ * itself only moves a local preview knob, so the bar doesn't fight the clock mid-drag. Inert unless a
+ * seekable video with a known length is live.
  */
 @OnlyIn(Dist.CLIENT)
 class FrameTimeline extends AbstractWidget {
 
     private final Supplier<FrameMedia> media;
+    private final LongConsumer onSeek;
+    private boolean dragging;
+    private float dragFrac;
 
-    FrameTimeline(int x, int y, int width, int height, Supplier<FrameMedia> media) {
+    FrameTimeline(int x, int y, int width, int height, Supplier<FrameMedia> media, LongConsumer onSeek) {
         super(x, y, width, height, Component.translatable("gui.teras.frame_timeline"));
         this.media = media;
+        this.onSeek = onSeek;
     }
 
     private FrameMedia video() {
@@ -36,7 +42,8 @@ class FrameTimeline extends AbstractWidget {
         FrameMedia m = video();
         long duration = m == null ? 0L : m.duration();
         long time = m == null ? 0L : m.time();
-        float frac = duration > 0L ? Mth.clamp((float) time / duration, 0.0F, 1.0F) : 0.0F;
+        float frac = dragging ? dragFrac : (duration > 0L ? Mth.clamp((float) time / duration, 0.0F, 1.0F) : 0.0F);
+        long shownTime = dragging ? (long) (dragFrac * duration) : time;
 
         int trackY = getY() + getHeight() / 2 - 1;
         graphics.fill(getX(), trackY, getX() + getWidth(), trackY + 2, 0xFF555555);
@@ -46,27 +53,40 @@ class FrameTimeline extends AbstractWidget {
         graphics.fill(knobX - 1, getY(), knobX + 1, getY() + getHeight(), 0xFFFFFFFF);
 
         var font = Minecraft.getInstance().font;
-        String label = m == null ? "--:-- / --:--" : format(time) + " / " + format(duration);
+        String label = m == null ? "--:-- / --:--" : format(shownTime) + " / " + format(duration);
         graphics.drawString(font, label, getX(), getY() - 10, 0xA0A0A0);
     }
 
     @Override
     public void onClick(double mouseX, double mouseY) {
-        seek(mouseX);
+        if (video() == null) {
+            return;
+        }
+        dragging = true;
+        dragFrac = fracAt(mouseX);
     }
 
     @Override
     protected void onDrag(double mouseX, double mouseY, double dragX, double dragY) {
-        seek(mouseX);
+        if (dragging) {
+            dragFrac = fracAt(mouseX);
+        }
     }
 
-    private void seek(double mouseX) {
-        FrameMedia m = video();
-        if (m == null) {
+    @Override
+    public void onRelease(double mouseX, double mouseY) {
+        if (!dragging) {
             return;
         }
-        float frac = (float) Mth.clamp((mouseX - getX()) / getWidth(), 0.0, 1.0);
-        m.seekTo((long) (frac * m.duration()));
+        dragging = false;
+        FrameMedia m = video();
+        if (m != null && m.duration() > 0L) {
+            onSeek.accept((long) (dragFrac * m.duration()));
+        }
+    }
+
+    private float fracAt(double mouseX) {
+        return (float) Mth.clamp((mouseX - getX()) / getWidth(), 0.0, 1.0);
     }
 
     private static String format(long ms) {

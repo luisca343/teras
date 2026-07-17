@@ -172,7 +172,10 @@ public class FrameRenderer implements BlockEntityRenderer<FrameBlockEntity> {
             return 0L;
         }
         int volume = frame.isMuted() ? 0 : attenuatedVolume(frame, distance);
-        return media.texture(frame.isPlaying(), frame.isLoop(), volume);
+        // Shared game time -> the position every viewer agrees on; FrameMedia seeks to it if it drifts.
+        long gameTime = frame.getLevel() != null ? frame.getLevel().getGameTime() : 0L;
+        long expectedMs = frame.currentMediaMs(gameTime);
+        return media.texture(frame.isPlaying(), frame.isLoop(), volume, expectedMs);
     }
 
     /** Block/sky light at the frame as a 0.1-1 dim factor (never fully black), for the un-lit mode. */

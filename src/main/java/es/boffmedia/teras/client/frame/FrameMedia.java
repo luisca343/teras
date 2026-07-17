@@ -33,11 +33,14 @@ final class FrameMedia {
     private MediaPlayer player;
     private Boolean lastLoop;
     private int lastVolume = -1;
+    private long lastSyncTarget = Long.MIN_VALUE;
     /** After a load failure, don't retry until this wall-clock time — a bad URL must not be hammered. */
     private long retryAfterMs = 0L;
 
     /** Cooldown between load attempts after a failure. */
     private static final long RETRY_COOLDOWN_MS = 10_000L;
+    /** Drift (ms) tolerated before re-seeking to the shared clock — avoids constant corrections. */
+    private static final long SYNC_THRESHOLD_MS = 750L;
 
     FrameMedia(String rawUrl) {
         this.rawUrl = rawUrl;
@@ -48,12 +51,32 @@ final class FrameMedia {
      * fetching/decoding or between failed attempts. {@code volume} is the already-attenuated 0-100
      * gain for this viewer. Call only on the render thread.
      */
-    long texture(boolean playing, boolean loop, int volume) {
+    long texture(boolean playing, boolean loop, int volume, long expectedMs) {
         if (player == null && !createPlayer(playing, loop)) {
             return 0L;
         }
         syncState(playing, loop, volume);
+        syncClock(loop, expectedMs);
         return player.texture();
+    }
+
+    /**
+     * Nudges this client's player toward the shared cinema clock: {@code expectedMs} is the unbounded
+     * position the server's anchor implies, wrapped here with the local duration (only the client knows
+     * it). Seeks only past a drift threshold, and not twice to the same target, so it corrects without
+     * fighting normal playback.
+     */
+    private void syncClock(boolean loop, long expectedMs) {
+        long duration = player.duration();
+        if (duration <= 0L) {
+            return; // image or unknown length — nothing to sync
+        }
+        long target = loop ? Math.floorMod(expectedMs, duration) : Math.min(expectedMs, duration);
+        long actual = player.time();
+        if (Math.abs(target - actual) > SYNC_THRESHOLD_MS && Math.abs(target - lastSyncTarget) > SYNC_THRESHOLD_MS) {
+            player.seek(target);
+            lastSyncTarget = target;
+        }
     }
 
     int width() {
@@ -75,13 +98,6 @@ final class FrameMedia {
 
     long time() {
         return player == null ? 0L : player.time();
-    }
-
-    /** Viewer-local scrub from the editor's timeline; not broadcast to other players. */
-    void seekTo(long ms) {
-        if (player != null) {
-            player.seek(ms);
-        }
     }
 
     private boolean createPlayer(boolean playing, boolean loop) {
