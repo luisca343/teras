@@ -1,6 +1,7 @@
 package es.boffmedia.teras.client;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.client.camera.CameraZoom;
 import es.boffmedia.teras.client.renders.IItemRenderer;
 import es.boffmedia.teras.client.renders.SmartRotomRenderer;
 import es.boffmedia.teras.init.ItemInit;
@@ -43,8 +44,21 @@ public final class ClientEvents {
     private static final int GC_INTERVAL_TICKS = 10;
     private static int tickCounter = 0;
 
+    /**
+     * The mod's only {@link RenderHandEvent} listener, for both the SmartRotom render and the camera's
+     * hiding of it. A second listener could not do either job: cancelling is how each takes effect, and
+     * NeoForge skips the rest once an event is cancelled — so the two would race, and whichever ran
+     * first would silently win.
+     */
     @SubscribeEvent
     public static void onRenderPlayerHand(RenderHandEvent ev) {
+        // Camera mode draws no hands at all: cancel before the SmartRotom check, since this hand may be
+        // the one holding it, and SmartRotomRenderer draws the arm itself as well as the item.
+        if (CameraZoom.isActive()) {
+            ev.setCanceled(true);
+            return;
+        }
+
         if (!ItemInit.SMARTROTOM.isBound() || ev.getItemStack().getItem() != ItemInit.SMARTROTOM.get()) {
             return;
         }

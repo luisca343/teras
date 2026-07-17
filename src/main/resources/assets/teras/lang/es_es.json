@@ -11,5 +11,10 @@
   "block.teras.caca_de_waifu": "Caca de Waifu",
   "block.teras.sake": "Sake",
   "block.teras.itamilk": "Itamilk",
-  "itemGroup.teras": "Teras"
+  "itemGroup.teras": "Teras",
+  "key.categories.teras": "Teras",
+  "key.teras.camera_zoom_in": "Acercar cámara",
+  "key.teras.camera_zoom_out": "Alejar cámara",
+  "key.teras.camera_flashlight": "Linterna de la cámara",
+  "gui.teras.camera_flashlight": "LUZ"
 }

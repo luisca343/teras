@@ -3,6 +3,7 @@ package es.boffmedia.teras.client;
 import com.cinemamod.mcef.MCEFBrowser;
 import com.google.gson.Gson;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.client.camera.CameraZoom;
 import es.boffmedia.teras.client.gui.PantallaSmartRotom;
 import es.boffmedia.teras.dex.api.DexScan;
 import es.boffmedia.teras.items.SmartRotom;
@@ -48,6 +49,20 @@ public final class TerasClient {
         // Gson, not concatenation: the form reaches JS as a string literal.
         TerasMCEF.runJS(SmartRotom.getId(stack),
                 "openDex(" + scan.dex() + ", " + GSON.toJson(scan.form()) + ")");
+    }
+
+    /**
+     * Fires the camera shutter if {@code stack}'s browser is on the camera page, and reports whether it
+     * did. The page's own {@code takeScreenshot()} then queries back for the capture, so the options
+     * (format, UI, quality) stay the page's to choose.
+     */
+    public static boolean tryCameraShutter(ItemStack stack) {
+        UUID id = CameraZoom.cameraIdOf(stack);
+        if (id == null) {
+            return false;
+        }
+        TerasMCEF.runJS(id, "takeScreenshot()");
+        return true;
     }
 
     /** Opens the SmartRotom browser screen for the given item's own browser instance. */
