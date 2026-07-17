@@ -17,22 +17,15 @@ import java.util.function.Consumer;
 /**
  * The player-balance cache in front of <b>starbank</b>, which is the source of truth.
  *
- * <p>Replaces the 1.16.5 {@code Wungill.datosUsuario} map + {@code FileHelper} user files. The cache
- * is not optional: Pixelmon's {@code BankAccount#getBalance} is synchronous, and starbank is a network
- * hop, so a balance must already be in memory by the time the game asks.</p>
+ * <p>The cache is not optional: Pixelmon's {@code BankAccount#getBalance} is synchronous and starbank
+ * is a network hop, so a balance must already be in memory when the game asks. Kept free of engine
+ * imports so a Cobblemon (or engine-less) server can still load the economy;
+ * {@code economy.pixelmon.TerasBankAccount} adapts it to Pixelmon.</p>
  *
- * <p>Deliberately free of engine imports — {@code economy.pixelmon.TerasBankAccount} adapts this to
- * Pixelmon's API, so a Cobblemon (or engine-less) server can still load and use the economy.</p>
- *
- * <h2>Unknown is not zero</h2>
- * A player whose balance has not been loaded is <b>unknown</b>, not broke. Every read fails closed:
- * {@link #has} is {@code false} and {@link #withdraw} refuses, rather than letting someone spend
- * against a balance we never confirmed and then writing that fiction back to starbank. The 1.16.5 code
- * had no such state — {@code getBalance} did {@code datosUsuario.get(uuid).getDinero()} and threw a
- * {@link NullPointerException} if the player wasn't loaded.
- *
- * <p>This means a starbank outage leaves players unable to spend. That is the intended trade: refusing
- * a purchase is recoverable, corrupting the ledger is not.</p>
+ * <p>Unknown is not zero: a player whose balance has not loaded is unknown, and every read fails closed
+ * ({@link #has} is {@code false}, {@link #withdraw} refuses) rather than spending against an
+ * unconfirmed balance. A starbank outage therefore blocks spending — refusing a purchase is
+ * recoverable, corrupting the ledger is not.</p>
  */
 public final class EconomyStore {
     private EconomyStore() {}
@@ -41,12 +34,10 @@ public final class EconomyStore {
     private static final Map<UUID, BigDecimal> BALANCES = new ConcurrentHashMap<>();
 
     /**
-     * Single-thread lane for every starbank <b>write</b> this class (and the shop sync) originates.
-     * Ordering is the point, not throughput: the generic funnel writes absolute balances
-     * ({@code /set-balance}), while the shop channel writes deltas ({@code /shop}) — if a set computed
-     * after a shop delta could overtake it on the wire, the delta would be applied twice. One thread,
-     * FIFO, makes "enqueued after" mean "lands after". {@link Teras#EXECUTOR} is a cached <i>pool</i>
-     * and gives no such guarantee.
+     * Single-thread FIFO lane for every starbank write this class and the shop sync originate. Ordering
+     * matters: the funnel writes absolute balances ({@code /set-balance}) and the shop writes deltas
+     * ({@code /shop}); a set must not overtake a delta on the wire or the delta applies twice.
+     * {@link Teras#EXECUTOR} is a pool and gives no such guarantee.
      */
     private static final ExecutorService SYNC_LANE = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Teras-Starbank-Sync");
@@ -55,11 +46,9 @@ public final class EconomyStore {
     });
 
     /**
-     * Players whose <b>next</b> deposit/withdraw must not be mirrored to starbank because a specific
-     * reporter owns that write ({@code PixelmonShopSync} arms this at {@code ShopEvent.*.Pre} and posts
-     * {@code /shop} itself). One-shot: the single bank mutation a shop transaction performs consumes
-     * it, and the {@code Post} handler disarms defensively, so a cancelled Pre can at worst swallow one
-     * later sync instead of muting the player forever.
+     * Players whose next deposit/withdraw must not be mirrored to starbank because a specific reporter
+     * owns that write ({@code PixelmonShopSync} arms it and posts {@code /shop} itself). One-shot: the
+     * single mutation a shop transaction performs consumes it.
      */
     private static final Set<UUID> SKIP_NEXT_SYNC = ConcurrentHashMap.newKeySet();
 
@@ -83,11 +72,10 @@ public final class EconomyStore {
     }
 
     /**
-     * Notified with a player's uuid whenever their balance changes, so an engine layer can refresh the
-     * in-game display — Pixelmon caches the shown PokéDollar count on the client and only updates it
-     * when a balance packet is sent, so a cache change is otherwise invisible. Engine-free: the Pixelmon
-     * hook registers the actual push ({@code economy.pixelmon.PixelmonEconomyHook}). Port of the 1.16.5
-     * Wungill {@code EconomyUpdateEvent} → {@code UpdateListener}.
+     * Notified with a player's uuid on every balance change so an engine layer can refresh the in-game
+     * display — Pixelmon caches the shown PokéDollar count on the client and only updates it when a
+     * balance packet is sent, so a cache change is otherwise invisible. The Pixelmon hook registers the
+     * actual push ({@code economy.pixelmon.PixelmonEconomyHook}).
      */
     private static final List<Consumer<UUID>> CHANGE_LISTENERS = new CopyOnWriteArrayList<>();
 
@@ -178,16 +166,11 @@ public final class EconomyStore {
     }
 
     /**
-     * Credits {@code amount} in the cache and mirrors the change to starbank. Refuses when the balance
-     * is unknown: the local sum would be computed from a fiction.
-     *
-     * <p>This is the generic funnel: every engine credit without its own backend channel lands here —
-     * PayDay/Gold Rush payouts, NPC "give money" interactions (trainer winnings), {@code /givemoney},
-     * {@code /transfer}. None of them fire a Pixelmon event, so this is the only place they are all
-     * visible; the mirror is a {@code /set-balance} with a generic memo (the funnel sees an amount, not
-     * a cause). Flows that <i>do</i> have their own channel opt out: the shop listener arms
-     * {@link #skipNextSync} and posts {@code /shop}, and the trainer-defeat backend callback uses
-     * {@link #mirrorDeposit}.</p>
+     * Credits {@code amount} in the cache and mirrors it to starbank; refuses when the balance is
+     * unknown (the sum would be computed from a fiction). The generic funnel — every engine credit
+     * without its own backend channel (payouts, {@code /givemoney}, {@code /transfer}) lands here and
+     * syncs a {@code /set-balance}. Flows with their own channel opt out via {@link #skipNextSync} or
+     * {@link #mirrorDeposit}.
      */
     public static boolean deposit(UUID playerId, BigDecimal amount) {
         if (!isPositive(amount) || !isLoaded(playerId)) {
@@ -202,9 +185,8 @@ public final class EconomyStore {
     }
 
     /**
-     * Credits {@code amount} in the cache <b>without</b> the starbank mirror — for changes the backend
-     * itself originated and already ledgered (the trainer-defeat callback credits us and diffs the
-     * returned total; mirroring it back would double-count).
+     * Credits {@code amount} in the cache without the starbank mirror — for changes the backend
+     * originated and already ledgered (mirroring back would double-count).
      */
     public static boolean mirrorDeposit(UUID playerId, BigDecimal amount) {
         if (!isPositive(amount) || !isLoaded(playerId)) {
@@ -216,13 +198,8 @@ public final class EconomyStore {
     }
 
     /**
-     * Debits {@code amount} in the cache and mirrors the change to starbank (see {@link #deposit});
-     * {@code false} (and no mutation) when the balance is unknown or insufficient. Generic debits are
-     * daycare fees and the take side of {@code /transfer}.
-     *
-     * <p>The insufficient-funds check is a <b>fix</b>, not a port: 1.16.5 {@code WungillEconomy.withdraw}
-     * subtracted unconditionally and always reported {@code SUCCESS}, so {@code PixelBank#take} told
-     * Pixelmon every purchase succeeded and balances could go negative.</p>
+     * Debits {@code amount} in the cache and mirrors it to starbank (see {@link #deposit}); {@code false}
+     * with no mutation when the balance is unknown or insufficient.
      */
     public static boolean withdraw(UUID playerId, BigDecimal amount) {
         if (!isPositive(amount) || !has(playerId, amount)) {
@@ -237,8 +214,8 @@ public final class EconomyStore {
     }
 
     /**
-     * Arms the one-shot "this change has its own backend channel" flag (see {@link #SKIP_NEXT_SYNC}).
-     * Call immediately before a bank mutation whose backend write the caller performs itself.
+     * Arms the one-shot skip flag (see {@link #SKIP_NEXT_SYNC}). Call immediately before a bank
+     * mutation whose backend write the caller performs itself.
      */
     public static void skipNextSync(UUID playerId) {
         if (playerId != null) {
@@ -254,9 +231,8 @@ public final class EconomyStore {
     }
 
     /**
-     * Explicitly requests a funnel sync of this player's balance with a caller-supplied ledger memo —
-     * the escape hatch for an owned flow that mutated the cache but could not complete its own backend
-     * write (e.g. a shop transaction whose price could not be resolved).
+     * Requests a funnel sync with a caller-supplied memo — the escape hatch for an owned flow that
+     * mutated the cache but could not complete its own backend write.
      */
     public static void requestSync(UUID playerId, String concept) {
         if (playerId != null && isLoaded(playerId)) {
@@ -265,20 +241,18 @@ public final class EconomyStore {
     }
 
     /**
-     * Runs {@code task} on the ordered starbank write lane. Backend writes that move money and race the
-     * funnel's absolute sets ({@code PixelmonShopSync}'s {@code /shop} posts) must go through here, so
-     * a set enqueued after a delta can never overtake it.
+     * Runs {@code task} on the ordered starbank write lane, so a set enqueued after a delta can never
+     * overtake it (see {@link #SYNC_LANE}).
      */
     public static void runOrdered(Runnable task) {
         SYNC_LANE.execute(task);
     }
 
     /**
-     * The default {@link SyncDispatcher}: posts {@code /set-balance} from {@link #SYNC_LANE}. The
-     * target is re-read <b>at send time</b> — between enqueue and send, an owned backend flow (a
-     * trainer-defeat callback, a backend push) may have moved the cache, and an absolute set computed
+     * Default dispatcher: posts {@code /set-balance} from {@link #SYNC_LANE}. The target is re-read at
+     * send time — an owned backend flow may have moved the cache between enqueue and send, and a set
      * from a stale snapshot would undo it. The enqueue-time value only serves a player who logged out
-     * meanwhile (their cache entry is gone, but their credit must still land).
+     * meanwhile.
      */
     private static void dispatchToBackend(UUID playerId, String concept, BigDecimal fallbackTarget) {
         SYNC_LANE.execute(() -> {
@@ -291,11 +265,9 @@ public final class EconomyStore {
     }
 
     /**
-     * Sets the balance outright (admin/backend correction). Unlike {@link #deposit}/{@link #withdraw},
-     * this <i>does</i> write through — the backend has an absolute-set route that diffs and ledgers the
-     * adjustment itself, so there is no double-count and no metadata to carry. The write is dispatched
-     * off-thread ({@link SmartRotomService#setBalance} blocks); the cache is set optimistically and the
-     * next {@link #load} reconciles if the backend rejected it.
+     * Sets the balance outright (admin/backend correction). Unlike {@link #deposit}/{@link #withdraw}
+     * this writes through — the backend's absolute-set route diffs and ledgers the adjustment itself.
+     * Cache is set optimistically; the next {@link #load} reconciles if the backend rejected it.
      */
     public static boolean set(UUID playerId, BigDecimal amount) {
         if (playerId == null || amount == null || amount.signum() < 0) {
