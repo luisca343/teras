@@ -1,9 +1,11 @@
 package es.boffmedia.teras.init;
 
+import com.mojang.serialization.Codec;
 import es.boffmedia.teras.Teras;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -29,5 +31,16 @@ public final class ComponentInit {
             COMPONENTS.register("smartrotom_id", () -> DataComponentType.<UUID>builder()
                     .persistent(UUIDUtil.CODEC)
                     .networkSynchronized(UUIDUtil.STREAM_CODEC)
+                    .build());
+
+    /**
+     * A funko's skin PNG inside {@code Teras/skins/} — the port of the 1.16.5 {@code SkinFile} NBT key.
+     * The other funko skin mode (a player) needs no component of its own: it reuses vanilla's
+     * {@link net.minecraft.core.component.DataComponents#PROFILE}, exactly as player heads do.
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<String>> FUNKO_SKIN_FILE =
+            COMPONENTS.register("funko_skin_file", () -> DataComponentType.<String>builder()
+                    .persistent(Codec.STRING)
+                    .networkSynchronized(ByteBufCodecs.STRING_UTF8)
                     .build());
 }

@@ -1,0 +1,6 @@
+{
+  "__comment": "Intentionally empty: the funko statue is drawn entirely by FunkoTERenderer. Only a particle texture is provided for break effects.",
+  "textures": {
+    "particle": "teras:block/funko"
+  }
+}

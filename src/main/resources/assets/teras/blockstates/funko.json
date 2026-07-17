@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "teras:block/funko_empty" },
+    "facing=south": { "model": "teras:block/funko_empty" },
+    "facing=west":  { "model": "teras:block/funko_empty" },
+    "facing=east":  { "model": "teras:block/funko_empty" }
+  }
+}
