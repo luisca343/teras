@@ -173,7 +173,7 @@ public class FrameBlockEntity extends BlockEntity {
         this.minY = clampCoord(minY);
         this.maxX = Math.max(this.minX, clampCoord(maxX));
         this.maxY = Math.max(this.minY, clampCoord(maxY));
-        this.rotation = rotation;
+        this.rotation = clampRotation(rotation);
         this.flipX = flipX;
         this.flipY = flipY;
         this.bothSides = bothSides;
@@ -206,8 +206,21 @@ public class FrameBlockEntity extends BlockEntity {
         syncToClients();
     }
 
+    /** NaN maps to 0: the comparisons below are both false for it, so it would otherwise pass through. */
     private static float clamp01(float v) {
+        if (Float.isNaN(v)) {
+            return 0.0F;
+        }
         return v < 0 ? 0 : (v > 1 ? 1 : v);
+    }
+
+    /** Degrees, wrapped to [0,360). A non-finite rotation reaches the renderer as a NaN quad. */
+    private static float clampRotation(float degrees) {
+        if (!Float.isFinite(degrees)) {
+            return 0.0F;
+        }
+        float wrapped = degrees % 360.0F;
+        return wrapped < 0 ? wrapped + 360.0F : wrapped;
     }
 
     private static byte clampAnchor(byte a) {

@@ -21,7 +21,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
@@ -91,6 +95,8 @@ public final class TerasHttpServer {
     private static final long USER_TIMEOUT_SECONDS = 10;
     /** Under the backend's 10s axios timeout: past it the caller has given up while the row is spent. */
     private static final long GIVE_TIMEOUT_SECONDS = 8;
+    /** Extra wait for a give that had already started when {@link #GIVE_TIMEOUT_SECONDS} expired. */
+    private static final long GIVE_GRACE_SECONDS = 2;
     private static final int SHUTDOWN_DELAY_SECONDS = 1;
 
     private static HttpServer server;
@@ -231,8 +237,9 @@ public final class TerasHttpServer {
         }
         try {
             GiveRequests.PokemonGive req = GiveRequests.parsePokemon(readBody(exchange));
-            boolean given = onServerThread(mc,
-                    () -> es.boffmedia.teras.http.GiveService.givePokemon(mc, req), GIVE_TIMEOUT_SECONDS);
+            boolean given = onServerThreadOrAbandon(mc,
+                    () -> es.boffmedia.teras.http.GiveService.givePokemon(mc, req),
+                    GIVE_TIMEOUT_SECONDS, false);
             if (!given) {
                 Teras.LOGGER.error("givePokemon SPENT AND LOST for {}: spec '{}' was not delivered "
                         + "(offline, unparseable, or no engine)", req.uuid(), req.pokespec());
@@ -257,8 +264,9 @@ public final class TerasHttpServer {
         }
         try {
             GiveRequests.ItemsGive req = GiveRequests.parseItems(readBody(exchange));
-            int given = onServerThread(mc,
-                    () -> es.boffmedia.teras.http.GiveService.giveItems(mc, req), GIVE_TIMEOUT_SECONDS);
+            int given = onServerThreadOrAbandon(mc,
+                    () -> es.boffmedia.teras.http.GiveService.giveItems(mc, req),
+                    GIVE_TIMEOUT_SECONDS, -1);
             if (given < 0) {
                 Teras.LOGGER.error("giveItems SPENT AND LOST for {}: {} was not delivered (player offline)",
                         req.uuid(), req.items());
@@ -377,6 +385,49 @@ public final class TerasHttpServer {
             throw new IllegalStateException("Interrupted waiting for the server thread", e);
         } catch (Exception e) {
             throw new IllegalStateException("Timed out waiting for the server thread", e);
+        }
+    }
+
+    /**
+     * Like {@link #onServerThread}, but the work is <b>abandoned</b> rather than merely un-awaited if it
+     * has not started by the time the wait expires.
+     *
+     * <p>Only correct for the give routes, and required there. {@code mc.submit} queues the work; a
+     * timeout ends our wait but not the task, so a plain {@code onServerThread} answers 503 and then
+     * hands over the item anyway. The backend rolls the spend back on that 503 (its axios timeout is
+     * 10s, ours is {@value #GIVE_TIMEOUT_SECONDS}), so the player keeps a free item.</p>
+     *
+     * <p>{@code claim} decides who acts: if we win it the work no-ops and 503 is truthful; if the work
+     * already won it, the give is happening and only its real result can be reported, so we wait out a
+     * short grace period for it. A give that outlasts even that still answers 503 having possibly
+     * delivered — closing that last window needs an idempotency key threaded through to the backend,
+     * which is tracked separately.</p>
+     */
+    private static <T> T onServerThreadOrAbandon(MinecraftServer mc, Supplier<T> work,
+                                                 long timeoutSeconds, T abandoned) {
+        AtomicBoolean claim = new AtomicBoolean();
+        Future<T> pending = mc.submit(() -> claim.compareAndSet(false, true) ? work.get() : abandoned);
+        try {
+            return pending.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            claim.set(true);
+            throw new IllegalStateException("Interrupted waiting for the server thread", e);
+        } catch (TimeoutException e) {
+            if (claim.compareAndSet(false, true)) {
+                throw new IllegalStateException("Timed out waiting for the server thread", e);
+            }
+            try {
+                return pending.get(GIVE_GRACE_SECONDS, TimeUnit.SECONDS);
+            } catch (InterruptedException grace) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted awaiting an in-flight give", grace);
+            } catch (Exception grace) {
+                throw new IllegalStateException("A give was in flight when the wait expired and did "
+                        + "not report back; it may have been delivered", grace);
+            }
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("The give failed on the server thread", e);
         }
     }
 

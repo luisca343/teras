@@ -72,8 +72,13 @@ public final class BattleTower {
                 + streak(player, data.getString(KEY_MODALITY)) + "§a victorias.");
     }
 
-    private static boolean active(ServerPlayer player) {
+    /** True while the player is in a tower run — some actions (opening the PC) are refused during one. */
+    public static boolean isActive(ServerPlayer player) {
         return player.getPersistentData().getBoolean(KEY_ACTIVE);
+    }
+
+    private static boolean active(ServerPlayer player) {
+        return isActive(player);
     }
 
     private static void nextRound(ServerPlayer player) {
@@ -97,7 +102,8 @@ public final class BattleTower {
                 return;
             }
             server.execute(() -> {
-                BattleOutcomeHandler.addEndListener(player.getUUID(), won -> onRoundEnd(player, won));
+                BattleOutcomeHandler.addEndListener(player.getUUID(),
+                        (endedConfig, won) -> onRoundEnd(player, modality, endedConfig, won));
                 try {
                     provider.startConfigBattle(player, config);
                 } catch (Exception e) {
@@ -109,9 +115,20 @@ public final class BattleTower {
         });
     }
 
-    private static void onRoundEnd(ServerPlayer player, boolean won) {
+    /**
+     * Applies a finished round to the streak, ignoring any battle that isn't the round this listener
+     * was registered for — an unrelated fight would otherwise advance or reset the streak.
+     */
+    private static void onRoundEnd(ServerPlayer player, String roundModality,
+                                   BattleConfig endedConfig, boolean won) {
         CompoundTag data = player.getPersistentData();
         if (!data.getBoolean(KEY_ACTIVE)) {
+            return;
+        }
+        if (!isThisRound(endedConfig, roundModality)) {
+            Teras.LOGGER.debug("Ignoring battle end for '{}' — not the tower round '{}' this listener "
+                    + "was registered for", endedConfig == null ? null : endedConfig.getNombreArchivo(),
+                    roundModality);
             return;
         }
         String modality = data.getString(KEY_MODALITY);
@@ -132,6 +149,13 @@ public final class BattleTower {
                     + (PRIZE_STREAK - streak) + "§a para el premio.");
         }
         promptNext(player);
+    }
+
+    /** True when {@code config} is the tower battle for {@code modality} — folder and id both match. */
+    private static boolean isThisRound(BattleConfig config, String modality) {
+        return config != null
+                && "torre".equals(config.getCarpeta())
+                && modality != null && modality.equals(config.getNombreArchivo());
     }
 
     /** Sends the clickable [Siguiente Combate] / [Salir] prompt. */

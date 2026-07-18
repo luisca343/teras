@@ -28,7 +28,7 @@ public final class TerasNet {
     private TerasNet() {}
 
     private static final Gson GSON = new Gson();
-    private static final int CHAT_PERMISSION_LEVEL = 2; // OP/gamemaster, matches 1.16.5
+    private static final int ADMIN_PERMISSION_LEVEL = 2; // OP/gamemaster, matches 1.16.5
 
     /**
      * Server-side bound on a dex scan, squared: the item's range plus slack for movement between the
@@ -49,6 +49,9 @@ public final class TerasNet {
         registrar.playToServer(DexRegisterPayload.TYPE, DexRegisterPayload.STREAM_CODEC, TerasNet::handleDexRegister);
         registrar.playToServer(FrameConfigPayload.TYPE, FrameConfigPayload.STREAM_CODEC, TerasNet::handleFrameConfig);
         registrar.playToServer(FramePlaybackPayload.TYPE, FramePlaybackPayload.STREAM_CODEC, TerasNet::handleFramePlayback);
+        registrar.playToServer(SetCallPayload.TYPE, SetCallPayload.STREAM_CODEC, TerasNet::handleSetCall);
+        registrar.playToServer(LeaveCallPayload.TYPE, LeaveCallPayload.STREAM_CODEC, TerasNet::handleLeaveCall);
+        registrar.playToServer(OpenPCPayload.TYPE, OpenPCPayload.STREAM_CODEC, TerasNet::handleOpenPC);
         // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -92,6 +95,21 @@ public final class TerasNet {
         PacketDistributor.sendToServer(new DexRegisterPayload(entityId));
     }
 
+    /** Asks the server to place this player in the voice group for {@code chatId}; see {@link SetCallPayload}. */
+    public static void requestSetCall(long requestId, String chatId) {
+        PacketDistributor.sendToServer(new SetCallPayload(requestId, chatId));
+    }
+
+    /** Asks the server to remove this player from any voice group; see {@link LeaveCallPayload}. */
+    public static void requestLeaveCall(long requestId) {
+        PacketDistributor.sendToServer(new LeaveCallPayload(requestId));
+    }
+
+    /** Asks the server to open this player's PC; see {@link OpenPCPayload}. */
+    public static void requestOpenPC(long requestId) {
+        PacketDistributor.sendToServer(new OpenPCPayload(requestId));
+    }
+
     /** Sends a picture frame's edited configuration to the server; see {@link FrameConfigPayload}. */
     public static void sendFrameConfig(FrameConfigPayload payload) {
         PacketDistributor.sendToServer(payload);
@@ -108,7 +126,7 @@ public final class TerasNet {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer sp)) return;
             // AUTHORITY CHECK: only privileged players may broadcast a server-wide system message.
-            if (!sp.hasPermissions(CHAT_PERMISSION_LEVEL)) {
+            if (!sp.hasPermissions(ADMIN_PERMISSION_LEVEL)) {
                 Teras.LOGGER.warn("Player {} attempted to broadcast a chat message without permission",
                         sp.getGameProfile().getName());
                 return;
@@ -141,7 +159,7 @@ public final class TerasNet {
             json.addProperty("x", sp.getX());
             json.addProperty("y", sp.getY());
             json.addProperty("z", sp.getZ());
-            json.addProperty("op", sp.hasPermissions(CHAT_PERMISSION_LEVEL));
+            json.addProperty("op", sp.hasPermissions(ADMIN_PERMISSION_LEVEL));
             // Which darCaja contract this jar speaks. The page branches on it: present -> it sends a
             // {source} and lets the backend pick the items; ABSENT -> it falls back to 1.16.5's
             // {objetos}, where the page names them. Both populations exist at once (the page redeploys
@@ -205,8 +223,7 @@ public final class TerasNet {
     }
 
     /**
-     * Redeems what the sender is owed from {@code source} (narrowed to {@code payload.ids()}) and gives
-     * it to them: items as chests, Pokémon to the party.
+     * Redeems what the sender is owed from {@code source} (narrowed to {@code payload.ids()}).
      *
      * <p>AUTHORITY: the uuid comes off the connection, never the page — that is the whole security
      * boundary. The page contributes only a source string and a row-id selector; the backend picks the
@@ -215,10 +232,7 @@ public final class TerasNet {
      * owed", because the phrase is not well-defined across sources that disagree about what
      * {@code used} means.</p>
      *
-     * <p>Delivery is two-phase (DARCAJA.md §7): <b>reserve</b> soft-locks the owed rows without
-     * spending, we deliver, then <b>confirm</b> spends them. If the player is gone before delivery we
-     * skip the confirm and the reservation expires back to claimable — the disconnect case is now
-     * recoverable, not lost.</p>
+     * <p>The two-phase delivery itself lives in {@code caja.CajaDeliveryService}.</p>
      */
     private static void handleDarCajaRequest(DarCajaPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -232,103 +246,9 @@ public final class TerasNet {
                 replyError(sp, payload.requestId(), "invalid source");
                 return;
             }
-            java.util.UUID uuid = sp.getUUID();
-            // The reserve blocks on HTTP; on this thread it would stall the tick. Hop out, then back:
-            // the grant touches the player's party/inventory and must land on the server thread again.
-            Teras.EXECUTOR.execute(() -> {
-                es.boffmedia.teras.util.net.SmartRotomService.Reservation reservation =
-                        es.boffmedia.teras.util.net.SmartRotomService.reserveCaja(uuid, source, payload.ids());
-                server.execute(() -> deliverCaja(server, uuid, source, payload.requestId(), reservation));
-            });
+            es.boffmedia.teras.caja.ServerCajaRuntime.claim(
+                    server, sp.getUUID(), source, payload.ids(), payload.requestId());
         });
-    }
-
-    /** Server thread: hands over the reserved grant, says so exactly once, then confirms the spend. */
-    private static void deliverCaja(MinecraftServer server, java.util.UUID uuid, String source,
-                                    long requestId,
-                                    es.boffmedia.teras.util.net.SmartRotomService.Reservation reservation) {
-        ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-        if (reservation == null) {
-            // Reserve failed (transport/parse). Nothing was locked, so nothing is spent — recoverable.
-            Teras.LOGGER.warn("DarCaja: reserve failed for {} (source '{}'); granting nothing", uuid, source);
-            if (sp != null) {
-                replyError(sp, requestId, "reserve failed");
-            }
-            return;
-        }
-        es.boffmedia.teras.model.world.CajaGrant grant = reservation.grant();
-        if (reservation.reservationId() == null || grant.isEmpty()) {
-            // Nothing owed — nothing to confirm.
-            Teras.LOGGER.info("DarCaja: {} is owed nothing from '{}'", uuid, source);
-            if (sp != null) {
-                replyOk(sp, requestId, 0, 0);
-            }
-            return;
-        }
-        if (sp == null) {
-            // Player gone before delivery. Do NOT confirm: the reservation expires in 5 min and the
-            // rows return to claimable, so the reward survives a re-claim. This is the whole point.
-            Teras.LOGGER.warn("DarCaja: {} disconnected before delivery from '{}'; reservation {} left to "
-                    + "expire (recoverable) objetos={} pokemon={}", uuid, source,
-                    reservation.reservationId(), grant.objetos(), grant.pokemon());
-            return;
-        }
-        int items = grant.objetos().size();
-        if (items > 0) {
-            es.boffmedia.teras.util.ChestCreationHelper.createAndGiveChests(sp, grant.objetos());
-        }
-        int mons = deliverPokemon(sp, uuid, source, grant.pokemon());
-        Teras.LOGGER.info("DarCaja: granted {} item stack(s) and {} Pokémon to {} ({}) from '{}'",
-                items, mons, sp.getGameProfile().getName(), uuid, source);
-        replyOk(sp, requestId, items, mons);
-        // Delivered to an online player: spend it. Per-item give failures above are already logged and
-        // are permanent (bad spec, no engine, PC full) — confirming anyway is correct, since not
-        // confirming would loop reserve→expire→reserve forever. Back off the server thread; confirm blocks.
-        String reservationId = reservation.reservationId();
-        Teras.EXECUTOR.execute(() -> {
-            if (!es.boffmedia.teras.util.net.SmartRotomService.confirmCaja(uuid, reservationId)) {
-                Teras.LOGGER.error("DarCaja: delivered to {} from '{}' but confirm FAILED for reservation "
-                        + "{}; those rows may be re-delivered on a re-claim after the 5-min TTL (possible "
-                        + "dupe)", uuid, source, reservationId);
-            }
-        });
-    }
-
-    /** Gives each spec to the party (full → PC), returning how many landed. A failed give is lost. */
-    private static int deliverPokemon(ServerPlayer sp, java.util.UUID uuid, String source,
-                                      java.util.List<es.boffmedia.teras.model.world.PokemonSpec> pokemon) {
-        if (pokemon.isEmpty()) {
-            return 0;
-        }
-        es.boffmedia.teras.give.api.GiveProvider provider = es.boffmedia.teras.give.api.GiveProviders.get();
-        if (provider == null) {
-            Teras.LOGGER.error("DarCaja: {} owed Pokémon from '{}' but no engine is installed; "
-                    + "SPENT AND LOST: {}", uuid, source, pokemon);
-            return 0;
-        }
-        int given = 0;
-        for (es.boffmedia.teras.model.world.PokemonSpec mon : pokemon) {
-            for (int i = 0; i < mon.cantidad(); i++) {
-                if (provider.givePokemon(sp, mon.spec(), true)) {
-                    given++;
-                } else {
-                    Teras.LOGGER.error("DarCaja: {} SPENT AND LOST a Pokémon '{}' from '{}' "
-                            + "(give failed — unparseable, engine mismatch, or storage full)",
-                            uuid, mon.spec(), source);
-                }
-            }
-        }
-        return given;
-    }
-
-    /** Success reply: resolves the page's onSuccess. The {@code status} field is kept for logging and
-     *  any consumer that inspects the body; the transport {@code ok} flag is what the page branches on. */
-    private static void replyOk(ServerPlayer sp, long requestId, int objetos, int pokemon) {
-        JsonObject json = new JsonObject();
-        json.addProperty("status", "ok");
-        json.addProperty("objetos", objetos);
-        json.addProperty("pokemon", pokemon);
-        PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(requestId, GSON.toJson(json)));
     }
 
     /** Failure reply: rejects the page's promise via onFailure, so a failed claim cannot read as done. */
@@ -374,6 +294,107 @@ public final class TerasNet {
         });
     }
 
+    /** SimpleVoiceChat's mod id; guards every entry into the SVC-coupled call class. */
+    private static final String VOICECHAT_MOD_ID = "voicechat";
+
+    /**
+     * Places the sender in the voice group for {@code chatId} (start/join a ChatApp call).
+     *
+     * <p>AUTHORITY: the participant is the connection's player, never the page — so a client can only ever
+     * put <i>itself</i> in a call. The page contributes only a {@code chatId} (the group key); it cannot
+     * name who joins or which group, which is what 1.16.5's client-supplied caller UUID allowed.</p>
+     *
+     * <p>Isolation matches getSpawns/getMisiones: {@code TerasVoicechatPlugin} is the only SVC-coupled
+     * class and is named solely inside the {@code isLoaded} branch, so it is never classloaded on a
+     * server without SVC (which would {@code NoClassDefFoundError} and hang the page). We always reply,
+     * even on failure, so the JS promise resolves instead of ringing forever.</p>
+     */
+    private static void handleSetCall(SetCallPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            String chatId = payload.chatId();
+            if (chatId == null || chatId.isBlank()) {
+                Teras.LOGGER.warn("setCall from {} with no chatId; ignoring", sp.getGameProfile().getName());
+                replyError(sp, payload.requestId(), "missing chatId");
+                return;
+            }
+            if (!net.neoforged.fml.ModList.get().isLoaded(VOICECHAT_MOD_ID)) {
+                Teras.LOGGER.warn("setCall requested by {} but SimpleVoiceChat is not installed on this "
+                        + "server; the call cannot be wired.", sp.getGameProfile().getName());
+                replyError(sp, payload.requestId(), "voicechat_not_installed_server");
+                return;
+            }
+            String reason = es.boffmedia.teras.voice.TerasVoicechatPlugin.startCall(sp, chatId);
+            if (reason == null) {
+                JsonObject json = new JsonObject();
+                // 201 mirrors 1.16.5's "Llamada iniciada"; the page only branches on the request not
+                // failing, but the body is kept legacy-shaped for its existing status logging.
+                json.addProperty("status", 201);
+                json.addProperty("message", "Llamada iniciada");
+                PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(payload.requestId(), GSON.toJson(json)));
+            } else {
+                Teras.LOGGER.warn("setCall for {} (chat {}) failed: {}",
+                        sp.getGameProfile().getName(), chatId, reason);
+                replyError(sp, payload.requestId(), reason);
+            }
+        });
+    }
+
+    /** Removes the sender from any voice group (leave a ChatApp call). Lenient — see {@code endCall}. */
+    private static void handleLeaveCall(LeaveCallPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            if (!net.neoforged.fml.ModList.get().isLoaded(VOICECHAT_MOD_ID)) {
+                // Nothing to leave without SVC; report success so the page finishes its own cleanup.
+                replyLeaveOk(sp, payload.requestId());
+                return;
+            }
+            String reason = es.boffmedia.teras.voice.TerasVoicechatPlugin.endCall(sp);
+            if (reason == null) {
+                replyLeaveOk(sp, payload.requestId());
+            } else {
+                replyError(sp, payload.requestId(), reason);
+            }
+        });
+    }
+
+    /**
+     * Opens the sender's Pokémon PC.
+     *
+     * <p>AUTHORITY: the PC is the connection's player's own. 1.16.5 sent a uuid in the packet and
+     * (correctly) ignored it; carrying none removes the question.</p>
+     */
+    private static void handleOpenPC(OpenPCPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            // PCOpener compiles against Pixelmon: named only inside the guard. We always reply so the
+            // page's promise resolves rather than hanging.
+            if (!net.neoforged.fml.ModList.get().isLoaded("pixelmon")) {
+                Teras.LOGGER.warn("openPC requested by {} but Pixelmon is not loaded on this server",
+                        sp.getGameProfile().getName());
+                replyError(sp, payload.requestId(), "pixelmon_not_installed_server");
+                return;
+            }
+            String reason = es.boffmedia.teras.pixelmon.PCOpener.open(sp);
+            if (reason == null) {
+                JsonObject json = new JsonObject();
+                json.addProperty("status", 200);
+                json.addProperty("message", "PC abierto");
+                PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(payload.requestId(), GSON.toJson(json)));
+            } else {
+                replyError(sp, payload.requestId(), reason);
+            }
+        });
+    }
+
+    /** Leave-call success reply, legacy-shaped ("Llamada finalizada", status 200). */
+    private static void replyLeaveOk(ServerPlayer sp, long requestId) {
+        JsonObject json = new JsonObject();
+        json.addProperty("status", 200);
+        json.addProperty("message", "Llamada finalizada");
+        PacketDistributor.sendToPlayer(sp, McefResponsePayload.ok(requestId, GSON.toJson(json)));
+    }
+
     /** Squared reach for editing a frame: the block must be near the editor, with slack for lag. */
     private static final double MAX_FRAME_EDIT_DISTANCE_SQR = 64.0 * 64.0;
 
@@ -383,7 +404,7 @@ public final class TerasNet {
      * block — never a forged packet from across the world.
      */
     private static es.boffmedia.teras.blockentity.FrameBlockEntity editableFrame(ServerPlayer sp, BlockPos pos) {
-        if (!sp.isCreative() && !sp.hasPermissions(CHAT_PERMISSION_LEVEL)) {
+        if (!sp.isCreative() && !sp.hasPermissions(ADMIN_PERMISSION_LEVEL)) {
             Teras.LOGGER.warn("Player {} tried to control a frame without permission", sp.getGameProfile().getName());
             sp.sendSystemMessage(Component.translatable("message.teras.frame_no_permission"));
             return null;

@@ -53,12 +53,37 @@ public final class QuestService {
     // ---- Catalog: GET /quests/all ----
 
     /**
-     * Every quest definition and dialog on the server. Port of {@code QuestList}.
+     * How long a built catalog is reused. Quest definitions change only when an admin edits them, and
+     * both callers (the HTTP catalog route and every in-game board open) walk every dialog on the
+     * server to build one. Well under the backend's own 4h cache, so an edit still shows up promptly.
+     */
+    private static final long CATALOG_TTL_MS = 60_000L;
+
+    private static volatile QuestCatalog cachedCatalog;
+    private static volatile long cachedCatalogExpiresAt;
+
+    /**
+     * Every quest definition and dialog on the server, from a short-lived cache
+     * ({@link #CATALOG_TTL_MS}). Port of {@code QuestList}.
+     *
+     * <p>The returned catalog is shared between callers and must be treated as <b>read-only</b>;
+     * {@link #buildMerged} copies the collections it hands on.</p>
      *
      * <p>Dialogs without a quest are still catalogued — they carry text the board shows — they just
      * contribute no quest.</p>
      */
     public static QuestCatalog buildCatalog() {
+        QuestCatalog cached = cachedCatalog;
+        if (cached != null && System.currentTimeMillis() < cachedCatalogExpiresAt) {
+            return cached;
+        }
+        QuestCatalog built = buildCatalogUncached();
+        cachedCatalog = built;
+        cachedCatalogExpiresAt = System.currentTimeMillis() + CATALOG_TTL_MS;
+        return built;
+    }
+
+    private static QuestCatalog buildCatalogUncached() {
         Map<Integer, QuestInfo> quests = new HashMap<>();
         Map<String, List<Integer>> categories = new HashMap<>();
         Map<Integer, DialogInfo> dialogs = new HashMap<>();

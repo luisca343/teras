@@ -47,9 +47,9 @@ public final class TerasConfig {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
-     * The real SmartRotom site. Admins override this in {@code config/teras/config.json}.
-     * Must contain {@code "smartrotom"} to pass {@link #isSiteAllowed(String)}. Switch to
-     * {@code https://} in config once the endpoint serves TLS.
+     * The real SmartRotom site. Admins override this in {@code config/teras/config.json}. Its host is
+     * the trusted origin every SmartRotom browser is confined to ({@link #isSiteAllowed(String)}), so
+     * it must be an absolute URL. Switch to {@code https://} in config once the endpoint serves TLS.
      */
     private static final String DEFAULT_HOME = "http://teras.es/smartrotom";
     /** Base URL of the SmartRotom HTTP API (used by the deferred server-side integrations). */
@@ -143,9 +143,12 @@ public final class TerasConfig {
                 Teras.LOGGER.warn("config/teras/config.json has no 'home'; falling back to {}", DEFAULT_HOME);
                 home = DEFAULT_HOME;
             }
-            if (!isSiteAllowed(home)) {
-                Teras.LOGGER.warn("Configured SmartRotom home '{}' is not a smartrotom URL; navigation guards "
-                        + "would treat it as untrusted.", home);
+            // The home defines the trusted origin, so it must have a parseable host: with none, the
+            // client-side navigation guard has nothing to allow and every page reads as untrusted.
+            if (UrlOrigin.hostOf(home) == null) {
+                Teras.LOGGER.error("Configured SmartRotom home '{}' has no host — it must be an absolute "
+                        + "URL (http://host/path). The browser's navigation guard will block every page "
+                        + "and the JS bridge will refuse every query until this is fixed.", home);
             }
 
             if (dirty) {
@@ -217,8 +220,16 @@ public final class TerasConfig {
         return !"127.0.0.1".equals(httpBind) && !"localhost".equals(httpBind) && !"::1".equals(httpBind);
     }
 
-    /** SmartRotoms are whitelisted to the smartrotom site only (matches 1.16.5 isSiteAllowed). */
+    /**
+     * True when {@code url} is on the configured {@link #getHome() home} site — the allowlist the MCEF
+     * navigation guard and the JS query bridge enforce client-side
+     * ({@code mcef.TerasNavigationGuard}, {@code mcef.TerasQueryRouter}).
+     *
+     * <p>Host-based, not substring-based: 1.16.5's {@code url.contains("smartrotom")} accepted
+     * {@code https://evil.example/smartrotom}, so any page that could steer the browser there inherited
+     * the bridge. See {@link UrlOrigin#sameSite}.</p>
+     */
     public static boolean isSiteAllowed(String url) {
-        return url != null && url.contains("smartrotom");
+        return UrlOrigin.sameSite(home, url);
     }
 }

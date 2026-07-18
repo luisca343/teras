@@ -6,6 +6,7 @@ import es.boffmedia.teras.client.renders.IItemRenderer;
 import es.boffmedia.teras.client.renders.SmartRotomRenderer;
 import es.boffmedia.teras.init.ItemInit;
 import es.boffmedia.teras.items.SmartRotom;
+import es.boffmedia.teras.mcef.PendingQueries;
 import es.boffmedia.teras.mcef.TerasMCEF;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -122,6 +123,9 @@ public final class ClientEvents {
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut ev) {
         // Free every Chromium instance when leaving a world/server.
         TerasMCEF.closeAll();
+        // Reject queries still waiting on the server we just left: nothing will ever answer them, and
+        // an unsettled promise leaks its callback and hangs the page's spinner forever.
+        PendingQueries.clear();
         // The config belonged to the server we just left; the next one sends its own.
         ServerConfig.clear();
     }

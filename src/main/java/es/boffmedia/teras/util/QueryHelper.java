@@ -6,19 +6,28 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.mcef.JsQueryCallback;
+import es.boffmedia.teras.mcef.PendingQueries;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import org.cef.browser.CefBrowser;
 
 import java.util.Collection;
+import java.util.EnumMap;
+import java.util.Map;
 
 /**
  * JS -> Java dispatch for {@code window.mcefQuery({query:"...", ...})}, ported from the 1.16.5
- * montoyo {@code QueryHelper}. The query-type switch is preserved 1:1 so the remaining handlers
- * can be filled in mechanically as their dependencies (networking, Pixelmon, JourneyMap) are ported.
+ * montoyo {@code QueryHelper}.
+ *
+ * <p>Dispatch is a {@link QueryType}-keyed handler table rather than a switch, so adding a query is a
+ * local edit (one table entry plus its handler) instead of a change to a hub every query shares.</p>
  *
  * <p>Callbacks may arrive on a CEF thread; any handler that touches Minecraft client state marshals
  * onto the main thread via {@link Minecraft#execute(Runnable)} before doing so.</p>
+ *
+ * <p>Whether a query may be answered at all is decided upstream by {@code mcef.TerasQueryRouter},
+ * which rejects anything not coming from a Teras-owned browser on the server's home site. Nothing
+ * here re-checks that; handlers may assume the caller is the trusted page.</p>
  */
 public final class QueryHelper {
     private QueryHelper() {}
@@ -26,15 +35,56 @@ public final class QueryHelper {
     private static final String SUCCESS = "{\"status\": \"ok\"}";
     private static final Gson GSON = new Gson();
 
-    /**
-     * Callbacks awaiting an async (server round-trip) response, keyed by the request id echoed back in
-     * {@code McefResponsePayload}. Replaces 1.16.5's per-query static callbacks and lets several async
-     * queries be in flight without their responses colliding. Resolved in {@code ClientNetHandler}.
-     */
-    private static final java.util.concurrent.ConcurrentHashMap<Long, JsQueryCallback> PENDING =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.atomic.AtomicLong NEXT_REQUEST_ID =
-            new java.util.concurrent.atomic.AtomicLong();
+    /** What a query does. The raw request string is passed through for the handlers that parse more. */
+    @FunctionalInterface
+    private interface Handler {
+        void handle(JsonObject json, String rawQuery, JsQueryCallback callback);
+    }
+
+    private static final Map<QueryType, Handler> HANDLERS = new EnumMap<>(QueryType.class);
+
+    static {
+        HANDLERS.put(QueryType.GET_PLAYERS, (json, raw, cb) -> handleGetPlayers(cb));
+        HANDLERS.put(QueryType.CHAT_MESSAGE, (json, raw, cb) -> {
+            es.boffmedia.teras.net.TerasNet.sendChatToServer(raw);
+            cb.success(SUCCESS);
+        });
+        // Async queries register their callback under a fresh id; the server echoes the id back in an
+        // McefResponsePayload, which ClientNetHandler routes to the waiting callback.
+        HANDLERS.put(QueryType.GET_USER_DATA, (json, raw, cb) ->
+                es.boffmedia.teras.net.TerasNet.requestUserData(PendingQueries.register(cb)));
+        // Async (same round-trip): the server scans the player's Pixelmon spawner and replies with the
+        // spawn list under the same id.
+        HANDLERS.put(QueryType.GET_SPAWNS, (json, raw, cb) ->
+                es.boffmedia.teras.net.TerasNet.requestSpawns(PendingQueries.register(cb)));
+        HANDLERS.put(QueryType.GET_MISIONES, (json, raw, cb) ->
+                es.boffmedia.teras.net.TerasNet.requestMisiones(PendingQueries.register(cb)));
+        // Async: resolves a frame later (the capture rides a render frame) and then off the client
+        // thread entirely. See ScreenshotHandler.
+        HANDLERS.put(QueryType.TAKE_SCREENSHOT, (json, raw, cb) ->
+                es.boffmedia.teras.client.camera.ScreenshotHandler.handleTakeScreenshot(raw, cb));
+        HANDLERS.put(QueryType.GET_ZOOM_LEVEL, (json, raw, cb) ->
+                es.boffmedia.teras.client.camera.CameraQueries.handleGetZoomLevel(cb));
+        HANDLERS.put(QueryType.SET_ZOOM_LEVEL, (json, raw, cb) ->
+                es.boffmedia.teras.client.camera.CameraQueries.handleSetZoomLevel(raw, cb));
+        HANDLERS.put(QueryType.GET_FLASHLIGHT, (json, raw, cb) ->
+                es.boffmedia.teras.client.camera.CameraQueries.handleGetFlashlight(cb));
+        HANDLERS.put(QueryType.SET_FLASHLIGHT, (json, raw, cb) ->
+                es.boffmedia.teras.client.camera.CameraQueries.handleSetFlashlight(raw, cb));
+        HANDLERS.put(QueryType.DAR_CAJA, QueryHelper::handleDarCaja);
+        HANDLERS.put(QueryType.SET_CALL, QueryHelper::handleSetCall);
+        // Async: the server removes this player from any voice group and replies under the id.
+        HANDLERS.put(QueryType.LEAVE_CALL, (json, raw, cb) ->
+                es.boffmedia.teras.net.TerasNet.requestLeaveCall(PendingQueries.register(cb)));
+        // Async: the server opens the sender's own PC. No arguments — the player is the connection's.
+        HANDLERS.put(QueryType.OPEN_PC, (json, raw, cb) ->
+                es.boffmedia.teras.net.TerasNet.requestOpenPC(PendingQueries.register(cb)));
+        // --- Still needs the JourneyMap v2 rewrite: ported next phase ---
+        HANDLERS.put(QueryType.ADD_WAYPOINT, (json, raw, cb) ->
+                notPorted(QueryType.ADD_WAYPOINT, cb, "JourneyMap integration"));
+        HANDLERS.put(QueryType.GET_WAYPOINTS, (json, raw, cb) ->
+                notPorted(QueryType.GET_WAYPOINTS, cb, "JourneyMap integration"));
+    }
 
     /** The {@code source} of a darCaja query, or {@code null} if absent or not a plain string. */
     static String readSource(JsonObject json) {
@@ -59,21 +109,9 @@ public final class QueryHelper {
         return ids;
     }
 
-    /** Registers {@code callback} for a new async request and returns its id (for the request payload). */
-    private static long register(JsQueryCallback callback) {
-        long id = NEXT_REQUEST_ID.incrementAndGet();
-        PENDING.put(id, callback);
-        return id;
-    }
-
-    /** Resolves and removes the callback for {@code requestId}, or {@code null} if none (called by ClientNetHandler). */
-    public static JsQueryCallback takePending(long requestId) {
-        return PENDING.remove(requestId);
-    }
-
     public static boolean handleQuery(CefBrowser browser, long id, String query,
                                       boolean persistent, JsQueryCallback callback) {
-        Teras.LOGGER.info("SmartRotom query received: {}", query);
+        Teras.LOGGER.debug("SmartRotom query received: {}", query);
 
         final JsonObject json;
         final String type;
@@ -93,84 +131,60 @@ public final class QueryHelper {
             callback.failure(0, "Unknown query type: " + query);
             return true;
         }
+        final Handler handler = HANDLERS.get(queryType);
+        if (handler == null) {
+            // A QueryType with no table entry — reported apart from an unknown name so a constant added
+            // without its handler is diagnosable instead of looking like a bad request from the page.
+            Teras.LOGGER.error("Query type '{}' has no registered handler", queryType);
+            callback.failure(501, "Query '" + queryType + "' has no handler");
+            return true;
+        }
 
         try {
-            switch (queryType) {
-                case GET_PLAYERS:
-                    handleGetPlayers(callback);
-                    return true;
-                case CHAT_MESSAGE:
-                    es.boffmedia.teras.net.TerasNet.sendChatToServer(query);
-                    callback.success(SUCCESS);
-                    return true;
-                case GET_USER_DATA:
-                    // Async: register the callback under a fresh id; the server echoes the id in an
-                    // McefResponsePayload, which ClientNetHandler routes back to this callback.
-                    es.boffmedia.teras.net.TerasNet.requestUserData(register(callback));
-                    return true;
-                case GET_SPAWNS:
-                    // Async (same round-trip): the server scans the player's Pixelmon spawner and
-                    // replies with the spawn list under the same id.
-                    es.boffmedia.teras.net.TerasNet.requestSpawns(register(callback));
-                    return true;
-                case GET_MISIONES:
-                    es.boffmedia.teras.net.TerasNet.requestMisiones(register(callback));
-                    return true;
-                case TAKE_SCREENSHOT:
-                    // Async: resolves a frame later (the capture rides a render frame) and then off
-                    // the client thread entirely. See ScreenshotHandler.
-                    es.boffmedia.teras.client.camera.ScreenshotHandler.handleTakeScreenshot(query, callback);
-                    return true;
-                case GET_ZOOM_LEVEL:
-                    es.boffmedia.teras.client.camera.CameraQueries.handleGetZoomLevel(callback);
-                    return true;
-                case SET_ZOOM_LEVEL:
-                    es.boffmedia.teras.client.camera.CameraQueries.handleSetZoomLevel(query, callback);
-                    return true;
-                case GET_FLASHLIGHT:
-                    es.boffmedia.teras.client.camera.CameraQueries.handleGetFlashlight(callback);
-                    return true;
-                case SET_FLASHLIGHT:
-                    es.boffmedia.teras.client.camera.CameraQueries.handleSetFlashlight(query, callback);
-                    return true;
-
-                case DAR_CAJA: {
-                    // Async: the server asks the backend what this player is owed, grants it, and
-                    // replies under the same id. The page names a SOURCE and an optional row-id
-                    // selector, never items — see DarCajaPayload. A page still sending 1.16.5's
-                    // {objetos} lands here with no source and is refused.
-                    String source = readSource(json);
-                    if (!es.boffmedia.teras.util.net.HttpText.isValidIdentifier(source)) {
-                        Teras.LOGGER.error("darCaja without a valid source: {}", query);
-                        callback.failure(400, "darCaja requires a source");
-                        return true;
-                    }
-                    es.boffmedia.teras.net.TerasNet.requestDarCaja(register(callback), source, readIds(json));
-                    return true;
-                }
-
-                // --- Handlers below need more networking / JourneyMap: ported next phase ---
-                case OPEN_PC:
-                case SET_CALL:
-                case LEAVE_CALL:
-                    return notPorted(queryType, callback, "server networking");
-                case ADD_WAYPOINT:
-                case GET_WAYPOINTS:
-                    return notPorted(queryType, callback, "JourneyMap integration");
-                default:
-                    return false;
-            }
+            handler.handle(json, query, callback);
         } catch (Exception e) {
             Teras.LOGGER.error("Error handling query: {}", query, e);
             callback.failure(0, "Error handling query: " + e.getMessage());
-            return true;
         }
+        return true;
     }
 
-    private static boolean notPorted(QueryType type, JsQueryCallback callback, String dependency) {
+    /**
+     * Async: the server asks the backend what this player is owed, grants it, and replies under the
+     * same id. The page names a SOURCE and an optional row-id selector, never items — see
+     * {@code DarCajaPayload}. A page still sending 1.16.5's {@code objetos} lands here with no source
+     * and is refused.
+     */
+    private static void handleDarCaja(JsonObject json, String rawQuery, JsQueryCallback callback) {
+        String source = readSource(json);
+        if (!es.boffmedia.teras.util.net.HttpText.isValidIdentifier(source)) {
+            Teras.LOGGER.error("darCaja without a valid source: {}", rawQuery);
+            callback.failure(400, "darCaja requires a source");
+            return;
+        }
+        es.boffmedia.teras.net.TerasNet.requestDarCaja(
+                PendingQueries.register(callback), source, readIds(json));
+    }
+
+    /**
+     * Async: the server places this player in the SVC voice group for chatId and replies under the same
+     * id. Only chatId is forwarded — the participant is the connection's player, never the page (see
+     * {@code SetCallPayload}). A blank chatId is refused up front.
+     */
+    private static void handleSetCall(JsonObject json, String rawQuery, JsQueryCallback callback) {
+        JsonElement chatIdElement = json.get("chatId");
+        String chatId = chatIdElement != null && chatIdElement.isJsonPrimitive()
+                ? chatIdElement.getAsString() : null;
+        if (chatId == null || chatId.isBlank()) {
+            callback.failure(400, "setCall requires a chatId");
+            return;
+        }
+        es.boffmedia.teras.net.TerasNet.requestSetCall(PendingQueries.register(callback), chatId);
+    }
+
+    private static void notPorted(QueryType type, JsQueryCallback callback, String dependency) {
         Teras.LOGGER.warn("SmartRotom query '{}' not yet ported (needs {})", type, dependency);
         callback.failure(501, "Query '" + type + "' not yet available on 1.21.1 (needs " + dependency + ")");
-        return true;
     }
 
     /** Fully-ported example handler: returns the online player list. Proves the JS round-trip. */

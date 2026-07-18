@@ -60,7 +60,7 @@ public final class BattleConfigLoader {
             Teras.LOGGER.error("Combat config for '{}' declares no teams", id);
             return null;
         }
-        int teamId = equipos[(int) (Math.random() * equipos.length)];
+        int teamId = equipos[java.util.concurrent.ThreadLocalRandom.current().nextInt(equipos.length)];
 
         String paste = readTeamPaste(id, tipo, teamId);
         if (paste == null || paste.isBlank()) {

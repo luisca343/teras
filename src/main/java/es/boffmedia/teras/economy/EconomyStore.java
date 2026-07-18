@@ -6,13 +6,13 @@ import es.boffmedia.teras.util.net.SmartRotomService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 /**
  * The player-balance cache in front of <b>starbank</b>, which is the source of truth.
@@ -47,10 +47,21 @@ public final class EconomyStore {
 
     /**
      * Players whose next deposit/withdraw must not be mirrored to starbank because a specific reporter
-     * owns that write ({@code PixelmonShopSync} arms it and posts {@code /shop} itself). One-shot: the
-     * single mutation a shop transaction performs consumes it.
+     * owns that write ({@code PixelmonShopSync} arms it and posts {@code /shop} itself), with the time
+     * each flag was armed. One-shot: the single mutation a shop transaction performs consumes it.
+     *
+     * <p>Armed at {@code Pre} and cleared at {@code Post}, so a transaction cancelled or thrown between
+     * the two leaves the flag set. {@link #SKIP_TTL_MS} bounds that: an expired flag is ignored rather
+     * than silently eating an unrelated later mutation's ledger sync, which loses that money move.</p>
      */
-    private static final Set<UUID> SKIP_NEXT_SYNC = ConcurrentHashMap.newKeySet();
+    private static final Map<UUID, Long> SKIP_NEXT_SYNC = new ConcurrentHashMap<>();
+
+    /**
+     * How long an armed skip stays valid. A shop transaction's {@code Pre}, mutation and {@code Post}
+     * all run inline on the server thread, so the real window is microseconds; this only has to be
+     * shorter than the gap to an unrelated mutation.
+     */
+    private static final long SKIP_TTL_MS = 5_000L;
 
     /** Ledger memos for funnel-synced changes; shown as-is in the starbank web history. */
     private static final String CONCEPT_INCOME = "[JUEGO] Ingreso en partida";
@@ -69,6 +80,13 @@ public final class EconomyStore {
 
     static void setSyncDispatcherForTests(SyncDispatcher dispatcher) {
         syncDispatcher = dispatcher == null ? EconomyStore::dispatchToBackend : dispatcher;
+    }
+
+    /** Replaceable so a test can age the skip flag past {@link #SKIP_TTL_MS} without sleeping. */
+    private static volatile LongSupplier clock = System::currentTimeMillis;
+
+    static void setClockForTests(LongSupplier millis) {
+        clock = millis == null ? System::currentTimeMillis : millis;
     }
 
     /**
@@ -178,7 +196,7 @@ public final class EconomyStore {
         }
         BigDecimal newBalance = BALANCES.merge(playerId, amount, BigDecimal::add);
         fireChanged(playerId);
-        if (!SKIP_NEXT_SYNC.remove(playerId)) {
+        if (!consumeSkip(playerId)) {
             syncDispatcher.sync(playerId, CONCEPT_INCOME, newBalance);
         }
         return true;
@@ -207,7 +225,7 @@ public final class EconomyStore {
         }
         BigDecimal newBalance = BALANCES.computeIfPresent(playerId, (id, balance) -> balance.subtract(amount));
         fireChanged(playerId);
-        if (!SKIP_NEXT_SYNC.remove(playerId)) {
+        if (!consumeSkip(playerId)) {
             syncDispatcher.sync(playerId, CONCEPT_EXPENSE, newBalance);
         }
         return true;
@@ -219,8 +237,22 @@ public final class EconomyStore {
      */
     public static void skipNextSync(UUID playerId) {
         if (playerId != null) {
-            SKIP_NEXT_SYNC.add(playerId);
+            SKIP_NEXT_SYNC.put(playerId, clock.getAsLong());
         }
+    }
+
+    /** Consumes a live skip flag, returning whether this mutation's funnel sync is owned elsewhere. */
+    private static boolean consumeSkip(UUID playerId) {
+        Long armedAt = SKIP_NEXT_SYNC.remove(playerId);
+        if (armedAt == null) {
+            return false;
+        }
+        if (clock.getAsLong() - armedAt > SKIP_TTL_MS) {
+            Teras.LOGGER.warn("Discarding a stale starbank skip flag for {} (armed {} ms ago) — the "
+                    + "shop transaction that armed it never completed", playerId, clock.getAsLong() - armedAt);
+            return false;
+        }
+        return true;
     }
 
     /** Disarms {@link #skipNextSync} — call once the owned flow has finished (or was aborted). */
@@ -267,7 +299,8 @@ public final class EconomyStore {
     /**
      * Sets the balance outright (admin/backend correction). Unlike {@link #deposit}/{@link #withdraw}
      * this writes through — the backend's absolute-set route diffs and ledgers the adjustment itself.
-     * Cache is set optimistically; the next {@link #load} reconciles if the backend rejected it.
+     * The cache is set optimistically and re-read from starbank if the write is refused, so a rejected
+     * set does not leave the game showing a balance the ledger never accepted.
      */
     public static boolean set(UUID playerId, BigDecimal amount) {
         if (playerId == null || amount == null || amount.signum() < 0) {
@@ -275,7 +308,13 @@ public final class EconomyStore {
         }
         BALANCES.put(playerId, amount);
         fireChanged(playerId);
-        SYNC_LANE.execute(() -> SmartRotomService.setBalance(playerId, amount, null));
+        SYNC_LANE.execute(() -> {
+            if (!SmartRotomService.setBalance(playerId, amount, null)) {
+                Teras.LOGGER.error("Starbank refused a balance set for {} ({}); reloading the "
+                        + "authoritative balance", playerId, amount);
+                load(playerId);
+            }
+        });
         return true;
     }
 

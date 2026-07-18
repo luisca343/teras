@@ -20,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * on CinemaMod MCEF:</p>
  * <ul>
  *   <li>Registers the {@code window.mcefQuery} / {@code window.mcefQueryCancel} JS bridge via a
- *       JCEF {@link CefMessageRouter} added to MCEF's shared {@code CefClient}.</li>
+ *       JCEF {@link CefMessageRouter} added to MCEF's shared {@code CefClient}, together with the
+ *       {@link TerasNavigationGuard} that confines our browsers to the server's home site.</li>
  *   <li>Creates and owns <b>one {@link MCEFBrowser} per SmartRotom item</b>, keyed by the item's
  *       {@code smartrotom_id} {@link UUID} — so each individual item shows its own page (restoring
  *       the 1.16.5 per-item pad behaviour). The client lifecycle GC in
@@ -70,6 +71,15 @@ public final class TerasMCEF {
                     new CefMessageRouter.CefMessageRouterConfig(JS_QUERY_FN, JS_CANCEL_FN));
             router.addHandler(new TerasQueryRouter(), true);
             MCEF.getClient().getHandle().addMessageRouter(router);
+            // Confines our browsers' main frame to the home site. MCEF sets no request handler of its
+            // own (only a scheme handler factory on CefApp), so this slot is normally free.
+            //
+            // CefClient holds ONE request handler and addRequestHandler is first-wins, not overwrite:
+            // if another mod claimed the slot first this call silently does nothing, and if we claim it
+            // first theirs does. That is survivable in both directions — the guard is defence in depth,
+            // and the trust boundary that actually decides what a page may do is TerasQueryRouter's
+            // per-query origin check, which does not go through this handler at all.
+            MCEF.getClient().getHandle().addRequestHandler(new TerasNavigationGuard());
             registerConsoleBridge();
             routerRegistered = true;
             Teras.LOGGER.info("SmartRotom JS bridge registered ({} / {})", JS_QUERY_FN, JS_CANCEL_FN);
@@ -110,6 +120,15 @@ public final class TerasMCEF {
     /** Returns the browser for the given SmartRotom item id, or {@code null} if none is live. */
     public static MCEFBrowser getBrowser(UUID id) {
         return id == null ? null : BROWSERS.get(id);
+    }
+
+    /**
+     * True when {@code browser} is one this mod created. Identity, not URL: the JS bridge and the
+     * navigation guard both live on MCEF's shared {@code CefClient} and must be able to tell a
+     * SmartRotom browser from any other mod's, whatever page it currently shows.
+     */
+    public static boolean isTerasBrowser(CefBrowser browser) {
+        return browser != null && BROWSERS.containsValue(browser);
     }
 
     /**

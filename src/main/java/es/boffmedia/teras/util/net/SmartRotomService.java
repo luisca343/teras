@@ -354,9 +354,19 @@ public final class SmartRotomService {
     }
 
     /**
+     * ⚠️ <b>The starbank wire contract is UNVERIFIED.</b> The economy has never been run against a live
+     * starbank, so the response shape below is a guess covering every plausible form rather than a
+     * pinned contract, and this is the biggest known unknown in the money path (see
+     * {@code docs/WUNGILL_MIGRATION.md}). The first parse of a server's session logs which shape
+     * actually matched, so one live read is enough to pin it — do that before trusting money flows.
+     */
+    private static final java.util.concurrent.atomic.AtomicBoolean SHAPE_REPORTED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
      * The balance out of a starbank response body, or {@code null} if it isn't one. Accepts a bare
      * number (what 1.16.5 consumed) or a JSON object carrying {@code balance} / {@code dinero} /
-     * {@code data}, since the current backend's shape is unconfirmed.
+     * {@code data}; see {@link #SHAPE_REPORTED} for why the tolerance is this wide.
      */
     static BigDecimal parseBalance(String body) {
         String trimmed = body == null ? "" : body.trim();
@@ -364,13 +374,16 @@ public final class SmartRotomService {
             return null;
         }
         try {
-            return new BigDecimal(trimmed);
+            BigDecimal bare = new BigDecimal(trimmed);
+            reportShape("bare number");
+            return bare;
         } catch (NumberFormatException ignored) {
             // Not a bare number — fall through to the JSON shapes.
         }
         try {
             JsonElement parsed = JsonParser.parseString(trimmed);
             if (parsed.isJsonPrimitive() && parsed.getAsJsonPrimitive().isNumber()) {
+                reportShape("JSON number");
                 return parsed.getAsBigDecimal();
             }
             if (!parsed.isJsonObject()) {
@@ -380,18 +393,29 @@ public final class SmartRotomService {
             // Global envelope: {success, statusCode, data:{balance}}. Unwrap `data` when it's an object
             // before the flat-shape scan, so nested balance/dinero win over a stray top-level number.
             JsonElement data = obj.get("data");
-            if (data != null && data.isJsonObject()) {
+            boolean unwrapped = data != null && data.isJsonObject();
+            if (unwrapped) {
                 obj = data.getAsJsonObject();
             }
             for (String key : new String[] {"balance", "dinero", "data"}) {
                 JsonElement value = obj.get(key);
                 if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
+                    reportShape((unwrapped ? "data." : "") + key);
                     return value.getAsBigDecimal();
                 }
             }
             return null;
         } catch (JsonParseException e) {
             return null;
+        }
+    }
+
+    /** Logs the response shape starbank actually uses, once per server session. */
+    private static void reportShape(String shape) {
+        if (SHAPE_REPORTED.compareAndSet(false, true)) {
+            Teras.LOGGER.warn("Starbank balance responses parse as '{}'. The wire contract is otherwise "
+                    + "UNVERIFIED — pin this shape in docs/WUNGILL_MIGRATION.md and narrow parseBalance "
+                    + "before the economy is trusted live.", shape);
         }
     }
 

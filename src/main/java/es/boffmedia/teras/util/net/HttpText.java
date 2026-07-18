@@ -9,9 +9,11 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -20,6 +22,9 @@ import java.util.stream.Collectors;
  * Shared HTTP text fetch with a short-lived cache. Safety: connect/read timeouts; an HTTPS-only policy
  * gated by {@link TerasConfig#isRequireHttps()} (fail-closed); and an identifier whitelist closing the
  * path-injection vector before an id is interpolated into a URL.
+ *
+ * <p>Request and response <b>bodies</b> log at {@code debug}. They carry player balances and grant
+ * contents, and these routes run at volume on a live server.</p>
  */
 public final class HttpText {
     private HttpText() {}
@@ -29,6 +34,9 @@ public final class HttpText {
 
     /** How long a fetched body stays fresh; repeated battles reuse it instead of re-downloading. */
     private static final long CACHE_TTL_MS = 60_000L;
+
+    /** Expired entries are swept when the cache passes this size, so it cannot grow for a server's lifetime. */
+    private static final int CACHE_SWEEP_THRESHOLD = 64;
 
     /** Safe shape for an id interpolated into a URL: no {@code ../}, encoded slashes, or query. */
     private static final Pattern VALID_IDENTIFIER = Pattern.compile("[A-Za-z0-9_-]+");
@@ -54,41 +62,17 @@ public final class HttpText {
         long now = System.currentTimeMillis();
         CacheEntry cached = TEXT_CACHE.get(urlString);
         if (cached != null && cached.expiresAt() > now) {
-            Teras.LOGGER.info("[Teras HTTP] --> GET {} (cache hit, {} bytes)", urlString, cached.body().length());
+            Teras.LOGGER.debug("[Teras HTTP] --> GET {} (cache hit, {} bytes)", urlString, cached.body().length());
             return cached.body();
         }
-        Teras.LOGGER.info("[Teras HTTP] --> GET {}", urlString);
-
-        URL url;
-        try {
-            url = new URL(urlString);
-        } catch (MalformedURLException e) {
-            Teras.LOGGER.error("Malformed URL: {}", urlString, e);
+        // Unauthenticated and cacheable: static remote config, not live player state.
+        Response response = execute("GET", urlString, null, false);
+        if (!response.ok()) {
             return null;
         }
-        if (!isTransportAllowed(url)) {
-            return null;
-        }
-
-        String body;
-        try {
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            con.setReadTimeout(READ_TIMEOUT_MS);
-            con.addRequestProperty("User-Agent", "Mozilla/4.0");
-            int code = con.getResponseCode();
-            try (InputStream in = con.getInputStream();
-                 BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-                body = br.lines().collect(Collectors.joining("\n"));
-            }
-            Teras.LOGGER.info("[Teras HTTP] <-- {} GET {}\n         response: {}", code, urlString, body);
-        } catch (IOException e) {
-            Teras.LOGGER.error("Error fetching {}", urlString, e);
-            return null;
-        }
-
-        TEXT_CACHE.put(urlString, new CacheEntry(body, now + CACHE_TTL_MS));
-        return body;
+        sweepExpired(now);
+        TEXT_CACHE.put(urlString, new CacheEntry(response.body(), now + CACHE_TTL_MS));
+        return response.body();
     }
 
     /**
@@ -102,48 +86,7 @@ public final class HttpText {
      * <p><b>Blocks the calling thread.</b> Callers must already be off the server thread.</p>
      */
     public static String getAuthed(String urlString) {
-        if (urlString == null) {
-            return null;
-        }
-        URL url;
-        try {
-            url = new URL(urlString);
-        } catch (MalformedURLException e) {
-            Teras.LOGGER.error("Malformed GET URL: {}", urlString, e);
-            return null;
-        }
-        if (!isTransportAllowed(url)) {
-            return null;
-        }
-        String token = TerasConfig.getApiToken();
-        Teras.LOGGER.info("[Teras HTTP] --> GET {} (auth={})",
-                urlString, (token != null && !token.isEmpty()) ? "bearer" : "none");
-        HttpURLConnection con = null;
-        try {
-            con = (HttpURLConnection) url.openConnection();
-            con.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            con.setReadTimeout(READ_TIMEOUT_MS);
-            con.setRequestProperty("User-Agent", "Teras-SmartRotom");
-            con.setRequestProperty("Accept", "application/json");
-            if (token != null && !token.isEmpty()) {
-                con.setRequestProperty("Authorization", "Bearer " + token);
-            }
-            int code = con.getResponseCode();
-            String body = readBody(code < 400 ? con.getInputStream() : con.getErrorStream());
-            Teras.LOGGER.info("[Teras HTTP] <-- {} GET {}\n         response: {}", code, urlString, body);
-            if (code >= 400) {
-                Teras.LOGGER.warn("GET {} -> HTTP {}", urlString, code);
-                return null;
-            }
-            return body;
-        } catch (IOException e) {
-            Teras.LOGGER.error("Error GETting {}: {}", urlString, e.getMessage());
-            return null;
-        } finally {
-            if (con != null) {
-                con.disconnect();
-            }
-        }
+        return execute("GET", urlString, null, true).bodyOrNull();
     }
 
     /** Fire-and-forget JSON {@code POST} on {@link Teras#EXECUTOR}, with the bearer token and HTTPS
@@ -152,52 +95,7 @@ public final class HttpText {
         if (urlString == null || jsonBody == null) {
             return;
         }
-        Teras.EXECUTOR.execute(() -> {
-            URL url;
-            try {
-                url = new URL(urlString);
-            } catch (MalformedURLException e) {
-                Teras.LOGGER.error("Malformed POST URL: {}", urlString, e);
-                return;
-            }
-            if (!isTransportAllowed(url)) {
-                return;
-            }
-            String token = TerasConfig.getApiToken();
-            // Debug: full request line + body so the exact payload sent to SmartRotom is visible.
-            Teras.LOGGER.info("[Teras HTTP] --> POST {} (auth={}, {} bytes)\n         body: {}",
-                    urlString, (token != null && !token.isEmpty()) ? "bearer" : "none",
-                    jsonBody.getBytes(StandardCharsets.UTF_8).length, jsonBody);
-            HttpURLConnection con = null;
-            try {
-                con = (HttpURLConnection) url.openConnection();
-                con.setConnectTimeout(CONNECT_TIMEOUT_MS);
-                con.setReadTimeout(READ_TIMEOUT_MS);
-                con.setRequestMethod("POST");
-                con.setDoOutput(true);
-                con.setRequestProperty("User-Agent", "Teras-SmartRotom");
-                con.setRequestProperty("Content-Type", "application/json");
-                if (token != null && !token.isEmpty()) {
-                    con.setRequestProperty("Authorization", "Bearer " + token);
-                }
-                try (OutputStream os = con.getOutputStream()) {
-                    os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
-                }
-                int code = con.getResponseCode();
-                String response = readBody(code < 400 ? con.getInputStream() : con.getErrorStream());
-                Teras.LOGGER.info("[Teras HTTP] <-- {} POST {}\n         response: {}",
-                        code, urlString, response);
-                if (code >= 400) {
-                    Teras.LOGGER.warn("POST {} -> HTTP {}", urlString, code);
-                }
-            } catch (IOException e) {
-                Teras.LOGGER.error("Error POSTing to {}: {}", urlString, e.getMessage());
-            } finally {
-                if (con != null) {
-                    con.disconnect();
-                }
-            }
-        });
+        Teras.EXECUTOR.execute(() -> execute("POST", urlString, jsonBody, true));
     }
 
     /**
@@ -217,50 +115,99 @@ public final class HttpText {
         if (urlString == null || jsonBody == null) {
             return null;
         }
+        return execute("POST", urlString, jsonBody, true).bodyOrNull();
+    }
+
+    /** A completed exchange. {@code ok} is false for any transport, policy or {@code >= 400} failure. */
+    private record Response(boolean ok, String body) {
+        String bodyOrNull() {
+            return ok ? body : null;
+        }
+    }
+
+    private static final Response FAILED = new Response(false, null);
+
+    /**
+     * The one request path: URL parse, HTTPS policy, headers, optional body, status handling and
+     * logging. The four public methods differ only in method, auth, body and what they do with the
+     * result, so keeping one implementation is what stops those policies drifting apart.
+     */
+    private static Response execute(String method, String urlString, String jsonBody, boolean authed) {
+        if (urlString == null) {
+            return FAILED;
+        }
         URL url;
         try {
-            url = new URL(urlString);
-        } catch (MalformedURLException e) {
-            Teras.LOGGER.error("Malformed POST URL: {}", urlString, e);
-            return null;
+            // URI.create().toURL() rather than new URL(String), deprecated since Java 20.
+            url = URI.create(urlString).toURL();
+        } catch (IllegalArgumentException | IOException e) {
+            Teras.LOGGER.error("Malformed {} URL: {}", method, urlString, e);
+            return FAILED;
         }
         if (!isTransportAllowed(url)) {
-            return null;
+            return FAILED;
         }
-        String token = TerasConfig.getApiToken();
-        Teras.LOGGER.info("[Teras HTTP] --> POST {} (auth={}, {} bytes)\n         body: {}",
-                urlString, (token != null && !token.isEmpty()) ? "bearer" : "none",
-                jsonBody.getBytes(StandardCharsets.UTF_8).length, jsonBody);
+
+        String token = authed ? TerasConfig.getApiToken() : null;
+        boolean hasToken = token != null && !token.isEmpty();
+        if (jsonBody == null) {
+            Teras.LOGGER.info("[Teras HTTP] --> {} {} (auth={})", method, urlString, hasToken ? "bearer" : "none");
+        } else {
+            Teras.LOGGER.info("[Teras HTTP] --> {} {} (auth={}, {} bytes)", method, urlString,
+                    hasToken ? "bearer" : "none", jsonBody.getBytes(StandardCharsets.UTF_8).length);
+            Teras.LOGGER.debug("[Teras HTTP]     body: {}", jsonBody);
+        }
+
         HttpURLConnection con = null;
         try {
             con = (HttpURLConnection) url.openConnection();
             con.setConnectTimeout(CONNECT_TIMEOUT_MS);
             con.setReadTimeout(READ_TIMEOUT_MS);
-            con.setRequestMethod("POST");
-            con.setDoOutput(true);
-            con.setRequestProperty("User-Agent", "Teras-SmartRotom");
-            con.setRequestProperty("Content-Type", "application/json");
-            con.setRequestProperty("Accept", "application/json");
-            if (token != null && !token.isEmpty()) {
+            con.setRequestMethod(method);
+            con.setRequestProperty("User-Agent", authed ? "Teras-SmartRotom" : "Mozilla/4.0");
+            if (authed) {
+                // Not on the unauthenticated path: that one fetches Showdown team pastes as plain
+                // text, and a JSON-only Accept invites a 406 from a server that honours it.
+                con.setRequestProperty("Accept", "application/json");
+            }
+            if (hasToken) {
                 con.setRequestProperty("Authorization", "Bearer " + token);
             }
-            try (OutputStream os = con.getOutputStream()) {
-                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+            if (jsonBody != null) {
+                con.setDoOutput(true);
+                con.setRequestProperty("Content-Type", "application/json");
+                try (OutputStream os = con.getOutputStream()) {
+                    os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                }
             }
             int code = con.getResponseCode();
             String body = readBody(code < 400 ? con.getInputStream() : con.getErrorStream());
-            Teras.LOGGER.info("[Teras HTTP] <-- {} POST {}\n         response: {}", code, urlString, body);
+            Teras.LOGGER.info("[Teras HTTP] <-- {} {} {}", code, method, urlString);
+            Teras.LOGGER.debug("[Teras HTTP]     response: {}", body);
             if (code >= 400) {
-                Teras.LOGGER.warn("POST {} -> HTTP {}", urlString, code);
-                return null;
+                Teras.LOGGER.warn("{} {} -> HTTP {}", method, urlString, code);
+                return FAILED;
             }
-            return body;
+            return new Response(true, body);
         } catch (IOException e) {
-            Teras.LOGGER.error("Error POSTing to {}: {}", urlString, e.getMessage());
-            return null;
+            Teras.LOGGER.error("Error on {} {}: {}", method, urlString, e.getMessage());
+            return FAILED;
         } finally {
             if (con != null) {
                 con.disconnect();
+            }
+        }
+    }
+
+    /** Drops entries whose TTL has passed; logical expiry alone would leave them in the map forever. */
+    private static void sweepExpired(long now) {
+        if (TEXT_CACHE.size() < CACHE_SWEEP_THRESHOLD) {
+            return;
+        }
+        Iterator<Map.Entry<String, CacheEntry>> it = TEXT_CACHE.entrySet().iterator();
+        while (it.hasNext()) {
+            if (it.next().getValue().expiresAt() <= now) {
+                it.remove();
             }
         }
     }

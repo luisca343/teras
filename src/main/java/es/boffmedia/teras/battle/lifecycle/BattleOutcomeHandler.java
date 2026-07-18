@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 /**
  * Engine-neutral battle-end handling: awards the config outcome (scoreboard objective, item rewards,
@@ -36,10 +35,20 @@ import java.util.function.Consumer;
 public final class BattleOutcomeHandler {
     private BattleOutcomeHandler() {}
 
-    /** One-shot per-player battle-end listeners, run after the standard handling (used by the battle tower). */
-    private static final java.util.Map<UUID, Consumer<Boolean>> END_LISTENERS = new ConcurrentHashMap<>();
+    /**
+     * One-shot per-player battle-end listeners, run after the standard handling (used by the battle
+     * tower). A listener is told <b>which</b> battle ended because the registration outlives the battle
+     * it was made for — an unrelated battle started in between would otherwise fire it.
+     */
+    private static final java.util.Map<UUID, EndListener> END_LISTENERS = new ConcurrentHashMap<>();
 
-    public static void addEndListener(UUID playerId, Consumer<Boolean> listener) {
+    /** Notified when a config battle ends, with the config that ended. */
+    @FunctionalInterface
+    public interface EndListener {
+        void onBattleEnd(BattleConfig config, boolean playerWon);
+    }
+
+    public static void addEndListener(UUID playerId, EndListener listener) {
         END_LISTENERS.put(playerId, listener);
     }
 
@@ -66,10 +75,10 @@ public final class BattleOutcomeHandler {
         } catch (Exception e) {
             Teras.LOGGER.error("Error handling battle outcome for '{}'", config.getNombreArchivo(), e);
         } finally {
-            Consumer<Boolean> listener = END_LISTENERS.remove(player.getUUID());
+            EndListener listener = END_LISTENERS.remove(player.getUUID());
             if (listener != null) {
                 try {
-                    listener.accept(playerWon);
+                    listener.onBattleEnd(config, playerWon);
                 } catch (Exception e) {
                     Teras.LOGGER.error("Battle-end listener failed", e);
                 }

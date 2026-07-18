@@ -38,9 +38,18 @@ class EconomyStoreTest {
         });
     }
 
+    /** Test clock, so an armed skip flag can be aged past its TTL without sleeping. */
+    private long now = 1_000_000L;
+
+    @BeforeEach
+    void useTestClock() {
+        EconomyStore.setClockForTests(() -> now);
+    }
+
     @AfterEach
     void clearCache() {
         EconomyStore.setSyncDispatcherForTests(null);
+        EconomyStore.setClockForTests(null);
         EconomyStore.clearSkipNextSync(player);
         EconomyStore.unload(player);
     }
@@ -210,6 +219,45 @@ class EconomyStoreTest {
         EconomyStore.deposit(player, new BigDecimal("5"));
 
         assertEquals(1, syncs.size());
+    }
+
+    @Test
+    void aSkipFlagLeftArmedByACancelledPurchaseExpiresInsteadOfEatingALaterSync() {
+        // The C-6 leak: a purchase cancelled between Pre and Post never reaches a mutation, so the
+        // flag stays armed. Without a TTL the player's *next* unrelated deposit silently loses its
+        // starbank mirror, and that money move never reaches the ledger at all.
+        EconomyStore.accept(player, new BigDecimal("100"));
+        EconomyStore.skipNextSync(player);
+
+        now += 60_000L;
+        EconomyStore.deposit(player, new BigDecimal("5"));
+
+        assertEquals(1, syncs.size());
+        assertEquals("[JUEGO] Ingreso en partida:105", syncs.get(0));
+    }
+
+    @Test
+    void aSkipFlagStillWithinItsWindowSuppressesTheSync() {
+        // Pre, mutation and Post run inline on the server thread, so the real gap is microseconds.
+        EconomyStore.accept(player, new BigDecimal("100"));
+        EconomyStore.skipNextSync(player);
+
+        now += 5L;
+        EconomyStore.withdraw(player, new BigDecimal("40"));
+
+        assertTrue(syncs.isEmpty());
+    }
+
+    @Test
+    void anExpiredSkipFlagIsConsumedNotLeftForTheNextMutation() {
+        EconomyStore.accept(player, new BigDecimal("100"));
+        EconomyStore.skipNextSync(player);
+        now += 60_000L;
+
+        EconomyStore.deposit(player, new BigDecimal("5"));
+        EconomyStore.deposit(player, new BigDecimal("5"));
+
+        assertEquals(2, syncs.size());
     }
 
     @Test

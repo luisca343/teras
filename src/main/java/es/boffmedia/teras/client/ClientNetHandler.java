@@ -2,9 +2,9 @@ package es.boffmedia.teras.client;
 
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.mcef.JsQueryCallback;
+import es.boffmedia.teras.mcef.PendingQueries;
 import es.boffmedia.teras.net.McefResponsePayload;
 import es.boffmedia.teras.net.ServerConfigPayload;
-import es.boffmedia.teras.util.QueryHelper;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
@@ -23,7 +23,7 @@ public final class ClientNetHandler {
      */
     public static void onMcefResponse(McefResponsePayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            JsQueryCallback cb = QueryHelper.takePending(payload.requestId());
+            JsQueryCallback cb = PendingQueries.take(payload.requestId());
             if (cb == null) {
                 Teras.LOGGER.warn("MCEF response for unknown/expired request id {}: {}",
                         payload.requestId(), payload.json());
