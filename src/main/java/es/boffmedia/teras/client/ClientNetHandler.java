@@ -5,6 +5,7 @@ import es.boffmedia.teras.mcef.JsQueryCallback;
 import es.boffmedia.teras.mcef.PendingQueries;
 import es.boffmedia.teras.net.McefResponsePayload;
 import es.boffmedia.teras.net.ServerConfigPayload;
+import es.boffmedia.teras.net.StorageChangedPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
@@ -43,5 +44,19 @@ public final class ClientNetHandler {
     /** Stores the config of the server we just joined; see {@link ServerConfig}. */
     public static void onServerConfig(ServerConfigPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> ServerConfig.accept(payload));
+    }
+
+    /**
+     * Optional page hook, called on every open browser: pages that do not define it are unaffected,
+     * so the mod stays deployable ahead of the website. The PC app defines it to invalidate its
+     * queries — see {@link StorageChangedPayload}.
+     */
+    private static final String STORAGE_CHANGED_JS =
+            "if (typeof window.terasStorageChanged === 'function') { try { window.terasStorageChanged(); }"
+                    + " catch (e) { console.error('terasStorageChanged failed', e); } }";
+
+    /** The player's Pokémon storage changed server-side; tell any open SmartRotom to refetch. */
+    public static void onStorageChanged(StorageChangedPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.mcef.TerasMCEF.broadcastJS(STORAGE_CHANGED_JS));
     }
 }

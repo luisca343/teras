@@ -66,6 +66,9 @@ public class Teras {
             // Pokédex: mirrors every dex registration to SmartRotom, for whichever engine is present.
             // Same isolation — DexBridge names no engine class.
             es.boffmedia.teras.dex.DexBridge.registerIfPresent();
+            // Storage: tells an open SmartRotom PC to refetch when the game moves a Pokémon, so its
+            // positional swaps never act on a stale view. Same isolation.
+            es.boffmedia.teras.storage.StorageBridge.registerIfPresent();
             // Backpacks: lets Pixelmon reach battle items stored inside any container item. Pixelmon
             // only (Cobblemon has no BattleItemScanner). Same isolation — BackpackBridge names no
             // engine class.

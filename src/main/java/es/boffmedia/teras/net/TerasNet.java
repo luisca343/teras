@@ -57,6 +57,8 @@ public final class TerasNet {
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
         registrar.playToClient(ServerConfigPayload.TYPE, ServerConfigPayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onServerConfig(payload, context));
+        registrar.playToClient(StorageChangedPayload.TYPE, StorageChangedPayload.STREAM_CODEC,
+                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onStorageChanged(payload, context));
     }
 
     // ---- Server-side send helpers ----

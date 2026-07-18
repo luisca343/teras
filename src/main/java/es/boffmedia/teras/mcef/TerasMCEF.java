@@ -183,4 +183,14 @@ public final class TerasMCEF {
             Teras.LOGGER.warn("runJS called with no active SmartRotom browser (id={}): {}", id, js);
         }
     }
+
+    /**
+     * Java -> JS for every open browser, for notifications no single item owns. Silent when none are
+     * open, unlike {@link #runJS}: a player with no SmartRotom in hand is the normal case.
+     */
+    public static void broadcastJS(String js) {
+        for (MCEFBrowser b : BROWSERS.values()) {
+            b.executeJavaScript(js, b.getURL(), 0);
+        }
+    }
 }
