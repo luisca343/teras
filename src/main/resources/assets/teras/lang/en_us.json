@@ -41,5 +41,6 @@
   "gui.teras.frame_both": "2-side",
   "gui.teras.frame_lit": "Lit",
   "gui.teras.frame_border": "Border",
-  "message.teras.frame_no_permission": "You don't have permission to edit this frame."
+  "message.teras.frame_no_permission": "You don't have permission to edit this frame.",
+  "message.teras.region_protected": "This zone is protected."
 }

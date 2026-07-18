@@ -108,6 +108,13 @@ dependencies {
     // and the Tocadiscos audio path.
     compileOnly("curse.maven:voicechat-416089:8293091") { transitive = false }
 
+    // WorldEdit 7.3.8 (CurseForge file 5830452, single NeoForge/Fabric jar for MC 1.21–1.21.1) —
+    // /teras region create|redefine read the admin's WE selection (//wand cuboid or //sel poly).
+    // Only WorldEditBridge imports com.sk89q.*; without WorldEdit the region commands report how to
+    // select, and tracking/protection/sync work regardless. On 1.16.5 WorldEdit was a hard dep but
+    // only for schematics/biome tools; region membership was never WorldEdit's job.
+    compileOnly("curse.maven:worldedit-225608:5830452") { transitive = false }
+
     // Backpacks — deliberately NOT dependencies. Traveler's and Sophisticated both register the
     // standard NeoForge Capabilities.ItemHandler.ITEM on their backpack items, so the Pixelmon
     // BattleItemScanner bridge reads either (and any other container mod) through vanilla NeoForge

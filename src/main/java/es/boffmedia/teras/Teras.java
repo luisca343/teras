@@ -73,6 +73,10 @@ public class Teras {
             // only (Cobblemon has no BattleItemScanner). Same isolation — BackpackBridge names no
             // engine class.
             es.boffmedia.teras.battle.BackpackBridge.registerIfPresent();
+            // Regions: the cartel on town enter. Engine-free; future consumers (quests, music)
+            // register alongside.
+            es.boffmedia.teras.region.RegionTracker.addListener(
+                    new es.boffmedia.teras.region.RegionBannerSender());
         });
     }
 }

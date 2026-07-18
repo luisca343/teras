@@ -76,6 +76,9 @@ import java.util.function.Supplier;
  * POST /updatebattleteam   -> {data:{updated:true}}   body {uuid, name, teamSlot,
  *                                                          pokemon:{box, slot}}
  * POST /stats              -> {data:{stats:{...}, DataVersion}}   body {uuid}
+ * GET  /regions            -> [{name, points, fillColor, strokeColor, dimension, shape, ...}]
+ *                             (bare array — the shape the old backend itself served at /regions;
+ *                             the mod is now the source of truth, the backend/web map the consumer)
  * </pre>
  *
  * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
@@ -132,6 +135,7 @@ public final class TerasHttpServer {
     private static final String STATS_PATH = "/stats";
     private static final String GET_TEAMS_PATH = "/getallbattleteams";
     private static final String UPDATE_TEAM_PATH = "/updatebattleteam";
+    private static final String REGIONS_PATH = "/regions";
     private static final String BEARER_PREFIX = "Bearer ";
     /** Section sign, kept as an escape so the source stays ASCII. */
     private static final char SECTION = '\u00a7';
@@ -206,6 +210,10 @@ public final class TerasHttpServer {
             server.createContext(STATS_PATH, exchange -> handleStats(exchange, mc));
             server.createContext(GET_TEAMS_PATH, exchange -> handleGetTeams(exchange, mc));
             server.createContext(UPDATE_TEAM_PATH, exchange -> handleUpdateTeam(exchange, mc));
+            // Regions serve from RegionStore's immutable snapshot (published on the server thread,
+            // warmed before this server starts), so no server-thread hop is needed — the same
+            // rationale as the economy routes.
+            server.createContext(REGIONS_PATH, TerasHttpServer::handleRegions);
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
@@ -214,7 +222,8 @@ public final class TerasHttpServer {
                             + "POST /updateBalance, POST /getCurrentBalance, POST /money, "
                             + "POST /pc, POST /pc/move, POST /equipo, GET /weather, "
                             + "GET /performance, POST /globalchat, POST /updatedex, "
-                            + "POST /getallbattleteams, POST /updatebattleteam, POST /stats)",
+                            + "POST /getallbattleteams, POST /updatebattleteam, POST /stats, "
+                            + "GET /regions)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -832,6 +841,25 @@ public final class TerasHttpServer {
     }
 
     /** Shared POST preamble: rejects non-POST (405) and unauthorized (401). Returns false if handled. */
+    /**
+     * The full region catalog in the legacy web shape (bare array; cuboid regions synthesize their
+     * four XZ corners into {@code points}). Serves the immutable snapshot, so no server-thread hop:
+     * mutations republish it atomically and {@link es.boffmedia.teras.region.RegionTracker} warms it
+     * before this server binds.
+     */
+    private static void handleRegions(HttpExchange exchange) throws IOException {
+        if (!beginRead(exchange)) {
+            return;
+        }
+        try {
+            respond(exchange, 200, es.boffmedia.teras.region.RegionJson.toWebArray(
+                    es.boffmedia.teras.region.RegionStore.all().values()));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
     private static boolean beginWrite(HttpExchange exchange) throws IOException {
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             respond(exchange, 405, error("Method not allowed"));

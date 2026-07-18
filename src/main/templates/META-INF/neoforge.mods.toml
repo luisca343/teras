@@ -80,6 +80,28 @@ versionRange = "[1.21.1,)"
 ordering = "AFTER"
 side = "BOTH"
 
+# Optional: /teras region create|redefine read the caller's WorldEdit selection. Without WorldEdit
+# the commands explain what's missing; everything else about regions (tracking, banners, protection,
+# sync, HTTP) needs no WorldEdit.
+[[dependencies.${mod_id}]]
+modId = "worldedit"
+type = "optional"
+versionRange = "[7.3,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# Optional (client): JourneyMap draws the pueblo_* town overlays/waypoints and carretera_* routes.
+# Our plugin class is discovered and instantiated by JourneyMap itself, so nothing links it when
+# JourneyMap is absent and the map features simply don't exist.
+# Like SVC above, JourneyMap versions itself as "<mc>-<jm>" (e.g. 1.21.1-6.0.1), so the range must
+# key on the MC prefix: "[6.0,)" would compare 1.21.1… against 6.0 and reject every build.
+[[dependencies.${mod_id}]]
+modId = "journeymap"
+type = "optional"
+versionRange = "[1.21,)"
+ordering = "AFTER"
+side = "CLIENT"
+
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"

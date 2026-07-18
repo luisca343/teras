@@ -4,6 +4,9 @@ import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.mcef.JsQueryCallback;
 import es.boffmedia.teras.mcef.PendingQueries;
 import es.boffmedia.teras.net.McefResponsePayload;
+import es.boffmedia.teras.net.RegionBannerPayload;
+import es.boffmedia.teras.net.RegionRoutePayload;
+import es.boffmedia.teras.net.RegionSyncPayload;
 import es.boffmedia.teras.net.ServerConfigPayload;
 import es.boffmedia.teras.net.StorageChangedPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -58,5 +61,32 @@ public final class ClientNetHandler {
     /** The player's Pokémon storage changed server-side; tell any open SmartRotom to refetch. */
     public static void onStorageChanged(StorageChangedPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> es.boffmedia.teras.mcef.TerasMCEF.broadcastJS(STORAGE_CHANGED_JS));
+    }
+
+    /** The player entered a region with a cartel; slide it in. See {@link RegionBannerPayload}. */
+    public static void onRegionBanner(RegionBannerPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.region.CartelOverlay
+                .show(payload.banner(), payload.holdSeconds()));
+    }
+
+    /** The server's region catalog (login or post-mutation); see {@link RegionSyncPayload}. */
+    public static void onRegionSync(RegionSyncPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.region.ClientRegionStore
+                .accept(payload.json()));
+    }
+
+    /**
+     * Draw a road route on the map; see {@link RegionRoutePayload}. RouteDrawer imports JourneyMap
+     * classes, so it is named only behind the guard — without JourneyMap the route just drops.
+     */
+    public static void onRegionRoute(RegionRoutePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!net.neoforged.fml.ModList.get().isLoaded("journeymap")) {
+                Teras.LOGGER.warn("Route received but JourneyMap is not installed; ignoring");
+                return;
+            }
+            es.boffmedia.teras.client.region.journeymap.RouteDrawer.draw(
+                    payload.startX(), payload.startZ(), payload.endX(), payload.endZ());
+        });
     }
 }

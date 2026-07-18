@@ -41,5 +41,6 @@
   "gui.teras.frame_both": "2 caras",
   "gui.teras.frame_lit": "Brillo",
   "gui.teras.frame_border": "Borde",
-  "message.teras.frame_no_permission": "No tienes permiso para editar este marco."
+  "message.teras.frame_no_permission": "No tienes permiso para editar este marco.",
+  "message.teras.region_protected": "Esta zona está protegida."
 }
