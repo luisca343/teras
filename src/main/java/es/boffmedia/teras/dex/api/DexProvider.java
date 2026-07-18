@@ -1,7 +1,10 @@
 package es.boffmedia.teras.dex.api;
 
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+
+import java.util.UUID;
 
 /**
  * Engine-neutral Pokédex access for the SmartRotom scan. One implementation per supported engine
@@ -30,4 +33,15 @@ public interface DexProvider {
      * turns that into the single SmartRotom POST. See {@code docs/DEX.md}.</p>
      */
     void markSeen(ServerPlayer player, Entity entity);
+
+    /**
+     * The player's whole Pokédex, or {@code null} if this server has none for them. The bulk resync
+     * behind {@code POST /updatedex}; the per-registration push in {@code dex.*.*DexSync} is what
+     * keeps the backend current day to day.
+     *
+     * <p><b>Blocks, and must not be called on the server thread</b> — an offline player's dex is
+     * loaded from disk, and an engine may schedule that load onto the server thread. Implementations
+     * hop to the server thread themselves for the part that reads game state.</p>
+     */
+    DexSnapshot readAll(MinecraftServer server, UUID player) throws Exception;
 }

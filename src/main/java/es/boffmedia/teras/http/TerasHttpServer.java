@@ -6,13 +6,18 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.dex.api.DexProvider;
+import es.boffmedia.teras.dex.api.DexProviders;
+import es.boffmedia.teras.dex.api.DexSnapshot;
 import es.boffmedia.teras.economy.EconomyStore;
 import es.boffmedia.teras.storage.api.StorageProvider;
 import es.boffmedia.teras.storage.api.StorageProviders;
 import es.boffmedia.teras.storage.api.StorageSession;
 import es.boffmedia.teras.util.TerasConfig;
+import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -21,10 +26,14 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +65,9 @@ import java.util.function.Supplier;
  * POST /getCurrentBalance  -> {data:balance}           body {uuid, amount}          (add, return new)
  * POST /money              -> {data:{money:balance}}   body {uuid}
  * GET  /weather            -> {data:{weather, changeTime, minecraftTime}}   (no body)
+ * GET  /performance        -> {data:{tps, players, memory, uptime}}        (no body)
+ * POST /globalchat         -> {data:{sent:true}}       body {uuid, message}
+ * POST /updatedex          -> {data:{SEEN:[...], CAUGHT:[...]}}   body {uuid}
  * </pre>
  *
  * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
@@ -106,7 +118,12 @@ public final class TerasHttpServer {
     private static final String PC_MOVE_PATH = "/pc/move";
     private static final String PARTY_PATH = "/equipo";
     private static final String WEATHER_PATH = "/weather";
+    private static final String PERFORMANCE_PATH = "/performance";
+    private static final String GLOBAL_CHAT_PATH = "/globalchat";
+    private static final String UPDATE_DEX_PATH = "/updatedex";
     private static final String BEARER_PREFIX = "Bearer ";
+    /** Section sign, kept as an escape so the source stays ASCII. */
+    private static final char SECTION = '\u00a7';
 
     /** The catalog walks every dialog, so it gets more room than a simple lookup. */
     private static final long CATALOG_TIMEOUT_SECONDS = 20;
@@ -128,6 +145,10 @@ public final class TerasHttpServer {
     private static final int SHUTDOWN_DELAY_SECONDS = 1;
 
     private static final Gson GSON = new Gson();
+
+    /** Locale-fixed: a comma decimal separator would not survive the page's Number(). */
+    private static final DecimalFormat TPS_FORMAT =
+            new DecimalFormat("##.##", DecimalFormatSymbols.getInstance(Locale.ROOT));
 
     private static HttpServer server;
 
@@ -168,13 +189,17 @@ public final class TerasHttpServer {
             server.createContext(PC_MOVE_PATH, exchange -> handlePcMove(exchange, mc));
             server.createContext(PARTY_PATH, exchange -> handleParty(exchange, mc));
             server.createContext(WEATHER_PATH, exchange -> handleWeather(exchange, mc));
+            server.createContext(PERFORMANCE_PATH, exchange -> handlePerformance(exchange, mc));
+            server.createContext(GLOBAL_CHAT_PATH, exchange -> handleGlobalChat(exchange, mc));
+            server.createContext(UPDATE_DEX_PATH, exchange -> handleUpdateDex(exchange, mc));
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
             Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /ping, GET /quests/all, "
                             + "GET /quests/user/{{uuid}}, POST /givepokemon, POST /giveitems, "
                             + "POST /updateBalance, POST /getCurrentBalance, POST /money, "
-                            + "POST /pc, POST /pc/move, POST /equipo, GET /weather)",
+                            + "POST /pc, POST /pc/move, POST /equipo, GET /weather, "
+                            + "GET /performance, POST /globalchat, POST /updatedex)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -426,6 +451,132 @@ public final class TerasHttpServer {
         // getRainTime counts down to the next flip either way; vanilla's getWeatherDuration.
         int untilChange = level.getLevelData() instanceof ServerLevelData data ? data.getRainTime() : 0;
         return new Weather(state, Math.floorMod(time + untilChange, TICKS_PER_DAY), time);
+    }
+
+
+    /** Server health for the SmartRotom dashboard. GET with no body, as 1.16.5 served it. */
+    private static void handlePerformance(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginRead(exchange)) {
+            return;
+        }
+        try {
+            respond(exchange, 200, data(GSON.toJson(
+                    onServerThread(mc, () -> readPerformance(mc), WEATHER_TIMEOUT_SECONDS))));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        }
+    }
+
+    /** {@code tps} is a string and {@code memory} a percentage — 1.16.5's shapes, which the page binds. */
+    private record Performance(String tps, int players, double memory, String uptime) {}
+
+    private static Performance readPerformance(MinecraftServer mc) {
+        double msPerTick = mc.getAverageTickTimeNanos() / 1_000_000.0;
+        // A tick that finishes early still costs a full 50ms of wall clock, so the server cannot
+        // exceed 20 TPS however fast it runs.
+        double tps = Math.min(20.0, 1000.0 / Math.max(50.0, msPerTick));
+        Runtime runtime = Runtime.getRuntime();
+        double memory = (double) (runtime.totalMemory() - runtime.freeMemory()) / runtime.maxMemory() * 100;
+        return new Performance(TPS_FORMAT.format(tps), mc.getPlayerList().getPlayerCount(), memory,
+                uptime(System.currentTimeMillis() - ManagementFactory.getRuntimeMXBean().getStartTime()));
+    }
+
+    private static String uptime(long millis) {
+        long days = millis / 86_400_000;
+        millis %= 86_400_000;
+        long hours = millis / 3_600_000;
+        millis %= 3_600_000;
+        return days + "d " + hours + "h " + millis / 60_000 + "m";
+    }
+
+    /**
+     * Broadcasts a SmartRotom chat message in-game, as {@code [name]: message} with colour codes.
+     *
+     * <p>The message is player-typed and goes to everyone, so section signs are stripped: 1.16.5 let
+     * them through, which let anyone colour, bold or obfuscate global chat. The name is the server's,
+     * not the caller's, so it needs no such treatment.</p>
+     */
+    private static void handleGlobalChat(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonBody.object(readBody(exchange));
+            UUID uuid = JsonBody.uuid(body);
+            String message = JsonBody.string(body, "message");
+            if (message == null || message.isBlank()) {
+                respond(exchange, 400, error("'message' is required"));
+                return;
+            }
+            String clean = message.replace(SECTION, ' ');
+            onServerThread(mc, () -> {
+                ServerPlayer sender = mc.getPlayerList().getPlayer(uuid);
+                String name = sender != null ? sender.getGameProfile().getName() : "Unknown";
+                MessageHelper.enviarMensajeGlobal(mc, String.format("%1$s7[%1$s6%2$s%1$s7]: %1$sr%3$s",
+                        SECTION, name, clean));
+                return true;
+            }, WEATHER_TIMEOUT_SECONDS);
+            respond(exchange, 200, "{\"data\":{\"sent\":true}}");
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        }
+    }
+
+    /**
+     * The player's whole Pokédex, for the backend's bulk resync. The day-to-day path is the push in
+     * {@code dex.*.*DexSync}; this is the backfill that reconciles it.
+     */
+    private static void handleUpdateDex(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        DexProvider provider = DexProviders.get();
+        if (provider == null) {
+            respond(exchange, 503, error("Pokédex unavailable (no supported engine)"));
+            return;
+        }
+        UUID uuid;
+        try {
+            uuid = JsonBody.uuid(JsonBody.object(readBody(exchange)));
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+            return;
+        }
+        try {
+            // Off the server thread, like the PC routes: the dex load may be scheduled onto it.
+            DexSnapshot snapshot = provider.readAll(mc, uuid);
+            if (snapshot == null) {
+                respond(exchange, 404, error("Player not found"));
+                return;
+            }
+            respond(exchange, 200, data(GSON.toJson(snapshot)));
+        } catch (TimeoutException e) {
+            Teras.LOGGER.warn("Teras HTTP API: timed out reading the Pokédex for {}", uuid);
+            respond(exchange, 503, error("Pokédex did not load in time"));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            respond(exchange, 503, error("Server is shutting down"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: failed to read the Pokédex for {}", uuid, e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /** Shared GET preamble, mirroring {@link #beginWrite}. Returns false if already handled. */
+    private static boolean beginRead(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            respond(exchange, 405, error("Method not allowed"));
+            return false;
+        }
+        if (!isAuthorized(exchange)) {
+            respond(exchange, 401, error("Unauthorized"));
+            return false;
+        }
+        return true;
     }
 
     // ---- SmartRotom PC ----
