@@ -5,7 +5,7 @@ import es.boffmedia.teras.mcef.JsQueryCallback;
 import es.boffmedia.teras.mcef.PendingQueries;
 import es.boffmedia.teras.net.McefResponsePayload;
 import es.boffmedia.teras.net.RegionBannerPayload;
-import es.boffmedia.teras.net.RegionRoutePayload;
+import es.boffmedia.teras.net.GpsPayload;
 import es.boffmedia.teras.net.RegionSyncPayload;
 import es.boffmedia.teras.net.ServerConfigPayload;
 import es.boffmedia.teras.net.StorageChangedPayload;
@@ -75,18 +75,14 @@ public final class ClientNetHandler {
                 .accept(payload.json()));
     }
 
-    /**
-     * Draw a road route on the map; see {@link RegionRoutePayload}. RouteDrawer imports JourneyMap
-     * classes, so it is named only behind the guard — without JourneyMap the route just drops.
-     */
-    public static void onRegionRoute(RegionRoutePayload payload, IPayloadContext context) {
+    /** Turns the live GPS on or off for this player; see {@link GpsPayload}. */
+    public static void onGps(GpsPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
-            if (!net.neoforged.fml.ModList.get().isLoaded("journeymap")) {
-                Teras.LOGGER.warn("Route received but JourneyMap is not installed; ignoring");
-                return;
+            if (payload.active()) {
+                es.boffmedia.teras.client.region.ClientGps.start(payload.x(), payload.z());
+            } else {
+                es.boffmedia.teras.client.region.ClientGps.stop();
             }
-            es.boffmedia.teras.client.region.journeymap.RouteDrawer.draw(
-                    payload.startX(), payload.startZ(), payload.endX(), payload.endZ());
         });
     }
 }

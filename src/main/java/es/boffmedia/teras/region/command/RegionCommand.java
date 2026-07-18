@@ -1,7 +1,6 @@
 package es.boffmedia.teras.region.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -17,7 +16,6 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.DimensionArgument;
-import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -134,15 +132,6 @@ public final class RegionCommand {
                                         .then(Commands.argument("valor", StringArgumentType.word())
                                                 .suggests(BANNER_VALUES)
                                                 .executes(RegionCommand::banner))))
-                        .then(Commands.literal("ruta")
-                                .then(Commands.argument("x1", IntegerArgumentType.integer())
-                                        .then(Commands.argument("z1", IntegerArgumentType.integer())
-                                                .then(Commands.argument("x2", IntegerArgumentType.integer())
-                                                        .then(Commands.argument("z2", IntegerArgumentType.integer())
-                                                                .executes(ctx -> route(ctx, ctx.getSource().getPlayerOrException()))
-                                                                .then(Commands.argument("jugador", EntityArgument.player())
-                                                                        .executes(ctx -> route(ctx,
-                                                                                EntityArgument.getPlayer(ctx, "jugador")))))))))
                         .then(Commands.literal("recargar")
                                 .executes(RegionCommand::reload))));
     }
@@ -295,17 +284,6 @@ public final class RegionCommand {
         String resolved = region.bannerOrNull();
         ctx.getSource().sendSuccess(() -> Component.literal("Cartel de '" + name + "': "
                 + (resolved == null ? "(ninguno)" : "textures/carteles/" + resolved + ".png")), true);
-        return 1;
-    }
-
-    /** Dev/test trigger for the JourneyMap route drawing; the backend can reuse the same payload. */
-    private static int route(CommandContext<CommandSourceStack> ctx, ServerPlayer target) {
-        var payload = new es.boffmedia.teras.net.RegionRoutePayload(
-                IntegerArgumentType.getInteger(ctx, "x1"), IntegerArgumentType.getInteger(ctx, "z1"),
-                IntegerArgumentType.getInteger(ctx, "x2"), IntegerArgumentType.getInteger(ctx, "z2"));
-        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(target, payload);
-        ctx.getSource().sendSuccess(() -> Component.literal(
-                "Ruta enviada a " + target.getGameProfile().getName()), true);
         return 1;
     }
 

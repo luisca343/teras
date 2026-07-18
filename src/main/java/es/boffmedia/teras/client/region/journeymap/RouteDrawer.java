@@ -3,111 +3,101 @@ package es.boffmedia.teras.client.region.journeymap;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.client.region.ClientRegionStore;
 import es.boffmedia.teras.region.model.RegionPoint;
-import es.boffmedia.teras.region.model.TerasRegion;
+import es.boffmedia.teras.region.route.RoadRouter;
 import journeymap.api.v2.client.IClientAPI;
 import journeymap.api.v2.client.display.Context;
 import journeymap.api.v2.client.display.PolygonOverlay;
 import journeymap.api.v2.client.model.MapPolygon;
 import journeymap.api.v2.client.model.ShapeProperties;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Road navigation on the fullscreen map — minimal port of the 1.16.5 {@code RouteCreator}: a blue
- * connector from the start to its closest {@code carretera_*} vertex and a red one from the end to
- * its own, each drawn as the old degenerate there-and-back polygon. The old Dijkstra along the road
- * graph was dead code (commented out) and stays unported.
+ * Draws the GPS route on the player's JourneyMap, ported from the 1.16.5 {@code RouteCreator}
+ * drawing half. The routing itself is in {@link RoadRouter}; this only turns its path into an
+ * overlay.
  *
- * <p>Only named behind a {@code ModList.isLoaded("journeymap")} guard
- * ({@link es.boffmedia.teras.client.ClientNetHandler}); road data comes from
- * {@link ClientRegionStore}, so no server round-trip is needed.</p>
+ * <p>The route is a single overlay, replaced on every redraw so successive recomputes don't stack.
+ * It is drawn as a ribbon rather than a line because JourneyMap has no polyline overlay — only
+ * closed polygons it triangulates to fill, so a zero-area "line" never renders.</p>
  */
 public final class RouteDrawer {
     private RouteDrawer() {}
 
-    private static final int OVERLAY_Y = 64;
-    private static final int START_CONNECTOR_COLOR = 0x0000FF;
-    private static final int END_CONNECTOR_COLOR = 0xFF0000;
+    /** Y level used for every drawn point (routing happens in 2D on the map). */
+    private static final int DRAW_Y = 64;
+    private static final int ROUTE_COLOR = 0x00B0FF;
 
-    /** The current route's overlays; a new route (or a redraw with no roads) replaces them. */
-    private static final List<PolygonOverlay> SHOWN = new ArrayList<>();
+    /** The last route we drew, kept so we can clear it before drawing a new one. */
+    private static PolygonOverlay currentRoute;
 
-    public static void draw(int startX, int startZ, int endX, int endZ) {
+    /** Removes the currently drawn route overlay, if any. */
+    public static void clearRoute() {
+        TerasJourneyMapPlugin plugin = TerasJourneyMapPlugin.instance();
+        if (plugin != null && plugin.api() != null && currentRoute != null) {
+            try {
+                plugin.api().remove(currentRoute);
+            } catch (Exception ignored) {
+            }
+        }
+        currentRoute = null;
+    }
+
+    public static void createRoute(int startX, int startZ, int endX, int endZ) {
         TerasJourneyMapPlugin plugin = TerasJourneyMapPlugin.instance();
         if (plugin == null || plugin.api() == null) {
-            Teras.LOGGER.warn("Route requested but the JourneyMap plugin is not initialized");
+            Teras.LOGGER.warn("JourneyMap client API not available; cannot draw route");
             return;
         }
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
-        IClientAPI api = plugin.api();
-        ResourceKey<Level> dimension = mc.level.dimension();
-        String dimensionKey = dimension.location().toString();
-
-        for (PolygonOverlay overlay : SHOWN) {
-            api.remove(overlay);
-        }
-        SHOWN.clear();
-
-        List<RegionPoint> roadPoints = roadPoints(dimensionKey);
-        if (roadPoints.isEmpty()) {
-            Teras.LOGGER.warn("Route requested but there are no carretera_* regions in {}", dimensionKey);
-            return;
-        }
-        RegionPoint closestToStart = closest(roadPoints, startX, startZ);
-        RegionPoint closestToEnd = closest(roadPoints, endX, endZ);
-
-        showLine(api, dimension, startX, startZ, closestToStart, START_CONNECTOR_COLOR);
-        showLine(api, dimension, endX, endZ, closestToEnd, END_CONNECTOR_COLOR);
+        List<double[]> path = RoadRouter.route(ClientRegionStore.all(),
+                Level.OVERWORLD.location().toString(),
+                new RegionPoint(startX, startZ), new RegionPoint(endX, endZ));
+        drawRoute(plugin.api(), path);
     }
 
-    private static List<RegionPoint> roadPoints(String dimensionKey) {
-        List<RegionPoint> points = new ArrayList<>();
-        for (TerasRegion region : ClientRegionStore.all()) {
-            if (region.isRoad() && dimensionKey.equals(region.getDimension())) {
-                points.addAll(region.outline());
+    private static void drawRoute(IClientAPI jmAPI, List<double[]> path) {
+        // Clear the previous route so successive calls don't stack overlays.
+        if (currentRoute != null) {
+            try {
+                jmAPI.remove(currentRoute);
+            } catch (Exception ignored) {
             }
+            currentRoute = null;
         }
-        return points;
-    }
 
-    private static RegionPoint closest(List<RegionPoint> points, int x, int z) {
-        RegionPoint best = points.get(0);
-        long bestDistance = Long.MAX_VALUE;
-        for (RegionPoint point : points) {
-            long dx = point.getX() - x;
-            long dz = point.getZ() - z;
-            long distance = dx * dx + dz * dz;
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = point;
-            }
+        // Split long straight segments into intermediate points so the route has dense vertices
+        // along its length (smoother corners, better minimap coverage).
+        List<double[]> dense = RoadRouter.subdivide(path, RoadRouter.ROUTE_POINT_SPACING);
+        List<RegionPoint> ribbon = RoadRouter.buildRibbon(dense, RoadRouter.ROUTE_HALF_WIDTH);
+        if (ribbon.isEmpty()) return;
+
+        List<BlockPos> outline = new ArrayList<>(ribbon.size());
+        for (RegionPoint point : ribbon) {
+            outline.add(new BlockPos(point.getX(), DRAW_Y, point.getZ()));
         }
-        return best;
-    }
 
-    /** The old {@code createLine}/{@code createArea} trick: a two-point polygon traced both ways. */
-    private static void showLine(IClientAPI api, ResourceKey<Level> dimension,
-                                 int fromX, int fromZ, RegionPoint to, int color) {
-        List<BlockPos> line = new ArrayList<>(4);
-        line.add(new BlockPos(fromX, OVERLAY_Y, fromZ));
-        line.add(new BlockPos(to.getX(), OVERLAY_Y, to.getZ()));
-        line.add(new BlockPos(to.getX(), OVERLAY_Y, to.getZ()));
-        line.add(new BlockPos(fromX, OVERLAY_Y, fromZ));
+        ShapeProperties props = new ShapeProperties()
+                .setStrokeColor(ROUTE_COLOR)
+                .setStrokeOpacity(1.0f)
+                .setStrokeWidth(3.0f)
+                .setFillColor(ROUTE_COLOR)
+                .setFillOpacity(0.7f);
 
-        ShapeProperties shape = new ShapeProperties().setStrokeColor(color);
-        PolygonOverlay overlay = new PolygonOverlay(Teras.MOD_ID, dimension, shape, new MapPolygon(line));
-        overlay.setActiveUIs(Context.UI.Fullscreen);
+        PolygonOverlay overlay = new PolygonOverlay(
+                Teras.MOD_ID, Level.OVERWORLD, props, new MapPolygon(outline));
+        overlay.setTitle("Ruta");
+        overlay.setLabel("Ruta");
+        overlay.setActiveUIs(Context.UI.Minimap, Context.UI.Fullscreen, Context.UI.Webmap);
+
         try {
-            api.show(overlay);
-            SHOWN.add(overlay);
+            jmAPI.show(overlay);
+            currentRoute = overlay;
+            Teras.LOGGER.debug("Route drawn with {} waypoint(s)", path.size());
         } catch (Exception e) {
-            Teras.LOGGER.warn("Failed to draw route connector: {}", e.toString());
+            Teras.LOGGER.error("Error drawing route on map", e);
         }
     }
 }

@@ -244,6 +244,18 @@ public final class TerasRegion {
         flags.put(flag.key(), value);
     }
 
+    /** The outline's XZ centroid — where the town's waypoint sits and where {@code /gps} aims. */
+    public RegionPoint centroid() {
+        List<RegionPoint> outline = outline();
+        int x = 0;
+        int z = 0;
+        for (RegionPoint point : outline) {
+            x += point.getX();
+            z += point.getZ();
+        }
+        return new RegionPoint(x / outline.size(), z / outline.size());
+    }
+
     /**
      * {@code pueblo_tulipan} → {@code "Pueblo Tulipan"} — the display name for waypoints and the
      * title fallback. Verbatim port of the 1.16.5 {@code PolygonCreator.convertToTitleCase},

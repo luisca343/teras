@@ -63,8 +63,8 @@ public final class TerasNet {
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onRegionBanner(payload, context));
         registrar.playToClient(RegionSyncPayload.TYPE, RegionSyncPayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onRegionSync(payload, context));
-        registrar.playToClient(RegionRoutePayload.TYPE, RegionRoutePayload.STREAM_CODEC,
-                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onRegionRoute(payload, context));
+        registrar.playToClient(GpsPayload.TYPE, GpsPayload.STREAM_CODEC,
+                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onGps(payload, context));
     }
 
     // ---- Server-side send helpers ----

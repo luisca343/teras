@@ -42,5 +42,6 @@
   "gui.teras.frame_lit": "Lit",
   "gui.teras.frame_border": "Border",
   "message.teras.frame_no_permission": "You don't have permission to edit this frame.",
-  "message.teras.region_protected": "This zone is protected."
+  "message.teras.region_protected": "This zone is protected.",
+  "message.teras.gps_arrived": "You have arrived at your destination."
 }

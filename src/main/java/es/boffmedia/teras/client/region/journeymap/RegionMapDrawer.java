@@ -82,20 +82,13 @@ final class RegionMapDrawer {
 
         // Centroid waypoint labeled with the town's display name, deduped by name so resyncs
         // (and towns spanning several syncs) don't stack copies — the 1.16.5 getWaypoint check.
-        int centerX = 0;
-        int centerZ = 0;
-        for (RegionPoint point : outline) {
-            centerX += point.getX();
-            centerZ += point.getZ();
-        }
-        centerX /= outline.size();
-        centerZ /= outline.size();
+        RegionPoint center = region.centroid();
         String display = TerasRegion.titleCase(region.getName());
         boolean exists = api.getWaypoints(Teras.MOD_ID).stream()
                 .anyMatch(wp -> display.equals(wp.getName()));
         if (!exists) {
             Waypoint waypoint = WaypointFactory.createClientWaypoint(Teras.MOD_ID,
-                    new BlockPos(centerX, OVERLAY_Y, centerZ), display, dimension, false);
+                    new BlockPos(center.getX(), OVERLAY_Y, center.getZ()), display, dimension, false);
             waypoint.setColor(region.getFillColor());
             api.addWaypoint(Teras.MOD_ID, waypoint);
         }
