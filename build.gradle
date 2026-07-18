@@ -115,6 +115,23 @@ dependencies {
     // only for schematics/biome tools; region membership was never WorldEdit's job.
     compileOnly("curse.maven:worldedit-225608:5830452") { transitive = false }
 
+    // Immersive Vehicles (MTS) 24.0.0 for 1.21.1 NeoForge (CurseForge file 7926606) — the kart base.
+    // Replaces MrCrayfish's Vehicle Mod, which never left 1.16 and whose PoweredVehicleEntity the
+    // 1.16.5 karts reached into by ObfuscationReflectionHelper. IV's jar carries both the core
+    // (minecrafttransportsimulator.*) and the platform layer (mcinterface1211.*); only
+    // karts/vehicle/iv/IvKartVehicleService imports either, behind a ModList("mts") guard, so the
+    // rest of karts — tracks, engine, garage, rewards — compiles and runs without IV installed.
+    compileOnly("curse.maven:minecraft-transport-simulator-286703:7926606") { transitive = false }
+
+    // IV content packs for the dev runtime only — IV ships no vehicles of its own, so a dev client
+    // with none has nothing to race. Official Automobile Pack (1387229:7933542) and Official Content
+    // Pack (292217:7933734). runtimeOnly: no Teras code names a pack item type; tracks and presets
+    // reference packs by string id through PackParser. NOTE: IV discovers packs by scanning loaded
+    // mod jars — if these are not picked up from the Gradle runtime classpath, drop the two jars in
+    // run/mods/ instead; nothing in the build depends on them resolving.
+    runtimeOnly("curse.maven:mts-iv-official-automobile-pack-1387229:7933542") { transitive = false }
+    runtimeOnly("curse.maven:transport-simulator-official-vehicle-set-292217:7933734") { transitive = false }
+
     // Backpacks — deliberately NOT dependencies. Traveler's and Sophisticated both register the
     // standard NeoForge Capabilities.ItemHandler.ITEM on their backpack items, so the Pixelmon
     // BattleItemScanner bridge reads either (and any other container mod) through vanilla NeoForge

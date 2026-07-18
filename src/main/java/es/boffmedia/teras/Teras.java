@@ -77,6 +77,9 @@ public class Teras {
             // register alongside.
             es.boffmedia.teras.region.RegionTracker.addListener(
                     new es.boffmedia.teras.region.RegionBannerSender());
+            // Karts: pays out finished races, files circuit records, and reports them. Registered
+            // as a listener so a race never has to know money or leaderboards exist.
+            es.boffmedia.teras.karts.reward.RaceRewards.register();
         });
     }
 }

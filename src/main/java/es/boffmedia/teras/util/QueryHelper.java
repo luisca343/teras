@@ -79,11 +79,22 @@ public final class QueryHelper {
         // Async: the server opens the sender's own PC. No arguments — the player is the connection's.
         HANDLERS.put(QueryType.OPEN_PC, (json, raw, cb) ->
                 es.boffmedia.teras.net.TerasNet.requestOpenPC(PendingQueries.register(cb)));
-        // --- Still needs the JourneyMap v2 rewrite: ported next phase ---
-        HANDLERS.put(QueryType.ADD_WAYPOINT, (json, raw, cb) ->
-                notPorted(QueryType.ADD_WAYPOINT, cb, "JourneyMap integration"));
-        HANDLERS.put(QueryType.GET_WAYPOINTS, (json, raw, cb) ->
-                notPorted(QueryType.GET_WAYPOINTS, cb, "JourneyMap integration"));
+        // JourneyMap-backed. Fully-qualified and guarded so the journeymap.api classes are never
+        // loaded on a client without JourneyMap installed.
+        HANDLERS.put(QueryType.ADD_WAYPOINT, (json, raw, cb) -> {
+            if (!journeyMapLoaded()) {
+                noJourneyMap(QueryType.ADD_WAYPOINT, cb);
+                return;
+            }
+            es.boffmedia.teras.client.region.journeymap.WaypointQueries.handleAddWaypoint(json, cb);
+        });
+        HANDLERS.put(QueryType.GET_WAYPOINTS, (json, raw, cb) -> {
+            if (!journeyMapLoaded()) {
+                noJourneyMap(QueryType.GET_WAYPOINTS, cb);
+                return;
+            }
+            es.boffmedia.teras.client.region.journeymap.WaypointQueries.handleGetWaypoints(cb);
+        });
     }
 
     /** The {@code source} of a darCaja query, or {@code null} if absent or not a plain string. */
@@ -182,9 +193,14 @@ public final class QueryHelper {
         es.boffmedia.teras.net.TerasNet.requestSetCall(PendingQueries.register(callback), chatId);
     }
 
-    private static void notPorted(QueryType type, JsQueryCallback callback, String dependency) {
-        Teras.LOGGER.warn("SmartRotom query '{}' not yet ported (needs {})", type, dependency);
-        callback.failure(501, "Query '" + type + "' not yet available on 1.21.1 (needs " + dependency + ")");
+    private static boolean journeyMapLoaded() {
+        return net.neoforged.fml.ModList.get().isLoaded("journeymap");
+    }
+
+    /** 501, not an error: the query is implemented, the client just has no JourneyMap to serve it. */
+    private static void noJourneyMap(QueryType type, JsQueryCallback callback) {
+        Teras.LOGGER.warn("SmartRotom query '{}' needs JourneyMap, which is not installed", type);
+        callback.failure(501, "Query '" + type + "' requires JourneyMap");
     }
 
     /** Fully-ported example handler: returns the online player list. Proves the JS round-trip. */

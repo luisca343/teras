@@ -32,12 +32,14 @@ import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -136,6 +138,8 @@ public final class TerasHttpServer {
     private static final String GET_TEAMS_PATH = "/getallbattleteams";
     private static final String UPDATE_TEAM_PATH = "/updatebattleteam";
     private static final String REGIONS_PATH = "/regions";
+    private static final String KARTS_LEADERBOARD_PATH = "/karts/leaderboard";
+    private static final String KARTS_STATUS_PATH = "/karts/status";
     private static final String BEARER_PREFIX = "Bearer ";
     /** Section sign, kept as an escape so the source stays ASCII. */
     private static final char SECTION = '\u00a7';
@@ -214,6 +218,8 @@ public final class TerasHttpServer {
             // warmed before this server starts), so no server-thread hop is needed — the same
             // rationale as the economy routes.
             server.createContext(REGIONS_PATH, TerasHttpServer::handleRegions);
+            server.createContext(KARTS_LEADERBOARD_PATH, TerasHttpServer::handleKartsLeaderboard);
+            server.createContext(KARTS_STATUS_PATH, TerasHttpServer::handleKartsStatus);
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
@@ -857,6 +863,84 @@ public final class TerasHttpServer {
         } catch (Exception e) {
             Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
             respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /**
+     * Circuit records. {@code ?track=<nombre>} for one circuit, otherwise every circuit that has
+     * any; {@code ?limit=<n>} caps the rows per table.
+     *
+     * <p>Served straight from the leaderboard store with no server-thread hop: records only change
+     * when a race finishes, on the server thread, and the read is of an already-sorted list.</p>
+     */
+    private static void handleKartsLeaderboard(HttpExchange exchange) throws IOException {
+        if (!beginRead(exchange)) {
+            return;
+        }
+        try {
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            int limit = parsePositiveInt(query.get("limit"), es.boffmedia.teras.karts.KartsConfig.leaderboardTopN());
+            String track = query.get("track");
+            respond(exchange, 200, track == null || track.isBlank()
+                    ? es.boffmedia.teras.karts.http.KartsJsonView.leaderboardIndex(limit).toString()
+                    : es.boffmedia.teras.karts.http.KartsJsonView.leaderboard(track, limit).toString());
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /**
+     * Circuits and any race currently running. Hops to the server thread: live races are mutated
+     * every tick, so reading them off the HTTP pool would race with the engine.
+     */
+    private static void handleKartsStatus(HttpExchange exchange) throws IOException {
+        if (!beginRead(exchange)) {
+            return;
+        }
+        MinecraftServer mc = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (mc == null) {
+            respond(exchange, 503, error("Server not ready"));
+            return;
+        }
+        try {
+            respond(exchange, 200, onServerThread(mc, () -> es.boffmedia.teras.karts.http.KartsJsonView.status().toString(), 5));
+        } catch (IllegalStateException e) {
+            // onServerThread reports a timed-out or interrupted hop this way.
+            respond(exchange, 503, error("Server busy"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /** Splits a raw query string into decoded key/value pairs. */
+    private static Map<String, String> parseQuery(String rawQuery) {
+        Map<String, String> parsed = new HashMap<>();
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return parsed;
+        }
+        for (String pair : rawQuery.split("&")) {
+            int equals = pair.indexOf('=');
+            if (equals <= 0) {
+                continue;
+            }
+            parsed.put(URLDecoder.decode(pair.substring(0, equals), StandardCharsets.UTF_8),
+                    URLDecoder.decode(pair.substring(equals + 1), StandardCharsets.UTF_8));
+        }
+        return parsed;
+    }
+
+    /** A positive integer parameter, falling back to {@code fallback} for anything unusable. */
+    static int parsePositiveInt(String raw, int fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            int value = Integer.parseInt(raw.trim());
+            return value > 0 ? value : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
         }
     }
 

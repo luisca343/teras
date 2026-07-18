@@ -93,6 +93,44 @@ public final class SmartRotomService {
                 scan.form(), scan.palette(), status.wireValue()));
     }
 
+    /**
+     * Reports a finished kart race. A tripwire route, so it carries the top-level {@code server}.
+     *
+     * <p>Fire-and-forget: a race must not stall the tick waiting on the backend, and a report that
+     * fails to land costs a leaderboard row, not player money — the local
+     * {@code LeaderboardStore} already has the result.</p>
+     *
+     * <p>Revives the intent of the 1.16.5 {@code postCarrera}, which was written against
+     * {@code /smartrotom/karts/carrera} but never called from anywhere.</p>
+     */
+    public static void saveRace(es.boffmedia.teras.karts.engine.RaceResult result) {
+        if (result == null) {
+            return;
+        }
+        List<RaceParticipantBody> participants = new ArrayList<>();
+        for (var placement : result.placements()) {
+            participants.add(new RaceParticipantBody(
+                    placement.playerId().toString(), placement.playerName(), placement.position(),
+                    placement.timeMs(), placement.bestLapMs(), placement.dnf()));
+        }
+        RaceReportBody body = new RaceReportBody(TerasConfig.getId(), result.trackName(),
+                result.modeId(), result.laps(), System.currentTimeMillis(), participants);
+        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/karts/carrera", GSON.toJson(body));
+    }
+
+    /** The race report body, split out so the wire contract can be asserted without a runtime. */
+    static String raceBody(String server, es.boffmedia.teras.karts.engine.RaceResult result,
+                           long timestamp) {
+        List<RaceParticipantBody> participants = new ArrayList<>();
+        for (var placement : result.placements()) {
+            participants.add(new RaceParticipantBody(
+                    placement.playerId().toString(), placement.playerName(), placement.position(),
+                    placement.timeMs(), placement.bestLapMs(), placement.dnf()));
+        }
+        return GSON.toJson(new RaceReportBody(server, result.trackName(), result.modeId(),
+                result.laps(), timestamp, participants));
+    }
+
     public static void saveBattle(BattleReport report) {
         if (report == null) {
             return;
@@ -425,6 +463,12 @@ public final class SmartRotomService {
 
     /** {@code /set-balance} body — note: no {@code server} field (excluded route). */
     private record SetBalanceBody(String uuid, long balance, String concept) {}
+
+    private record RaceReportBody(String server, String circuito, String modo, int vueltas,
+                                  long fecha, List<RaceParticipantBody> resultados) {}
+
+    private record RaceParticipantBody(String uuid, String nombre, int posicion,
+                                       long tiempoMs, long mejorVueltaMs, boolean dnf) {}
 
     private record TrainerDefeat(String server, String uuid, int money) {}
 

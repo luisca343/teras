@@ -90,6 +90,16 @@ versionRange = "[7.3,)"
 ordering = "AFTER"
 side = "BOTH"
 
+# Optional: Immersive Vehicles (MTS) supplies the karts. Without it the /karts commands report that
+# it is missing and no race can start; tracks, presets and garages still load and can be edited.
+# AFTER so IV's pack loading has run before our commands first query PackParser for vehicle items.
+[[dependencies.${mod_id}]]
+modId = "mts"
+type = "optional"
+versionRange = "[24.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
 # Optional (client): JourneyMap draws the pueblo_* town overlays/waypoints and carretera_* routes.
 # Our plugin class is discovered and instantiated by JourneyMap itself, so nothing links it when
 # JourneyMap is absent and the map features simply don't exist.

@@ -85,4 +85,9 @@ public final class ClientNetHandler {
             }
         });
     }
+
+    /** Refreshes this player's race HUD; see {@link es.boffmedia.teras.net.RaceHudPayload}. */
+    public static void onRaceHud(es.boffmedia.teras.net.RaceHudPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.karts.ClientRaceHud.accept(payload));
+    }
 }
