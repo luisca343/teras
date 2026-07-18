@@ -7,18 +7,11 @@ import com.pixelmonmod.pixelmon.api.events.battles.BattleEndEvent;
 import com.pixelmonmod.pixelmon.api.pokemon.Pokemon;
 import com.pixelmonmod.pixelmon.api.pokemon.export.PokemonConverterFactory;
 import com.pixelmonmod.pixelmon.api.pokemon.export.exception.PokemonImportException;
-import com.pixelmonmod.pixelmon.api.pokemon.stats.BattleStatsType;
-import com.pixelmonmod.pixelmon.api.pokemon.stats.EVStore;
-import com.pixelmonmod.pixelmon.api.pokemon.stats.IVStore;
-import com.pixelmonmod.pixelmon.api.pokemon.stats.Moveset;
-import com.pixelmonmod.pixelmon.api.pokemon.stats.PermanentStats;
-import com.pixelmonmod.pixelmon.api.pokemon.species.Species;
 import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
 import com.pixelmonmod.pixelmon.api.storage.StorageProxy;
 import com.pixelmonmod.pixelmon.battles.api.BattleBuilder;
 import com.pixelmonmod.pixelmon.battles.api.rules.BattleRuleSet;
 import com.pixelmonmod.pixelmon.battles.api.rules.teamselection.TeamSelectionRegistry;
-import com.pixelmonmod.pixelmon.battles.attacks.Attack;
 import com.pixelmonmod.pixelmon.battles.controller.BattleController;
 import com.pixelmonmod.pixelmon.battles.controller.participants.BattleParticipant;
 import com.pixelmonmod.pixelmon.battles.controller.participants.EntityParticipant;
@@ -32,6 +25,7 @@ import es.boffmedia.teras.battle.config.BattleMode;
 import es.boffmedia.teras.battle.lifecycle.BattleOutcomeHandler;
 import es.boffmedia.teras.battle.model.TeamMember;
 import es.boffmedia.teras.battle.pixelmon.log.BattleLogRegistry;
+import es.boffmedia.teras.pixelmon.PokemonFields;
 import es.boffmedia.teras.util.string.MessageHelper;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -42,7 +36,6 @@ import net.minecraft.world.item.ItemStack;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -304,65 +297,21 @@ public class PixelmonBattleProvider implements BattleProvider {
         }
     }
 
-    /** {@link TeamMember} stat order. */
-    private static final BattleStatsType[] STAT_ORDER = {
-            BattleStatsType.HP, BattleStatsType.ATTACK, BattleStatsType.DEFENSE,
-            BattleStatsType.SPECIAL_ATTACK, BattleStatsType.SPECIAL_DEFENSE, BattleStatsType.SPEED};
-
     private static TeamMember toMember(Pokemon pokemon) {
-        Species species = pokemon.getSpecies();
-        String speciesName = species != null ? species.getName() : "";
-        String form = pokemon.getFormName();
         return new TeamMember(
                 pokemon.getDex(),
-                pokemon.getNature() != null ? capitalize(pokemon.getNature().getSerializedName()) : "",
-                speciesName,
-                isBaseForm(form) ? "" : form,
-                pokemon.getPalette() != null ? pokemon.getPalette().getName() : "none",
-                pokemon.getNickname() != null ? pokemon.getNickname().getString() : speciesName,
+                PokemonFields.nature(pokemon),
+                PokemonFields.species(pokemon),
+                PokemonFields.form(pokemon),
+                PokemonFields.palette(pokemon),
+                PokemonFields.displayName(pokemon),
                 pokemon.getPokemonLevel(),
                 heldItemName(pokemon.getHeldItem()),
-                pokemon.getAbility() != null ? pokemon.getAbility().getName() : "",
-                moveNames(pokemon.getMoveset()),
-                statList(pokemon.getIVs()),
-                statList(pokemon.getEVs()),
-                permanentStats(pokemon.getStats()));
-    }
-
-    private static List<String> moveNames(Moveset moveset) {
-        List<String> moves = new ArrayList<>();
-        if (moveset != null && moveset.attacks != null) {
-            for (Attack attack : moveset.attacks) {
-                if (attack != null && attack.getActualMove() != null) {
-                    moves.add(attack.getActualMove().getAttackName());
-                }
-            }
-        }
-        return moves;
-    }
-
-    private static List<Integer> statList(IVStore ivs) {
-        List<Integer> out = new ArrayList<>(STAT_ORDER.length);
-        for (BattleStatsType stat : STAT_ORDER) {
-            out.add(ivs != null ? ivs.getStat(stat) : 0);
-        }
-        return out;
-    }
-
-    private static List<Integer> statList(EVStore evs) {
-        List<Integer> out = new ArrayList<>(STAT_ORDER.length);
-        for (BattleStatsType stat : STAT_ORDER) {
-            out.add(evs != null ? evs.getStat(stat) : 0);
-        }
-        return out;
-    }
-
-    private static List<Integer> permanentStats(PermanentStats stats) {
-        List<Integer> out = new ArrayList<>(STAT_ORDER.length);
-        for (BattleStatsType stat : STAT_ORDER) {
-            out.add(stats != null ? stats.get(stat) : 0);
-        }
-        return out;
+                PokemonFields.ability(pokemon),
+                PokemonFields.moves(pokemon),
+                PokemonFields.ivs(pokemon),
+                PokemonFields.evs(pokemon),
+                PokemonFields.stats(pokemon));
     }
 
     private static String heldItemName(ItemStack stack) {
@@ -370,22 +319,6 @@ public class PixelmonBattleProvider implements BattleProvider {
             return "";
         }
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-    }
-
-    /** Pixelmon names a base form {@code null}, {@code ""}, {@code "base"} or {@code "normal"}. */
-    private static boolean isBaseForm(String form) {
-        if (form == null || form.isBlank()) {
-            return true;
-        }
-        String f = form.toLowerCase(Locale.ROOT);
-        return f.equals("base") || f.equals("normal");
-    }
-
-    private static String capitalize(String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        return Character.toUpperCase(value.charAt(0)) + value.substring(1).toLowerCase(Locale.ROOT);
     }
 
     /** Chat reveal of the rival team (species + level) — the preview fallback for wild battles. */

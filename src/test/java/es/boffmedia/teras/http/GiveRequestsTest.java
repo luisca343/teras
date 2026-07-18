@@ -1,6 +1,6 @@
 package es.boffmedia.teras.http;
 
-import es.boffmedia.teras.http.GiveRequests.BadRequest;
+import es.boffmedia.teras.http.JsonBody.BadRequest;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;

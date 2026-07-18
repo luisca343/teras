@@ -1,13 +1,19 @@
 package es.boffmedia.teras.http;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.economy.EconomyStore;
+import es.boffmedia.teras.storage.api.StorageProvider;
+import es.boffmedia.teras.storage.api.StorageProviders;
+import es.boffmedia.teras.storage.api.StorageSession;
 import es.boffmedia.teras.util.TerasConfig;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.storage.ServerLevelData;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -19,6 +25,7 @@ import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -26,6 +33,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -39,9 +48,14 @@ import java.util.function.Supplier;
  * GET  /quests/user/{uuid} -> {quests:{questId: QuestProgress}, categories:{...}}     (bare)
  * POST /givepokemon        -> {data:{given:true}}      body {uuid, pokespec, sendMessage}
  * POST /giveitems          -> {data:{given:N}}         body {uuid, items:[{id, amount, …}]}
+ * POST /pc                 -> {data:[{box, index, pokemon}]}   body {uuid}   (occupied slots only)
+ * POST /equipo             -> {data:[mon|null × 6]}            body {uuid}
+ * POST /pc/move            -> {data:{moved:true}}     body {uuid, sourceBox, sourceIndex,
+ *                                                           destinationBox, destinationIndex}
  * POST /updateBalance      -> {data:{success:true}}    body {balance, type, uuid}   (mirror in)
  * POST /getCurrentBalance  -> {data:balance}           body {uuid, amount}          (add, return new)
  * POST /money              -> {data:{money:balance}}   body {uuid}
+ * GET  /weather            -> {data:{weather, changeTime, minecraftTime}}   (no body)
  * </pre>
  *
  * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
@@ -88,6 +102,10 @@ public final class TerasHttpServer {
     private static final String UPDATE_BALANCE_PATH = "/updateBalance";
     private static final String GET_CURRENT_BALANCE_PATH = "/getCurrentBalance";
     private static final String MONEY_PATH = "/money";
+    private static final String PC_PATH = "/pc";
+    private static final String PC_MOVE_PATH = "/pc/move";
+    private static final String PARTY_PATH = "/equipo";
+    private static final String WEATHER_PATH = "/weather";
     private static final String BEARER_PREFIX = "Bearer ";
 
     /** The catalog walks every dialog, so it gets more room than a simple lookup. */
@@ -95,9 +113,21 @@ public final class TerasHttpServer {
     private static final long USER_TIMEOUT_SECONDS = 10;
     /** Under the backend's 10s axios timeout: past it the caller has given up while the row is spent. */
     private static final long GIVE_TIMEOUT_SECONDS = 8;
+    /**
+     * The server-thread half of a PC route, short because {@code /pc/move} is a <b>swap</b> and so
+     * not idempotent: past the backend's 10s axios timeout the user has been told it failed while it
+     * still lands, and redoing it swaps the slots straight back. With the provider's load budget this
+     * stays under that 10s. The work is an array walk (serialising happens off-thread), so the wait
+     * is queue latency, not compute.
+     */
+    private static final long STORAGE_TIMEOUT_SECONDS = 5;
+    private static final long WEATHER_TIMEOUT_SECONDS = 5;
+    private static final int TICKS_PER_DAY = 24_000;
     /** Extra wait for a give that had already started when {@link #GIVE_TIMEOUT_SECONDS} expired. */
     private static final long GIVE_GRACE_SECONDS = 2;
     private static final int SHUTDOWN_DELAY_SECONDS = 1;
+
+    private static final Gson GSON = new Gson();
 
     private static HttpServer server;
 
@@ -131,12 +161,20 @@ public final class TerasHttpServer {
             server.createContext(UPDATE_BALANCE_PATH, TerasHttpServer::handleUpdateBalance);
             server.createContext(GET_CURRENT_BALANCE_PATH, TerasHttpServer::handleGetCurrentBalance);
             server.createContext(MONEY_PATH, TerasHttpServer::handleMoney);
+            // /pc/move needs its own context: HttpServer matches by longest prefix, so under /pc
+            // alone it would be handled as a read. Each still rejects the sub-paths its own prefix
+            // swallows — see respondFromStorage.
+            server.createContext(PC_PATH, exchange -> handlePc(exchange, mc));
+            server.createContext(PC_MOVE_PATH, exchange -> handlePcMove(exchange, mc));
+            server.createContext(PARTY_PATH, exchange -> handleParty(exchange, mc));
+            server.createContext(WEATHER_PATH, exchange -> handleWeather(exchange, mc));
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
             Teras.LOGGER.info("Teras HTTP API listening on {}:{} (GET /ping, GET /quests/all, "
                             + "GET /quests/user/{{uuid}}, POST /givepokemon, POST /giveitems, "
-                            + "POST /updateBalance, POST /getCurrentBalance, POST /money)",
+                            + "POST /updateBalance, POST /getCurrentBalance, POST /money, "
+                            + "POST /pc, POST /pc/move, POST /equipo, GET /weather)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -247,7 +285,7 @@ public final class TerasHttpServer {
                 return;
             }
             respond(exchange, 200, "{\"data\":{\"given\":true}}");
-        } catch (GiveRequests.BadRequest e) {
+        } catch (JsonBody.BadRequest e) {
             respond(exchange, 400, error(e.getMessage()));
         } catch (IllegalStateException e) {
             Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
@@ -274,7 +312,7 @@ public final class TerasHttpServer {
                 return;
             }
             respond(exchange, 200, "{\"data\":{\"given\":" + given + "}}");
-        } catch (GiveRequests.BadRequest e) {
+        } catch (JsonBody.BadRequest e) {
             respond(exchange, 400, error(e.getMessage()));
         } catch (IllegalStateException e) {
             Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
@@ -353,6 +391,149 @@ public final class TerasHttpServer {
                     "{\"data\":{\"money\":" + EconomyStore.get(uuid).toPlainString() + "}}");
         } catch (RuntimeException e) {
             respond(exchange, 400, error("Malformed money body"));
+        }
+    }
+
+    /**
+     * Overworld weather and time-of-day for the SmartRotom clock. GET with no body, as 1.16.5 served
+     * it. {@code changeTime} is the time-of-day the weather flips at.
+     */
+    private static void handleWeather(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            respond(exchange, 405, error("Method not allowed"));
+            return;
+        }
+        if (!isAuthorized(exchange)) {
+            respond(exchange, 401, error("Unauthorized"));
+            return;
+        }
+        try {
+            Weather weather = onServerThread(mc, () -> readWeather(mc), WEATHER_TIMEOUT_SECONDS);
+            respond(exchange, 200, data(GSON.toJson(weather)));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        }
+    }
+
+    /** The backend's {@code Weather} entity. */
+    private record Weather(String weather, long changeTime, long minecraftTime) {}
+
+    private static Weather readWeather(MinecraftServer mc) {
+        ServerLevel level = mc.overworld(); // 1.16.5 read Bukkit's world 0; the clock is server-wide
+        String state = level.isRaining() ? (level.isThundering() ? "thunder" : "rain") : "clear";
+        long time = Math.floorMod(level.getDayTime(), TICKS_PER_DAY);
+        // getRainTime counts down to the next flip either way; vanilla's getWeatherDuration.
+        int untilChange = level.getLevelData() instanceof ServerLevelData data ? data.getRainTime() : 0;
+        return new Weather(state, Math.floorMod(time + untilChange, TICKS_PER_DAY), time);
+    }
+
+    // ---- SmartRotom PC ----
+    // The three routes that superseded openPC: rather than push the player into the in-game PC
+    // screen, the SmartRotom reads storage here and writes moves back. They work offline, which is
+    // the point. respondFromStorage carries the threading.
+
+    private static void handlePc(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        respondFromStorage(exchange, mc, PC_PATH, StorageRequests::parseUuid,
+                (session, req) -> session.readPc());
+    }
+
+    private static void handleParty(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        respondFromStorage(exchange, mc, PARTY_PATH, StorageRequests::parseUuid,
+                (session, req) -> session.readParty());
+    }
+
+    /** The PC's only write. A refused swap is 409, not 500: the client's view has simply drifted. */
+    private static void handlePcMove(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        respondFromStorage(exchange, mc, PC_MOVE_PATH, StorageRequests::parseMove, (session, move) -> {
+            boolean moved = session.swap(move.sourceBox(), move.sourceIndex(),
+                    move.destinationBox(), move.destinationIndex());
+            if (!moved) {
+                Teras.LOGGER.warn("pc/move refused for {}: [{},{}] <-> [{},{}]", move.uuid(),
+                        move.sourceBox(), move.sourceIndex(),
+                        move.destinationBox(), move.destinationIndex());
+                return null;
+            }
+            return Map.of("moved", true);
+        });
+    }
+
+    /**
+     * A PC route, in the order the threads require.
+     *
+     * <ol>
+     *   <li>Reject a non-POST, an unauthorized caller, or a path this context merely swallowed by
+     *       prefix ({@code /pcfoo}, {@code /equipo/bar}). Path checked after auth, so an
+     *       unauthorized caller learns nothing about what exists here.</li>
+     *   <li>Parse on this thread, so a malformed body 400s before anything else.</li>
+     *   <li>{@link StorageProvider#open} <b>here, not on the server thread</b> — the engine may
+     *       schedule the load onto that thread, and waiting there would deadlock.</li>
+     *   <li>Touch storage on the server thread, and only that: serialising a 900-Pokémon PC is CPU
+     *       on a model nobody can see yet, so it happens back here rather than holding the tick.</li>
+     * </ol>
+     *
+     * <p>A {@code null} from {@code work} means the game declined: 409, not 500.</p>
+     */
+    private static <T extends StorageRequests.Request> void respondFromStorage(
+            HttpExchange exchange, MinecraftServer mc, String exactPath, Function<String, T> parse,
+            BiFunction<StorageSession, T, Object> work) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        if (!exactPath.equals(exchange.getRequestURI().getPath())) {
+            respond(exchange, 404, error("Not found"));
+            return;
+        }
+        StorageProvider provider = StorageProviders.get();
+        if (provider == null) {
+            respond(exchange, 503, error("Pokémon storage unavailable (no supported engine)"));
+            return;
+        }
+        T request;
+        try {
+            request = parse.apply(readBody(exchange));
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+            return;
+        }
+
+        StorageSession session;
+        try {
+            session = provider.open(request.uuid());
+        } catch (TimeoutException e) {
+            Teras.LOGGER.warn("Teras HTTP API: timed out loading storage for {}", request.uuid());
+            respond(exchange, 503, error("Storage did not load in time"));
+            return;
+        } catch (InterruptedException e) {
+            // Re-arm so the next blocking call on this pooled thread still unwinds.
+            Thread.currentThread().interrupt();
+            respond(exchange, 503, error("Server is shutting down"));
+            return;
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: failed to load storage for {}", request.uuid(), e);
+            respond(exchange, 500, error("Internal error"));
+            return;
+        }
+        if (session == null) {
+            // Never logged in here, so there is nothing to show or move.
+            respond(exchange, 404, error("Player not found"));
+            return;
+        }
+
+        try {
+            Object result = onServerThread(mc, () -> work.apply(session, request),
+                    STORAGE_TIMEOUT_SECONDS);
+            if (result == null) {
+                respond(exchange, 409, error("Slot is out of range or unavailable"));
+                return;
+            }
+            respond(exchange, 200, data(GSON.toJson(result)));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
         }
     }
 
@@ -477,6 +658,11 @@ public final class TerasHttpServer {
     }
 
     // ---- Response helpers ----
+
+    /** The {@code {data:…}} envelope the backend unwraps as {@code response.data.data}. */
+    private static String data(String json) {
+        return "{\"data\":" + json + "}";
+    }
 
     private static String error(String message) {
         return "{\"success\":false,\"message\":\"" + message.replace("\"", "'") + "\",\"data\":null}";
