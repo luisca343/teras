@@ -6,6 +6,9 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.battle.team.BattleTeam;
+import es.boffmedia.teras.battle.team.api.TeamProvider;
+import es.boffmedia.teras.battle.team.api.TeamProviders;
 import es.boffmedia.teras.dex.api.DexProvider;
 import es.boffmedia.teras.dex.api.DexProviders;
 import es.boffmedia.teras.dex.api.DexSnapshot;
@@ -33,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -68,6 +72,10 @@ import java.util.function.Supplier;
  * GET  /performance        -> {data:{tps, players, memory, uptime}}        (no body)
  * POST /globalchat         -> {data:{sent:true}}       body {uuid, message}
  * POST /updatedex          -> {data:{SEEN:[...], CAUGHT:[...]}}   body {uuid}
+ * POST /getallbattleteams  -> {data:{teams:[{id, name, pokemon}], maxTeams}}   body {uuid}
+ * POST /updatebattleteam   -> {data:{updated:true}}   body {uuid, name, teamSlot,
+ *                                                          pokemon:{box, slot}}
+ * POST /stats              -> {data:{stats:{...}, DataVersion}}   body {uuid}
  * </pre>
  *
  * The envelope on one route and not the other is 1.16.5's inconsistency, reproduced deliberately: the
@@ -121,6 +129,9 @@ public final class TerasHttpServer {
     private static final String PERFORMANCE_PATH = "/performance";
     private static final String GLOBAL_CHAT_PATH = "/globalchat";
     private static final String UPDATE_DEX_PATH = "/updatedex";
+    private static final String STATS_PATH = "/stats";
+    private static final String GET_TEAMS_PATH = "/getallbattleteams";
+    private static final String UPDATE_TEAM_PATH = "/updatebattleteam";
     private static final String BEARER_PREFIX = "Bearer ";
     /** Section sign, kept as an escape so the source stays ASCII. */
     private static final char SECTION = '\u00a7';
@@ -192,6 +203,9 @@ public final class TerasHttpServer {
             server.createContext(PERFORMANCE_PATH, exchange -> handlePerformance(exchange, mc));
             server.createContext(GLOBAL_CHAT_PATH, exchange -> handleGlobalChat(exchange, mc));
             server.createContext(UPDATE_DEX_PATH, exchange -> handleUpdateDex(exchange, mc));
+            server.createContext(STATS_PATH, exchange -> handleStats(exchange, mc));
+            server.createContext(GET_TEAMS_PATH, exchange -> handleGetTeams(exchange, mc));
+            server.createContext(UPDATE_TEAM_PATH, exchange -> handleUpdateTeam(exchange, mc));
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
@@ -199,7 +213,8 @@ public final class TerasHttpServer {
                             + "GET /quests/user/{{uuid}}, POST /givepokemon, POST /giveitems, "
                             + "POST /updateBalance, POST /getCurrentBalance, POST /money, "
                             + "POST /pc, POST /pc/move, POST /equipo, GET /weather, "
-                            + "GET /performance, POST /globalchat, POST /updatedex)",
+                            + "GET /performance, POST /globalchat, POST /updatedex, "
+                            + "POST /getallbattleteams, POST /updatebattleteam, POST /stats)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -578,6 +593,134 @@ public final class TerasHttpServer {
         }
         return true;
     }
+
+
+
+    /**
+     * The player's vanilla Minecraft statistics, straight from {@code world/stats/<uuid>.json}.
+     *
+     * <p>An online player's counters are flushed first — vanilla only writes them periodically, so
+     * the file alone can be minutes behind the session being looked at. See
+     * {@link PlayerStatsService} for the shape, and for why it is not inlined here.</p>
+     */
+    private static void handleStats(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            UUID uuid = JsonBody.uuid(JsonBody.object(readBody(exchange)));
+            onServerThread(mc, () -> {
+                PlayerStatsService.flush(mc, uuid);
+                return true;
+            }, WEATHER_TIMEOUT_SECONDS);
+            String stats = PlayerStatsService.read(mc, uuid);
+            if (stats == null) {
+                respond(exchange, 404, error("No statistics for that player"));
+                return;
+            }
+            respond(exchange, 200, data(stats));
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    // ---- Battle teams ----
+
+    /**
+     * The player's saved battle teams, for the PC's teams panel.
+     *
+     * <p>Wrapped as {@code {teams, maxTeams}}, not the bare name-to-team map 1.16.5 sent: the panel
+     * reads {@code data.teams}, and the backend passes this response through untouched, so the flat
+     * map arrived as {@code undefined} and the panel rendered "no saved teams" whatever the player
+     * had.</p>
+     */
+    private static void handleGetTeams(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        TeamProvider provider = TeamProviders.get();
+        if (provider == null) {
+            respond(exchange, 503, error("Battle teams unavailable (no supported engine)"));
+            return;
+        }
+        try {
+            UUID uuid = JsonBody.uuid(JsonBody.object(readBody(exchange)));
+            List<BattleTeam> teams = provider.readAll(mc, uuid);
+            respond(exchange, 200, data(GSON.toJson(new BattleTeams(teams, MAX_BATTLE_TEAMS))));
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (TimeoutException e) {
+            respond(exchange, 503, error("Battle teams did not load in time"));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            respond(exchange, 503, error("Server is shutting down"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /** The panel's {@code BattleTeamData}. */
+    private record BattleTeams(List<BattleTeam> teams, int maxTeams) {}
+
+    /** No engine limit exists; the number is the panel's display cap, matching a PC box row. */
+    private static final int MAX_BATTLE_TEAMS = 6;
+
+    /**
+     * Copies one Pokémon from the party or a PC box into a team slot.
+     *
+     * <p>No live caller yet — the PC's teams panel is read-only pending its own API controller — but
+     * the backend already routes {@code battleteams/update} here, so the pair is complete.</p>
+     */
+    private static void handleUpdateTeam(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        TeamProvider provider = TeamProviders.get();
+        if (provider == null) {
+            respond(exchange, 503, error("Battle teams unavailable (no supported engine)"));
+            return;
+        }
+        try {
+            JsonObject body = JsonBody.object(readBody(exchange));
+            UUID uuid = JsonBody.uuid(body);
+            String name = JsonBody.string(body, "name");
+            JsonObject source = body.getAsJsonObject("pokemon");
+            if (source == null) {
+                respond(exchange, 400, error("'pokemon' is required"));
+                return;
+            }
+            boolean updated = provider.updateSlot(mc, uuid,
+                    name == null || name.isBlank() ? DEFAULT_TEAM_NAME : name.trim(),
+                    JsonBody.integer(body, "teamSlot"),
+                    JsonBody.integer(source, "box"),
+                    JsonBody.integer(source, "slot"));
+            if (!updated) {
+                respond(exchange, 409, error("No Pokémon at that slot"));
+                return;
+            }
+            respond(exchange, 200, "{\"data\":{\"updated\":true}}");
+        } catch (JsonBody.BadRequest | IllegalArgumentException e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (TimeoutException e) {
+            respond(exchange, 503, error("Battle teams did not load in time"));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            respond(exchange, 503, error("Server is shutting down"));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Teras HTTP API: unhandled error on {}", exchange.getRequestURI(), e);
+            respond(exchange, 500, error("Internal error"));
+        }
+    }
+
+    /** 1.16.5's fallback when the caller names no team. */
+    private static final String DEFAULT_TEAM_NAME = "battleteam";
 
     // ---- SmartRotom PC ----
     // The three routes that superseded openPC: rather than push the player into the in-game PC

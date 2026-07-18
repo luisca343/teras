@@ -8,16 +8,13 @@ import com.pixelmonmod.pixelmon.api.storage.PlayerPartyStorage;
 import com.pixelmonmod.pixelmon.battles.BattleRegistry;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.battle.tower.BattleTower;
-import es.boffmedia.teras.pixelmon.PokemonFields;
 import es.boffmedia.teras.storage.api.StorageSession;
 import es.boffmedia.teras.storage.model.PcEntry;
 import es.boffmedia.teras.storage.model.StoredMon;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 
 /** A Pixelmon party + PC, already loaded. Server thread only — see {@link StorageSession}. */
@@ -49,7 +46,7 @@ final class PixelmonStorageSession implements StorageSession {
                 if (pokemon == null || pokemon.getSpecies() == null) {
                     continue;
                 }
-                entries.add(new PcEntry(box, slot, read(pokemon)));
+                entries.add(new PcEntry(box, slot, PixelmonMons.read(pokemon)));
             }
         }
         return entries;
@@ -63,7 +60,8 @@ final class PixelmonStorageSession implements StorageSession {
         List<StoredMon> team = new ArrayList<>(PartyStorage.MAX_PARTY);
         for (int slot = 0; slot < PartyStorage.MAX_PARTY; slot++) {
             Pokemon pokemon = slot < slots.length ? slots[slot] : null;
-            team.add(pokemon == null || pokemon.getSpecies() == null ? null : read(pokemon));
+            team.add(pokemon == null || pokemon.getSpecies() == null
+                    ? null : PixelmonMons.read(pokemon));
         }
         return team;
     }
@@ -144,40 +142,4 @@ final class PixelmonStorageSession implements StorageSession {
         return box >= 0 && box < boxCount && index >= 0 && index < PCBox.POKEMON_PER_BOX;
     }
 
-    private static StoredMon read(Pokemon pokemon) {
-        return new StoredMon(
-                pokemon.getDex(),
-                PokemonFields.nature(pokemon),
-                PokemonFields.species(pokemon),
-                PokemonFields.form(pokemon),
-                PokemonFields.palette(pokemon),
-                PokemonFields.displayName(pokemon),
-                pokemon.getPokemonLevel(),
-                heldItemId(pokemon.getHeldItem()),
-                PokemonFields.ability(pokemon),
-                PokemonFields.moves(pokemon),
-                PokemonFields.ivs(pokemon),
-                PokemonFields.evs(pokemon),
-                PokemonFields.stats(pokemon),
-                pokemon.getHealth(),
-                pokemon.getGender() != null
-                        ? pokemon.getGender().name().toLowerCase(Locale.ROOT) : "none",
-                status(pokemon));
-    }
-
-    /** Description id, not registry key — see {@link StoredMon}. */
-    private static String heldItemId(ItemStack stack) {
-        return (stack == null ? ItemStack.EMPTY : stack).getDescriptionId();
-    }
-
-    /** Fainting is not a Pixelmon status, but the web PC greys a Pokémon out on {@code "fainted"}. */
-    private static String status(Pokemon pokemon) {
-        if (pokemon.getHealth() <= 0) {
-            return "fainted";
-        }
-        if (pokemon.getStatus() == null || pokemon.getStatus().type == null) {
-            return "none";
-        }
-        return pokemon.getStatus().type.name().toLowerCase(Locale.ROOT);
-    }
 }
