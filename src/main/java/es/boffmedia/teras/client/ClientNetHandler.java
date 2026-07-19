@@ -90,4 +90,9 @@ public final class ClientNetHandler {
     public static void onRaceHud(es.boffmedia.teras.net.RaceHudPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> es.boffmedia.teras.client.karts.ClientRaceHud.accept(payload));
     }
+
+    /** Refreshes this player's dungeon minimap; see {@link es.boffmedia.teras.net.DungeonMapPayload}. */
+    public static void onDungeonMap(es.boffmedia.teras.net.DungeonMapPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientDungeonMap.accept(payload));
+    }
 }

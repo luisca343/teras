@@ -57,6 +57,12 @@ repositories {
         url = 'https://maven.blamejared.com'
         content { includeGroup 'info.journeymap' }
     }
+    // Modrinth (GeckoLib, Armourer's Workshop) — used where the author opted the CurseForge file
+    // out of API distribution (cursemaven answers 401 for those).
+    maven {
+        url = 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
 }
 
 dependencies {
@@ -107,6 +113,19 @@ dependencies {
     // Simple Voice Chat 2.6.20 (voicechat-neoforge-1.21.1-2.6.20.jar, file 8293091) — setCall/leaveCall
     // and the Tocadiscos audio path.
     compileOnly("curse.maven:voicechat-416089:8293091") { transitive = false }
+
+    // GeckoLib 4.9.2 for 1.21.1 NeoForge — animated models for dungeon enemies. Compiled from
+    // Modrinth because GeckoLib's CurseForge files opt out of API distribution (the server runtime
+    // pin is CurseForge file 8350073). CustomNPCs' GeckoLib compat layer (the "CNPC Custom Model
+    // Addon") never reached 1.21.1, so the dungeon plan carries a slim first-party bridge instead
+    // (DUNGEONS.md) — same shape as the Frames decision: build on the upstream library, don't fork
+    // the missing addon.
+    compileOnly("maven.modrinth:geckolib:4.9.2") { transitive = false }
+
+    // Armourer's Workshop 3.4.0-beta.3 for 1.21.1 NeoForge (server runtime pin: CurseForge file
+    // 8438936) — skin visuals for the dungeon-exclusive gear; the stats/effects/abilities layer is
+    // Teras' own (dungeon/gear).
+    compileOnly("maven.modrinth:armourers-workshop:3.4.0-beta.3+1.21.1-neoforge") { transitive = false }
 
     // WorldEdit 7.3.8 (CurseForge file 5830452, single NeoForge/Fabric jar for MC 1.21–1.21.1) —
     // /teras region create|redefine read the admin's WE selection (//wand cuboid or //sel poly).
