@@ -137,6 +137,7 @@ public final class DungeonCommand {
             BlockPos start = built.anchorCenter(built.layout().start());
             player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
+            es.boffmedia.teras.dungeon.run.RunEngine.land(player);
             player.sendSystemMessage(Component.literal(
                     "§aMazmorra " + built.id() + " construida: " + built.layout().rooms().size()
                             + " salas, semilla " + built.layout().seedString()));

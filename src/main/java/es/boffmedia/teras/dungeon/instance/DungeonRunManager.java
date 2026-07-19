@@ -241,6 +241,7 @@ public final class DungeonRunManager {
             BlockPos spawn = overworld.getSharedSpawnPos();
             player.teleportTo(overworld, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
+            RunEngine.land(player);
         }
     }
 
@@ -315,6 +316,9 @@ public final class DungeonRunManager {
             if (player != null) {
                 player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                         player.getYRot(), player.getXRot());
+                // Clears the descent: gravity back on, and no fall distance carried into the
+                // landing (arriving mid-drop from the floor above was fatal).
+                RunEngine.land(player);
                 player.sendSystemMessage(Component.literal(
                         "§aMazmorra lista — etapa " + run.stage()
                                 + ", semilla " + run.layout().seedString()));
@@ -340,5 +344,7 @@ public final class DungeonRunManager {
             level = player.getServer().overworld();
         }
         player.teleportTo(level, point.x(), point.y(), point.z(), point.yaw(), point.pitch());
+        // A run can end while its party is mid-descent, so going home has to clear the fall too.
+        RunEngine.land(player);
     }
 }
