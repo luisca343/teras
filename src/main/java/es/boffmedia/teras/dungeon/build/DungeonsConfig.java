@@ -39,6 +39,8 @@ public final class DungeonsConfig {
     private static long curseToll;
     private static int deathPenaltyPct;
     private static String treasureLootTable;
+    private static int maxParty;
+    private static int entranceRadius;
     private static final Map<String, String> sounds = new LinkedHashMap<>();
     private static float soundVolume;
 
@@ -96,6 +98,8 @@ public final class DungeonsConfig {
             curseToll = yaml.longValue("peajeMaldicion", curseToll);
             deathPenaltyPct = yaml.integer("penalizacionMuertePct", deathPenaltyPct);
             treasureLootTable = yaml.string("lootTesoro", treasureLootTable);
+            maxParty = Math.max(1, yaml.integer("maxGrupo", maxParty));
+            entranceRadius = Math.max(1, yaml.integer("radioEntrada", entranceRadius));
             soundVolume = (float) yaml.integer("volumenSonidos", Math.round(soundVolume * 100)) / 100f;
             YamlConfig soundBlock = yaml.section("sonidos");
             for (String cue : DEFAULT_SOUNDS.keySet()) {
@@ -122,6 +126,8 @@ public final class DungeonsConfig {
         curseToll = 200;
         deathPenaltyPct = 5;
         treasureLootTable = "teras:dungeon/treasure";
+        maxParty = 4;
+        entranceRadius = 16;
         soundVolume = 0.8f;
         sounds.clear();
         sounds.putAll(DEFAULT_SOUNDS);
@@ -151,6 +157,10 @@ public final class DungeonsConfig {
                 peajeMaldicion: 200
                 penalizacionMuertePct: 5
                 lootTesoro: teras:dungeon/treasure
+                # Party play: group size cap, and how close to a marked entrance NPC a player must
+                # stand for 'entrar' to work (also the gather radius for their party members).
+                maxGrupo: 4
+                radioEntrada: 16
                 # Cues, as vanilla sound ids. The door cues play once per doorway of the room; the
                 # _body ones play once from the middle of it. Point any of these at a teras: id once
                 # you ship your own audio — nothing else has to change.
@@ -224,6 +234,14 @@ public final class DungeonsConfig {
 
     public static String treasureLootTable() {
         return treasureLootTable;
+    }
+
+    public static int maxParty() {
+        return maxParty;
+    }
+
+    public static int entranceRadius() {
+        return entranceRadius;
     }
 
     /** Vanilla (or first-party) sound id for a cue; never null — unknown cues fall back silently. */

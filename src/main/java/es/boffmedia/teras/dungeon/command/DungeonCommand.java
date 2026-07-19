@@ -27,8 +27,10 @@ import es.boffmedia.teras.dungeon.instance.DungeonRun;
 import es.boffmedia.teras.dungeon.instance.DungeonRunManager;
 import es.boffmedia.teras.dungeon.model.Curse;
 import es.boffmedia.teras.dungeon.model.DungeonLayout;
+import es.boffmedia.teras.dungeon.party.DungeonEntrance;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -99,6 +101,20 @@ public final class DungeonCommand {
                                         .then(Commands.argument("variante", StringArgumentType.word())
                                                 .suggests(GEO_VARIANTS)
                                                 .executes(DungeonCommand::summonGeo))))
+                        .then(Commands.literal("entrada")
+                                .then(Commands.literal("marcar")
+                                        .executes(ctx -> markEntrance(ctx, true)))
+                                .then(Commands.literal("quitar")
+                                        .executes(ctx -> markEntrance(ctx, false)))
+                                .then(Commands.literal("iniciar")
+                                        .then(Commands.argument("jugador", EntityArgument.player())
+                                                .then(Commands.argument("etapa", IntegerArgumentType.integer(1, 12))
+                                                        .executes(ctx -> entranceStart(ctx, false, false))
+                                                        .then(Commands.argument("laberinto", BoolArgumentType.bool())
+                                                                .then(Commands.argument("perdido", BoolArgumentType.bool())
+                                                                        .executes(ctx -> entranceStart(ctx,
+                                                                                BoolArgumentType.getBool(ctx, "laberinto"),
+                                                                                BoolArgumentType.getBool(ctx, "perdido")))))))))
                         .then(Commands.literal("sala")
                                 .then(Commands.literal("editar")
                                         .then(Commands.argument("tipo", StringArgumentType.word())
@@ -158,7 +174,8 @@ public final class DungeonCommand {
 
         if (mode == Mode.INSTANCE) {
             ServerPlayer player = ctx.getSource().getPlayerOrException();
-            DungeonRunManager.StartOutcome outcome = DungeonRunManager.start(player, stage, curses, seed);
+            DungeonRunManager.StartOutcome outcome =
+                    DungeonRunManager.start(player, java.util.List.of(player), stage, curses, seed);
             if (outcome.error() != null) {
                 ctx.getSource().sendFailure(Component.literal(outcome.error()));
                 return 0;
@@ -326,6 +343,67 @@ public final class DungeonCommand {
             return 0;
         }
         ctx.getSource().sendSuccess(() -> Component.literal("Retirando mazmorra " + id + "…"), false);
+        return 1;
+    }
+
+    /**
+     * Marks (or unmarks) the nearest CustomNPCs NPC as a dungeon entrance. The tag lives on the
+     * entity's own NBT, so it survives restarts with the NPC.
+     */
+    private static int markEntrance(CommandContext<CommandSourceStack> ctx, boolean mark)
+            throws CommandSyntaxException {
+        ServerPlayer admin = ctx.getSource().getPlayerOrException();
+        var npc = DungeonEntrance.nearestNpc(admin, 6);
+        if (npc == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "No hay ningún NPC de CustomNPCs a menos de 6 bloques."));
+            return 0;
+        }
+        String name = npc.getName().getString();
+        if (mark) {
+            if (!npc.addTag(DungeonEntrance.ENTRANCE_TAG)) {
+                ctx.getSource().sendFailure(Component.literal(name + " ya es una entrada."));
+                return 0;
+            }
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "§a" + name + " marcado como entrada de mazmorras. En su diálogo, añade una "
+                            + "opción de tipo comando: /teras dungeon entrada iniciar @dp <etapa> "
+                            + "(requiere bloques de comandos activados)."), false);
+        } else {
+            if (!npc.removeTag(DungeonEntrance.ENTRANCE_TAG)) {
+                ctx.getSource().sendFailure(Component.literal(name + " no era una entrada."));
+                return 0;
+            }
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "§7" + name + " ya no es una entrada."), false);
+        }
+        return 1;
+    }
+
+    /**
+     * The entrance NPC's way in: its dialog runs {@code entrada iniciar @dp <etapa>} — CustomNPCs
+     * executes dialog commands at permission level 2 and substitutes {@code @dp} with the talking
+     * player — and the run starts for that player's whole party. Errors go to the player, not
+     * (only) the console: the source here is the NPC, and the player is the one who needs to hear
+     * "ya estás en una mazmorra".
+     */
+    private static int entranceStart(CommandContext<CommandSourceStack> ctx,
+                                     boolean labyrinth, boolean lost) throws CommandSyntaxException {
+        ServerPlayer player = EntityArgument.getPlayer(ctx, "jugador");
+        Set<Curse> curses = EnumSet.noneOf(Curse.class);
+        if (labyrinth) {
+            curses.add(Curse.LABYRINTH);
+        }
+        if (lost) {
+            curses.add(Curse.LOST);
+        }
+        String error = DungeonEntrance.enter(player,
+                IntegerArgumentType.getInteger(ctx, "etapa"), curses);
+        if (error != null) {
+            player.sendSystemMessage(Component.literal("§c" + error));
+            ctx.getSource().sendFailure(Component.literal(error));
+            return 0;
+        }
         return 1;
     }
 

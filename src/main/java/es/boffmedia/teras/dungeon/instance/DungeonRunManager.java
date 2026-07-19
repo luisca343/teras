@@ -68,11 +68,16 @@ public final class DungeonRunManager {
                 .findFirst().orElse(null);
     }
 
-    public static StartOutcome start(ServerPlayer player, int stage, Set<Curse> curses, String seed) {
-        if (runOf(player.getUUID()) != null) {
-            return StartOutcome.fail("Ya estás en una mazmorra.");
+    /** Starts a run for {@code members} (the leader among them); one slot, one shared floor. */
+    public static StartOutcome start(ServerPlayer leader, Collection<ServerPlayer> members,
+                                     int stage, Set<Curse> curses, String seed) {
+        for (ServerPlayer member : members) {
+            if (runOf(member.getUUID()) != null) {
+                return StartOutcome.fail(member == leader ? "Ya estás en una mazmorra."
+                        : member.getName().getString() + " ya está en una mazmorra.");
+            }
         }
-        ServerLevel level = dungeonLevel(player.getServer());
+        ServerLevel level = dungeonLevel(leader.getServer());
         if (level == null) {
             return StartOutcome.fail("La dimensión " + DungeonsConfig.dimension() + " no existe.");
         }
@@ -90,7 +95,9 @@ public final class DungeonRunManager {
 
         SLOTS.set(slot);
         DungeonRun run = new DungeonRun(nextRunId++, slot, stage, curses, layout);
-        run.party().put(player.getUUID(), returnPointOf(player));
+        for (ServerPlayer member : members) {
+            run.party().put(member.getUUID(), returnPointOf(member));
+        }
         RUNS.put(run.id(), run);
 
         BlockPos origin = padOrigin(slot, 0);
@@ -98,12 +105,42 @@ public final class DungeonRunManager {
                 DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(),
                 cellOrigins(layout, origin), run.party());
 
+        MinecraftServer server = leader.getServer();
         DungeonMaterializer.enqueueBuild(level, layout, origin, built -> {
             run.activate(built.id());
+            // The whole party can quit or log out during the second or two the floor takes to
+            // build; a run with nobody in it must fold instead of standing registered forever.
+            if (run.party().isEmpty()) {
+                end(server, run.id());
+                return;
+            }
             RunEngine.register(run, built, level);
-            teleportPartyIn(player.getServer(), run, built);
+            teleportPartyIn(server, run, built);
         });
         return new StartOutcome(run, null);
+    }
+
+    /**
+     * One member walks out on a live run: home (mode and all) with their stored return point,
+     * map hidden, the rest told. The last one out ends the run and sweeps the floor.
+     */
+    public static boolean leaveRun(ServerPlayer player) {
+        DungeonRun run = runOf(player.getUUID());
+        if (run == null) {
+            return false;
+        }
+        DungeonRun.ReturnPoint point = run.party().remove(player.getUUID());
+        if (point != null) {
+            teleport(player, point);
+        }
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                es.boffmedia.teras.net.DungeonMapPayload.hidden());
+        message(player.getServer(), run,
+                "§7" + player.getName().getString() + " ha abandonado la mazmorra.");
+        if (run.party().isEmpty() && run.state() == DungeonRun.State.ACTIVE) {
+            end(player.getServer(), run.id());
+        }
+        return true;
     }
 
     /**
@@ -152,6 +189,15 @@ public final class DungeonRunManager {
 
         DungeonMaterializer.enqueueBuild(level, newLayout, newOrigin, built -> {
             run.advanceFloor(next, newLayout, built.id(), newPad);
+            if (run.party().isEmpty()) {
+                // Enqueued before end()'s own discard, so the journal (deleted only after the
+                // later job completes) covers the old floor for the whole sweep.
+                if (oldBuilt != null) {
+                    DungeonMaterializer.enqueueDiscard(oldBuiltId, level, () -> { });
+                }
+                end(server, run.id());
+                return;
+            }
             RunEngine.register(run, built, level);
             teleportPartyIn(server, run, built);
             if (oldBuilt != null) {
