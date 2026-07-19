@@ -20,5 +20,31 @@ public enum DungeonSound {
     /** A secret wall gave way. */
     SECRET_OPENED,
     /** An enemy crossed an ability threshold and changed state. */
-    ENEMY_ENRAGED
+    ENEMY_ENRAGED,
+    /** Coins went into the party purse. */
+    COIN_PICKUP,
+    /** A pedestal was bought. */
+    PURCHASE,
+    /** A purchase the party could not afford. */
+    PURCHASE_DENIED,
+    /** The challenge plate was stepped on and the doors shut. */
+    CHALLENGE_STARTED,
+    /** One wave of a challenge fell, with more to come. */
+    WAVE_CLEARED,
+    /** The sacrifice plate took its bite. */
+    SACRIFICE,
+    /** The sacrifice paid out. */
+    SACRIFICE_REWARD,
+    /** Coins went into the arcade machine. */
+    ARCADE_PLAY,
+    /** The arcade paid out. */
+    ARCADE_WIN,
+    /** The arcade machine gave up. */
+    ARCADE_BREAK,
+    /** The boss fell and the barred devil door opened. */
+    DEVIL_OPENED,
+    /** A devil deal was struck. */
+    DEVIL_DEAL,
+    /** A phoenix charm burned to cancel a death. */
+    PHOENIX
 }

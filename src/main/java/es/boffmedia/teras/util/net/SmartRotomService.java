@@ -131,6 +131,37 @@ public final class SmartRotomService {
                 result.laps(), timestamp, participants));
     }
 
+    /**
+     * Reports a finished dungeon run — completed or abandoned. A tripwire route, so it carries the
+     * top-level {@code server}, and fire-and-forget for the same reason as {@link #saveRace}: a
+     * lost report costs a leaderboard row, and the party is already home either way.
+     *
+     * <p>Gated by {@code enviarResultados} in the dungeon config, off by default until the backend
+     * route exists — see {@code docs/SMARTROTOM_ENDPOINTS_HANDOFF.md} for the contract.</p>
+     */
+    public static void saveDungeonRun(es.boffmedia.teras.dungeon.instance.DungeonRunResult result) {
+        if (result == null) {
+            return;
+        }
+        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/dungeons/run",
+                dungeonBody(TerasConfig.getId(), result, System.currentTimeMillis()));
+    }
+
+    /** The dungeon report body, split out so the wire contract can be asserted without a runtime. */
+    static String dungeonBody(String server,
+                              es.boffmedia.teras.dungeon.instance.DungeonRunResult result,
+                              long timestamp) {
+        List<DungeonParticipantBody> participants = new ArrayList<>();
+        for (var participant : result.participants()) {
+            participants.add(new DungeonParticipantBody(participant.uuid(), participant.name(),
+                    participant.deaths(), participant.abandoned()));
+        }
+        return GSON.toJson(new DungeonRunBody(server, result.seed(), result.startStage(),
+                result.endStage(), result.stagesCleared(), result.completed(), result.durationMs(),
+                result.curses(), result.coinsEarned(), result.coinsSpent(), result.coinsConverted(),
+                timestamp, participants));
+    }
+
     public static void saveBattle(BattleReport report) {
         if (report == null) {
             return;
@@ -469,6 +500,15 @@ public final class SmartRotomService {
 
     private record RaceParticipantBody(String uuid, String nombre, int posicion,
                                        long tiempoMs, long mejorVueltaMs, boolean dnf) {}
+
+    private record DungeonRunBody(String server, String semilla, int etapaInicial, int etapaFinal,
+                                  int pisosSuperados, boolean completada, long duracionMs,
+                                  List<String> maldiciones, int monedasGanadas, int monedasGastadas,
+                                  int monedasConvertidas, long fecha,
+                                  List<DungeonParticipantBody> participantes) {}
+
+    private record DungeonParticipantBody(String uuid, String nombre, int muertes,
+                                          boolean abandono) {}
 
     private record TrainerDefeat(String server, String uuid, int money) {}
 

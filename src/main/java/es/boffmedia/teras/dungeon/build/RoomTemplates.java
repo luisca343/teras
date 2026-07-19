@@ -185,7 +185,10 @@ public final class RoomTemplates {
     static List<String> poolKeys(Room room) {
         String type = room.type().name().toLowerCase(Locale.ROOT);
         if (room.shape() == RoomShape.SINGLE) {
-            return List.of(type);
+            // "normal" last: a room type whose template has not been authored yet still gets a
+            // playable cell rather than a hole in the floor. Its fixtures fall back to the room
+            // centre and log, so the gap is loud without being fatal.
+            return List.of(type, "normal");
         }
         String shape = room.shape().name().toLowerCase(Locale.ROOT);
         return List.of(type + "_" + shape, "normal_" + shape);
@@ -249,6 +252,7 @@ public final class RoomTemplates {
         for (String name : new String[] {
                 "start", "normal", "boss", "boss_quad", "mini_boss", "shop", "treasure",
                 "secret", "super_secret", "challenge", "curse",
+                "sacrifice", "arcade", "devil_deal",
                 "normal_horizontal", "normal_vertical", "normal_quad",
                 "normal_l_top_left", "normal_l_top_right",
                 "normal_l_bottom_left", "normal_l_bottom_right"}) {

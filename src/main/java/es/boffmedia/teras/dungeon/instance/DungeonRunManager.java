@@ -50,6 +50,8 @@ public final class DungeonRunManager {
     private static final Map<Integer, DungeonRun> RUNS = new LinkedHashMap<>();
     private static final BitSet SLOTS = new BitSet();
     private static Map<UUID, DungeonRun.ReturnPoint> pendingReturns = new LinkedHashMap<>();
+    /** Members who walked out on a run, so the report can tell them from those who saw it through. */
+    private static final Set<UUID> abandoned = new java.util.HashSet<>();
     private static int nextRunId = 1;
 
     public record StartOutcome(DungeonRun run, String error) {
@@ -97,6 +99,7 @@ public final class DungeonRunManager {
         DungeonRun run = new DungeonRun(nextRunId++, slot, stage, curses, layout);
         for (ServerPlayer member : members) {
             run.party().put(member.getUUID(), returnPointOf(member));
+            run.names().put(member.getUUID(), member.getName().getString());
         }
         RUNS.put(run.id(), run);
 
@@ -130,11 +133,14 @@ public final class DungeonRunManager {
             return false;
         }
         DungeonRun.ReturnPoint point = run.party().remove(player.getUUID());
+        abandoned.add(player.getUUID());
         if (point != null) {
             teleport(player, point);
         }
         net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                 es.boffmedia.teras.net.DungeonMapPayload.hidden());
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                es.boffmedia.teras.net.DungeonWalletPayload.hidden());
         message(player.getServer(), run,
                 "§7" + player.getName().getString() + " ha abandonado la mazmorra.");
         if (run.party().isEmpty() && run.state() == DungeonRun.State.ACTIVE) {
@@ -212,7 +218,48 @@ public final class DungeonRunManager {
     private static void completeRun(MinecraftServer server, DungeonRun run) {
         message(server, run, "§6¡Mazmorra completada! Etapa " + run.stage()
                 + " superada con semilla " + run.layout().seedString() + ".");
+        payOutCoins(server, run);
+        report(run, true);
         end(server, run.id());
+    }
+
+    /**
+     * The one place dungeon coins become money. They are worthless anywhere else — no bank, no
+     * trade, no way out of the run with them — so finishing is what makes the whole floor's income
+     * real, and dying on the last stage forfeits it. Split equally among whoever is still standing
+     * there: the purse was shared all along.
+     */
+    private static void payOutCoins(MinecraftServer server, DungeonRun run) {
+        int coins = run.wallet().coins();
+        int rate = DungeonsConfig.coinToPesos();
+        if (coins <= 0 || rate <= 0) {
+            return;
+        }
+        List<ServerPlayer> present = new java.util.ArrayList<>();
+        for (UUID member : run.party().keySet()) {
+            ServerPlayer player = server.getPlayerList().getPlayer(member);
+            if (player != null) {
+                present.add(player);
+            }
+        }
+        if (present.isEmpty()) {
+            return;
+        }
+        run.wallet().cashOut();
+        run.recordConversion(coins);
+        java.math.BigDecimal total = java.math.BigDecimal.valueOf((long) coins * rate);
+        java.math.BigDecimal share = total.divide(java.math.BigDecimal.valueOf(present.size()),
+                0, java.math.RoundingMode.DOWN);
+        if (share.signum() <= 0) {
+            return;
+        }
+        for (ServerPlayer player : present) {
+            es.boffmedia.teras.economy.EconomyStore.deposit(player.getUUID(), share);
+            player.sendSystemMessage(Component.literal("§6" + coins + " monedas cambiadas — te llevas "
+                    + share.toBigInteger() + " ₽."));
+            es.boffmedia.teras.dungeon.run.DungeonTitles.send(player, "§6¡Mazmorra completada!",
+                    "§7+" + share.toBigInteger() + " ₽");
+        }
     }
 
     /** False when the run does not exist or is still building. */
@@ -222,6 +269,9 @@ public final class DungeonRunManager {
             return false;
         }
         RUNS.remove(runId);
+        // Not completed: completeRun already reported before handing over, and markReported keeps
+        // this from posting the same run a second time.
+        report(run, false);
         RunEngine.unregister(runId);
         sendPartyHome(server, run);
 
@@ -238,6 +288,42 @@ public final class DungeonRunManager {
             SLOTS.clear(run.slot());
         }
         return true;
+    }
+
+    /**
+     * Posts the run to SmartRotom, once, if the server asked for it. Failures are the backend's
+     * problem: the party is already home and the coins already paid, so a lost row costs a
+     * leaderboard entry and nothing else.
+     */
+    private static void report(DungeonRun run, boolean completed) {
+        if (!run.markReported()) {
+            return;
+        }
+        // Cleared whether or not anything is posted: leaving the flags behind would make a member
+        // who walked out of one run read as having walked out of their next one.
+        if (!DungeonsConfig.backendPostEnabled()) {
+            run.names().keySet().forEach(abandoned::remove);
+            return;
+        }
+        try {
+            List<DungeonRunResult.Participant> participants = new java.util.ArrayList<>();
+            for (Map.Entry<UUID, String> member : run.names().entrySet()) {
+                participants.add(new DungeonRunResult.Participant(
+                        member.getKey().toString(), member.getValue(),
+                        run.stateOf(member.getKey()).deaths(),
+                        abandoned.contains(member.getKey())));
+            }
+            List<String> curseNames = run.curses().stream().map(Enum::name).toList();
+            es.boffmedia.teras.util.net.SmartRotomService.saveDungeonRun(new DungeonRunResult(
+                    run.layout().seedString(), run.startStage(), run.stage(), run.stagesCleared(),
+                    completed, System.currentTimeMillis() - run.startedAtMs(), curseNames,
+                    run.wallet().totalEarned(), run.wallet().totalSpent(), run.coinsConverted(),
+                    participants));
+        } catch (Exception e) {
+            Teras.LOGGER.warn("Dungeons: could not report run {}: {}", run.id(), e.toString());
+        } finally {
+            run.names().keySet().forEach(abandoned::remove);
+        }
     }
 
     // --- boot sweep and stragglers -------------------------------------------------------------
@@ -286,6 +372,9 @@ public final class DungeonRunManager {
         if (inDungeonDim && runOf(player.getUUID()) == null) {
             ServerLevel overworld = player.getServer().overworld();
             BlockPos spawn = overworld.getSharedSpawnPos();
+            // Cleared here too: a crash mid-run leaves a devil deal's max-health modifier saved on
+            // the player, and this is the path a stranded one comes back through.
+            RunEngine.clearRunEffects(player);
             player.teleportTo(overworld, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
             RunEngine.land(player);
@@ -369,9 +458,17 @@ public final class DungeonRunManager {
                 // mine through or brick over. On every floor, not just the first: idempotent, and
                 // it covers a member who talked an op into a mode change mid-run.
                 player.setGameMode(net.minecraft.world.level.GameType.ADVENTURE);
+                // Blessings are a floor's purchase, not a run's: carrying them down would stack
+                // three shops' worth of buffs onto the stages that are supposed to be hardest.
+                es.boffmedia.teras.dungeon.run.DungeonShop.clearBlessings(player);
+                // The hearts a devil deal took are a run-long debt, so they follow the party down.
+                es.boffmedia.teras.dungeon.run.DungeonHealth.applyHpDebt(player,
+                        run.stateOf(member).hpDebt());
                 player.sendSystemMessage(Component.literal(
                         "§aMazmorra lista — etapa " + run.stage()
                                 + ", semilla " + run.layout().seedString()));
+                es.boffmedia.teras.dungeon.run.DungeonTitles.send(player,
+                        "§ePiso " + run.stage(), "§7semilla " + run.layout().seedString());
             }
         }
     }
@@ -393,6 +490,10 @@ public final class DungeonRunManager {
         if (level == null) {
             level = player.getServer().overworld();
         }
+        // Before the teleport, not after: this is the only chokepoint every way out of a run goes
+        // through, and a devil deal's missing hearts or a pocket of dungeon potions must not
+        // arrive in the overworld with the player.
+        RunEngine.clearRunEffects(player);
         player.teleportTo(level, point.x(), point.y(), point.z(), point.yaw(), point.pitch());
         // A run can end while its party is mid-descent, so going home has to clear the fall too.
         RunEngine.land(player);

@@ -19,6 +19,7 @@ class RoomCarverTest {
                 d.chanceQuad(), d.chanceHorizontal(), d.chanceVertical(), d.chanceLShape(),
                 d.largeShapeDecay(), d.shapeResetInterval(),
                 d.curseRoomChance(), d.challengeRoomChance(),
+                d.sacrificeRoomChance(), d.arcadeRoomChance(), d.devilDealChance(),
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
                 d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
                 d.finalStage(), d.finalStageRooms(), d.maxAttempts());

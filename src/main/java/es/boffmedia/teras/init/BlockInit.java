@@ -56,6 +56,20 @@ public final class BlockInit {
             () -> new FlowerBlock(MobEffects.NIGHT_VISION, LAVENDER_STEW_SECONDS,
                     BlockBehaviour.Properties.ofFullCopy(Blocks.POPPY)));
 
+    /**
+     * The wall a secret room hides behind. Its own block rather than vanilla cracked bricks so a
+     * dungeon can dress its walls however it likes without the hint becoming invisible — and so
+     * the hint means one thing and one thing only. Opening is an interaction handled by the run
+     * loop against the doorway volume, so the block is never actually broken; the strength is
+     * there for the case of an op in creative wandering a floor.
+     */
+    public static final DeferredBlock<Block> MURO_AGRIETADO = registerWithItem("muro_agrietado",
+            () -> new Block(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.STONE)
+                    .sound(SoundType.STONE)
+                    .strength(50.0F, 1200.0F)
+                    .requiresCorrectToolForDrops()));
+
     public static final DeferredBlock<BloqueAguasTermales> AGUAS_TERMALES = BLOCKS.register("aguas_termales",
             () -> new BloqueAguasTermales(FluidInit.AGUAS_TERMALES_SOURCE.get(),
                     BlockBehaviour.Properties.ofFullCopy(Blocks.WATER).randomTicks()));

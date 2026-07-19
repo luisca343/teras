@@ -38,6 +38,19 @@ public interface RunCallbacks {
      */
     int spawnEncounter(Room room);
 
+    /**
+     * Spawn wave {@code wave} (0-based) of a challenge room and return how many enemies now stand.
+     * Separate from {@link #spawnEncounter} because a challenge escalates: the engine sizes each
+     * wave from its index, and the core only counts what it is told.
+     */
+    int spawnChallengeWave(Room room, int wave);
+
+    /** How many waves this room's challenge runs. At least 1; the core clamps. */
+    int challengeWaves(Room room);
+
+    /** The last wave of a challenge fell — pay the bonus for surviving it. */
+    void challengeCompleted(Room room);
+
     /** All enemies down: rewards, drops. */
     void roomCleared(Room room);
 

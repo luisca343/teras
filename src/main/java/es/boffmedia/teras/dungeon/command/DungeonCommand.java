@@ -67,7 +67,7 @@ public final class DungeonCommand {
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> MARKER_KINDS =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     java.util.List.of("spawn:default", "loot:default", "boss", "trapdoor",
-                            "shopslot:1", "door:n", "challenge"),
+                            "shopslot:1", "door:n", "challenge", "sacrifice", "arcade", "deal"),
                     builder);
 
     @SubscribeEvent

@@ -67,7 +67,8 @@ public final class RoomEditor {
 
     /** Marker kinds {@code TemplateMarkers} understands — what {@code sala marcar} accepts. */
     private static final Set<String> MARKER_KINDS =
-            Set.of("spawn", "loot", "boss", "trapdoor", "shopslot", "door", "challenge");
+            Set.of("spawn", "loot", "boss", "trapdoor", "shopslot", "door", "challenge",
+                    "sacrifice", "arcade", "deal");
 
     private static final Map<UUID, Session> SESSIONS = new LinkedHashMap<>();
 
@@ -490,7 +491,16 @@ public final class RoomEditor {
             case "mini_boss" -> List.of("boss");
             case "treasure" -> List.of("loot");
             case "shop" -> List.of("shopslot");
-            case "challenge", "normal", "normal_horizontal", "normal_vertical", "normal_quad",
+            // The curse room pays out where its loot marker stands; without one the reward lands
+            // in the middle of the room, which works but reads like a bug.
+            case "curse" -> List.of("loot");
+            case "sacrifice" -> List.of("sacrifice");
+            case "arcade" -> List.of("arcade");
+            case "devil_deal" -> List.of("deal");
+            // The challenge plate is where the fight starts, so its marker is load-bearing on top
+            // of the wave spawns.
+            case "challenge" -> List.of("spawn", "challenge");
+            case "normal", "normal_horizontal", "normal_vertical", "normal_quad",
                  "normal_l_top_left", "normal_l_top_right",
                  "normal_l_bottom_left", "normal_l_bottom_right" -> List.of("spawn");
             default -> List.of();

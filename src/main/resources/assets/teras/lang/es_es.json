@@ -1,6 +1,11 @@
 {
   "item.teras.smartrotom": "SmartRotom",
   "item.teras.cubo_aguas_termales": "Cubo de aguas termales",
+  "item.teras.moneda_mazmorra": "Moneda de mazmorra",
+  "item.teras.carga_rompemuros": "Carga rompemuros",
+  "item.teras.pocion_vital": "Poción vital",
+  "item.teras.pocion_vital_mayor": "Poción vital mayor",
+  "block.teras.muro_agrietado": "Muro agrietado",
   "block.teras.funko": "Funko",
   "block.teras.lavender": "Lavanda",
   "block.teras.aguas_termales": "Aguas termales",

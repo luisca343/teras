@@ -149,4 +149,72 @@ class SpecialRoomPlacerTest {
                 .mapToInt(c -> distances.getOrDefault(c, Integer.MAX_VALUE))
                 .min().orElseThrow();
     }
+
+    // --- the optional side rooms ---------------------------------------------------------------
+
+    private GenConfig withSideRoomChances(double chance) {
+        GenConfig d = GenConfig.defaults();
+        return new GenConfig(d.gridSize(),
+                d.chanceQuad(), d.chanceHorizontal(), d.chanceVertical(), d.chanceLShape(),
+                d.largeShapeDecay(), d.shapeResetInterval(),
+                d.curseRoomChance(), d.challengeRoomChance(),
+                chance, chance, chance,
+                d.miniBossChance(), d.firstStageMiniBossBoost(),
+                d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
+                d.finalStage(), d.finalStageRooms(), d.maxAttempts());
+    }
+
+    @Test
+    void sideRoomsAppearWhenTheirChanceIsCertain() {
+        GenConfig config = withSideRoomChances(1.0);
+        SeededRng rng = new SeededRng(11);
+        RoomGrid grid = RoomCarver.carve(config, 30, 6, rng);
+        SpecialRoomPlacer.place(grid, config, 4, rng);
+
+        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SACRIFICE));
+        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.ARCADE));
+        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.DEVIL_DEAL));
+    }
+
+    /** They are optional, so a floor that rolls none of them must still be a complete floor. */
+    @Test
+    void sideRoomsAreAbsentAtZeroChanceAndTheRequiredOnesStillPlace() {
+        GenConfig config = withSideRoomChances(0.0);
+        SeededRng rng = new SeededRng(11);
+        RoomGrid grid = RoomCarver.carve(config, 30, 6, rng);
+        SpecialRoomPlacer.place(grid, config, 4, rng);
+
+        assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.SACRIFICE));
+        assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.ARCADE));
+        assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.DEVIL_DEAL));
+        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.BOSS));
+        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.TREASURE));
+    }
+
+    /** The arcade and the devil deal are stage-2+: a first floor has neither coins nor health to spare. */
+    @Test
+    void arcadeAndDevilDealNeverAppearOnTheFirstStage() {
+        GenConfig config = withSideRoomChances(1.0);
+        for (int seed = 0; seed < 20; seed++) {
+            SeededRng rng = new SeededRng(seed);
+            RoomGrid grid = RoomCarver.carve(config, 25, 1, rng);
+            SpecialRoomPlacer.place(grid, config, 1, rng);
+
+            assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.ARCADE),
+                    "seed " + seed + ": arcade placed on stage 1");
+            assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.DEVIL_DEAL),
+                    "seed " + seed + ": devil deal placed on stage 1");
+        }
+    }
+
+    @Test
+    void placementStaysDeterministicForASeed() {
+        GenConfig config = withSideRoomChances(0.5);
+        RoomGrid first = RoomCarver.carve(config, 28, 5, new SeededRng(99));
+        SpecialRoomPlacer.place(first, config, 5, new SeededRng(1234));
+        RoomGrid second = RoomCarver.carve(config, 28, 5, new SeededRng(99));
+        SpecialRoomPlacer.place(second, config, 5, new SeededRng(1234));
+
+        assertEquals(LayoutAscii.render(first), LayoutAscii.render(second));
+    }
 }

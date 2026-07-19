@@ -95,4 +95,9 @@ public final class ClientNetHandler {
     public static void onDungeonMap(es.boffmedia.teras.net.DungeonMapPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientDungeonMap.accept(payload));
     }
+
+    /** Refreshes the party purse under the minimap; see {@link es.boffmedia.teras.net.DungeonWalletPayload}. */
+    public static void onDungeonWallet(es.boffmedia.teras.net.DungeonWalletPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientDungeonWallet.accept(payload));
+    }
 }

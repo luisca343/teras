@@ -30,9 +30,11 @@ public final class DungeonMapOverlay {
 
     /**
      * {@code RoomType} ordinal → map glyph, the legacy ASCII symbols. Order must match the
-     * server's {@code RoomType} enum — the payload carries ordinals.
+     * server's {@code RoomType} enum — the payload carries ordinals, so new room types are
+     * appended at both ends and never inserted.
      */
-    private static final char[] TYPE_GLYPHS = {' ', 'S', 'B', 'M', '$', 'T', '?', 'X', 'C', '!'};
+    private static final char[] TYPE_GLYPHS =
+            {' ', 'S', 'B', 'M', '$', 'T', '?', 'X', 'C', '!', '+', 'A', 'D'};
 
     /** State ordinals, matching the server's {@code RoomState}. */
     private static final int STATE_IN_COMBAT = 2;
@@ -54,11 +56,12 @@ public final class DungeonMapOverlay {
         Component header = Component.literal("Piso " + state.stage());
         graphics.drawString(mc.font, header,
                 screenWidth - MARGIN - mc.font.width(header), MARGIN, 0xFFFFFF, true);
+        int purseBottom = drawPurse(graphics, mc, screenWidth);
 
         if (state.mapHidden()) {
             Component lost = Component.literal("§5Mapa perdido…");
             graphics.drawString(mc.font, lost,
-                    screenWidth - MARGIN - mc.font.width(lost), MARGIN + 12, 0xFFFFFF, true);
+                    screenWidth - MARGIN - mc.font.width(lost), purseBottom, 0xFFFFFF, true);
             return;
         }
         if (state.cells().isEmpty()) {
@@ -79,7 +82,7 @@ public final class DungeonMapOverlay {
         int pitch = CELL + GAP;
         int panelWidth = (maxX - minX + 1) * pitch;
         int left = screenWidth - MARGIN - panelWidth;
-        int top = MARGIN + 12;
+        int top = purseBottom;
 
         for (DungeonMapPayload.Cell cell : state.cells()) {
             int x = left + (cell.x() - minX) * pitch;
@@ -103,6 +106,29 @@ public final class DungeonMapOverlay {
         }
     }
 
+    /**
+     * The party's shared purse, under the floor header. Returns the y the map starts at, so the
+     * panel sits below whatever was drawn — the charge line only appears when there are charges.
+     */
+    private static int drawPurse(GuiGraphics graphics, Minecraft mc, int screenWidth) {
+        var wallet = ClientDungeonWallet.state();
+        int y = MARGIN + 12;
+        if (!wallet.active()) {
+            return y;
+        }
+        Component coins = Component.literal("§e⛁ " + wallet.coins());
+        graphics.drawString(mc.font, coins,
+                screenWidth - MARGIN - mc.font.width(coins), y, 0xFFFFFF, true);
+        y += 11;
+        if (wallet.charges() > 0) {
+            Component charges = Component.literal("§b✦ " + wallet.charges());
+            graphics.drawString(mc.font, charges,
+                    screenWidth - MARGIN - mc.font.width(charges), y, 0xFFFFFF, true);
+            y += 11;
+        }
+        return y;
+    }
+
     private static int fillColour(DungeonMapPayload.Cell cell) {
         if (cell.type() == DungeonMapPayload.TYPE_UNKNOWN) {
             return COLOUR_UNKNOWN;
@@ -118,7 +144,8 @@ public final class DungeonMapOverlay {
 
     private static char glyphFor(DungeonMapPayload.Cell cell) {
         int type = cell.type();
-        if (type <= 0 || type >= TYPE_GLYPHS.length) {
+        // Only the room's labelled cell draws: a 2×2 boss chamber sends four cells and one glyph.
+        if (!cell.label() || type <= 0 || type >= TYPE_GLYPHS.length) {
             return ' ';
         }
         return TYPE_GLYPHS[type];

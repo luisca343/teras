@@ -2,6 +2,8 @@ package es.boffmedia.teras.dungeon.instance;
 
 import es.boffmedia.teras.dungeon.model.Curse;
 import es.boffmedia.teras.dungeon.model.DungeonLayout;
+import es.boffmedia.teras.dungeon.run.DungeonWallet;
+import es.boffmedia.teras.dungeon.run.PlayerRunState;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,6 +35,21 @@ public final class DungeonRun {
     private final int slot;
     private final Set<Curse> curses;
     private final Map<UUID, ReturnPoint> party = new LinkedHashMap<>();
+    /**
+     * The purse is the run's, not a player's: it outlives every floor (each stage rebuilds the
+     * engine's {@code ActiveFloor}, never this) and it is shared, so clearing a room is not a race
+     * to the drops.
+     */
+    private final DungeonWallet wallet = new DungeonWallet();
+    private final Map<UUID, PlayerRunState> playerStates = new LinkedHashMap<>();
+
+    /** Run statistics, for the end-of-run report. */
+    private final long startedAtMs = System.currentTimeMillis();
+    private final int startStage;
+    private final Map<UUID, String> names = new LinkedHashMap<>();
+    private int stagesCleared;
+    private int coinsConverted;
+    private boolean reported;
 
     private int stage;
     private DungeonLayout layout;
@@ -44,8 +61,46 @@ public final class DungeonRun {
         this.id = id;
         this.slot = slot;
         this.stage = stage;
+        this.startStage = stage;
         this.curses = curses;
         this.layout = layout;
+    }
+
+    public long startedAtMs() {
+        return startedAtMs;
+    }
+
+    public int startStage() {
+        return startStage;
+    }
+
+    public int stagesCleared() {
+        return stagesCleared;
+    }
+
+    public int coinsConverted() {
+        return coinsConverted;
+    }
+
+    public void recordConversion(int coins) {
+        coinsConverted += coins;
+    }
+
+    /** Names are captured at entry: a member who logs out still has to appear in the report. */
+    public Map<UUID, String> names() {
+        return names;
+    }
+
+    /**
+     * One report per run. {@code completeRun} finishes by calling {@code end}, so without this the
+     * same run would post twice — once as completed and once as whatever {@code end} inferred.
+     */
+    public boolean markReported() {
+        if (reported) {
+            return false;
+        }
+        reported = true;
+        return true;
     }
 
     public int id() {
@@ -70,6 +125,20 @@ public final class DungeonRun {
 
     public Map<UUID, ReturnPoint> party() {
         return party;
+    }
+
+    /** The party's shared coin purse. */
+    public DungeonWallet wallet() {
+        return wallet;
+    }
+
+    /** Per-member run state (hearts owed, charms, deaths), created on first use. */
+    public PlayerRunState stateOf(UUID member) {
+        return playerStates.computeIfAbsent(member, id -> new PlayerRunState());
+    }
+
+    public Map<UUID, PlayerRunState> playerStates() {
+        return playerStates;
     }
 
     public State state() {
@@ -100,5 +169,6 @@ public final class DungeonRun {
         this.builtId = builtId;
         this.padIndex = padIndex;
         this.state = State.ACTIVE;
+        this.stagesCleared++;
     }
 }

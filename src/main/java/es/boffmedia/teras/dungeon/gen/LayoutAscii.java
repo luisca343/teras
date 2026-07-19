@@ -46,6 +46,9 @@ public final class LayoutAscii {
             case SUPER_SECRET -> 'X';
             case CHALLENGE -> 'C';
             case CURSE -> '!';
+            case SACRIFICE -> '+';
+            case ARCADE -> 'A';
+            case DEVIL_DEAL -> 'D';
         };
     }
 }

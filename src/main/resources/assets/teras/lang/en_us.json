@@ -1,6 +1,11 @@
 {
   "item.teras.smartrotom": "SmartRotom",
   "item.teras.cubo_aguas_termales": "Hot Spring Water Bucket",
+  "item.teras.moneda_mazmorra": "Dungeon Coin",
+  "item.teras.carga_rompemuros": "Wall-Breaker Charge",
+  "item.teras.pocion_vital": "Vital Potion",
+  "item.teras.pocion_vital_mayor": "Greater Vital Potion",
+  "block.teras.muro_agrietado": "Cracked Wall",
   "block.teras.funko": "Funko",
   "block.teras.lavender": "Lavender",
   "block.teras.aguas_termales": "Hot Spring Water",

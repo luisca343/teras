@@ -69,6 +69,8 @@ public final class TerasNet {
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onRaceHud(payload, context));
         registrar.playToClient(DungeonMapPayload.TYPE, DungeonMapPayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onDungeonMap(payload, context));
+        registrar.playToClient(DungeonWalletPayload.TYPE, DungeonWalletPayload.STREAM_CODEC,
+                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onDungeonWallet(payload, context));
     }
 
     // ---- Server-side send helpers ----

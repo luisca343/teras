@@ -35,8 +35,11 @@ class RunCoreTest {
         final List<Room> cleared = new ArrayList<>();
         final List<Room> trapdoors = new ArrayList<>();
         final List<DungeonSound> cues = new ArrayList<>();
+        final List<Integer> challengeWavesSpawned = new ArrayList<>();
+        final List<Room> challengesCompleted = new ArrayList<>();
         int mapSyncs;
         int nextSpawnCount = 3;
+        int waveCount = 2;
 
         @Override
         public void roomDiscovered(Room room, UUID discoverer) {
@@ -61,6 +64,22 @@ class RunCoreTest {
         @Override
         public int spawnEncounter(Room room) {
             return nextSpawnCount;
+        }
+
+        @Override
+        public int spawnChallengeWave(Room room, int wave) {
+            challengeWavesSpawned.add(wave);
+            return nextSpawnCount;
+        }
+
+        @Override
+        public int challengeWaves(Room room) {
+            return waveCount;
+        }
+
+        @Override
+        public void challengeCompleted(Room room) {
+            challengesCompleted.add(room);
         }
 
         @Override
@@ -364,6 +383,143 @@ class RunCoreTest {
         assertEquals(RoomState.CLEARED, core.state(cleared));
         core.abandonCombat(cleared);
         assertEquals(RoomState.CLEARED, core.state(cleared));
+    }
+
+    // --- challenge rooms -----------------------------------------------------------------------
+
+    /**
+     * The whole point of the plate: a challenge room is safe to walk into and look at. It used to
+     * seal on entry like a NORMAL room, which made it indistinguishable from one.
+     */
+    @Test
+    void enteringAChallengeRoomOnlyDiscoversIt() {
+        Room challenge = challengeRoom();
+
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+
+        assertEquals(RoomState.DISCOVERED, core.state(challenge));
+        assertTrue(callbacks.sealed.isEmpty());
+        assertTrue(callbacks.challengeWavesSpawned.isEmpty());
+    }
+
+    @Test
+    void thePlateSealsTheRoomAndSpawnsTheFirstWave() {
+        Room challenge = challengeRoom();
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+
+        core.activatePlate(challenge);
+
+        assertEquals(RoomState.IN_COMBAT, core.state(challenge));
+        assertEquals(List.of(challenge), callbacks.sealed);
+        assertEquals(List.of(0), callbacks.challengeWavesSpawned);
+        assertTrue(callbacks.cues.contains(DungeonSound.CHALLENGE_STARTED));
+    }
+
+    /** Doors stay shut between waves: clearing wave one is not clearing the room. */
+    @Test
+    void wavesChainWithoutOpeningTheDoors() {
+        Room challenge = challengeRoom();
+        callbacks.waveCount = 3;
+        callbacks.nextSpawnCount = 2;
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+        core.activatePlate(challenge);
+
+        core.enemyRemoved(challenge);
+        core.enemyRemoved(challenge);
+
+        assertEquals(RoomState.IN_COMBAT, core.state(challenge));
+        assertEquals(List.of(0, 1), callbacks.challengeWavesSpawned);
+        assertTrue(callbacks.opened.isEmpty());
+        assertTrue(callbacks.challengesCompleted.isEmpty());
+    }
+
+    @Test
+    void lastWaveClearsTheRoomAndPaysOnce() {
+        Room challenge = challengeRoom();
+        callbacks.waveCount = 2;
+        callbacks.nextSpawnCount = 1;
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+        core.activatePlate(challenge);
+
+        core.enemyRemoved(challenge);
+        core.enemyRemoved(challenge);
+
+        assertEquals(RoomState.CLEARED, core.state(challenge));
+        assertEquals(List.of(0, 1), callbacks.challengeWavesSpawned);
+        assertEquals(List.of(challenge), callbacks.challengesCompleted);
+        assertEquals(List.of(challenge), callbacks.cleared);
+    }
+
+    /** A wave that spawns nothing must fall through, not leave the room sealed on an empty ledger. */
+    @Test
+    void emptyWavesFallThroughToTheClear() {
+        Room challenge = challengeRoom();
+        callbacks.waveCount = 3;
+        callbacks.nextSpawnCount = 0;
+
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+        core.activatePlate(challenge);
+
+        assertEquals(RoomState.CLEARED, core.state(challenge));
+        assertEquals(List.of(challenge), callbacks.challengesCompleted);
+    }
+
+    @Test
+    void desertingAChallengeResetsItsWaves() {
+        Room challenge = challengeRoom();
+        callbacks.waveCount = 3;
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+        core.activatePlate(challenge);
+        core.abandonCombat(challenge);
+
+        assertEquals(RoomState.DISCOVERED, core.state(challenge));
+        assertEquals(0, core.wavesRemaining(challenge));
+
+        core.activatePlate(challenge);
+        assertEquals(List.of(0, 0), callbacks.challengeWavesSpawned);
+    }
+
+    /** A cleared room's plate is scenery — a second player must not be able to restart the fight. */
+    @Test
+    void theePlateIsInertOnceTheRoomIsCleared() {
+        Room challenge = challengeRoom();
+        callbacks.waveCount = 1;
+        callbacks.nextSpawnCount = 1;
+        core.playerEnteredCell(ANA, challenge.cells().get(0));
+        core.activatePlate(challenge);
+        core.enemyRemoved(challenge);
+        assertEquals(RoomState.CLEARED, core.state(challenge));
+
+        core.activatePlate(challenge);
+
+        assertEquals(RoomState.CLEARED, core.state(challenge));
+        assertEquals(1, callbacks.challengeWavesSpawned.size());
+        assertEquals(1, callbacks.challengesCompleted.size());
+    }
+
+    /** Only challenge rooms have a plate; pointing it at anything else must do nothing. */
+    @Test
+    void thePlateOnlyAppliesToChallengeRooms() {
+        Room normal = firstNormalRoom();
+        core.playerEnteredCell(ANA, normal.cells().get(0));
+        callbacks.challengeWavesSpawned.clear();
+
+        core.activatePlate(normal);
+
+        assertTrue(callbacks.challengeWavesSpawned.isEmpty());
+    }
+
+    private Room challengeRoom() {
+        return layout.rooms().stream()
+                .filter(r -> r.type() == RoomType.CHALLENGE)
+                .findFirst()
+                .orElseGet(() -> {
+                    // Stage 1 never rolls one (the placer gates it on stage > 1), so retype a
+                    // spare dead end rather than hunting seeds for a floor that has one.
+                    Room spare = firstNormalRoom();
+                    spare.setType(RoomType.CHALLENGE);
+                    return spare;
+                });
     }
 
     private Room firstNormalRoom() {

@@ -35,8 +35,11 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
      * @param type  {@code RoomType} ordinal, or {@link #TYPE_UNKNOWN} for an adjacent room the
      *              player has seen a doorway to but never entered
      * @param state {@code RoomState} ordinal
+     * @param label whether this cell carries the room's glyph. A multi-cell room sends several
+     *              cells and only one of them is labelled — without it a 2×2 boss chamber drew
+     *              four B's, which read as four boss rooms
      */
-    public record Cell(int x, int y, int type, int state) {}
+    public record Cell(int x, int y, int type, int state, boolean label) {}
 
     public static final int TYPE_UNKNOWN = -1;
 
@@ -62,6 +65,7 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
                             buffer.writeVarInt(cell.y());
                             buffer.writeVarInt(cell.type());
                             buffer.writeVarInt(cell.state());
+                            buffer.writeBoolean(cell.label());
                         }
                     },
                     buffer -> {
@@ -75,7 +79,7 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
                         List<Cell> cells = new ArrayList<>(count);
                         for (int i = 0; i < count; i++) {
                             cells.add(new Cell(buffer.readVarInt(), buffer.readVarInt(),
-                                    buffer.readVarInt(), buffer.readVarInt()));
+                                    buffer.readVarInt(), buffer.readVarInt(), buffer.readBoolean()));
                         }
                         return new DungeonMapPayload(active, gridSize, stage, mapHidden,
                                 currentX, currentY, cells);

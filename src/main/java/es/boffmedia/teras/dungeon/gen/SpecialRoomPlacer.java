@@ -53,6 +53,19 @@ final class SpecialRoomPlacer {
         if (index < deadEnds.size() && stage > 1 && rng.chance(config.challengeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.CHALLENGE);
         }
+        // The three optional side rooms, claimed after the classics and before the treasure so a
+        // short floor loses these rather than something the validator requires. Arcade and devil
+        // deal wait for stage 2: on the first floor a party has neither the coins to gamble nor
+        // the health to sell.
+        if (index < deadEnds.size() && rng.chance(config.sacrificeRoomChance())) {
+            deadEnds.get(index++).setType(RoomType.SACRIFICE);
+        }
+        if (index < deadEnds.size() && stage > 1 && rng.chance(config.arcadeRoomChance())) {
+            deadEnds.get(index++).setType(RoomType.ARCADE);
+        }
+        if (index < deadEnds.size() && stage > 1 && rng.chance(config.devilDealChance())) {
+            deadEnds.get(index++).setType(RoomType.DEVIL_DEAL);
+        }
 
         if (index < deadEnds.size()) {
             // The nearest unclaimed dead end, not the next one in order. Sequential worked only

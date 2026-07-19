@@ -12,6 +12,7 @@ import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomType;
 import es.boffmedia.teras.dungeon.model.SeededRng;
+import es.boffmedia.teras.dungeon.run.CoinDrops;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -48,14 +49,27 @@ public final class EnemySpawner {
 
     /** Spawns the room's encounter; the returned entities are the room's kill ledger. */
     public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex) {
+        return spawn(level, built, room, roomIndex, 1.0f);
+    }
+
+    /**
+     * @param sizeFactor multiplies the wave's enemy count — how a challenge room's later waves get
+     *                   heavier. Bosses ignore it: a pool draws exactly one.
+     */
+    public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex,
+                                     float sizeFactor) {
+        // A challenge's later waves spawn into a room that still holds the previous one's corpses
+        // and any stragglers; purging is what keeps the ledger and the floor in agreement.
         purgeLeftovers(level, built, room);
         SeededRng rng = new SeededRng(DungeonSeeds.derive(built.layout().baseSeed(), 0x656E656DL + roomIndex));
         List<Entity> spawned = switch (room.type()) {
             case BOSS -> spawnFromPool(level, built, room,
-                    SpawnTables.bossPool(built.layout().stage()), "boss", rng);
+                    SpawnTables.bossPool(built.layout().stage()), "boss", rng,
+                    CoinDrops.TIER_BOSS_TAG);
             case MINI_BOSS -> spawnFromPool(level, built, room,
-                    SpawnTables.miniBossPool(built.layout().stage()), "boss", rng);
-            default -> spawnWave(level, built, room, rng);
+                    SpawnTables.miniBossPool(built.layout().stage()), "boss", rng,
+                    CoinDrops.TIER_MINIBOSS_TAG);
+            default -> spawnWave(level, built, room, rng, sizeFactor);
         };
         if (spawned.isEmpty()) {
             Teras.LOGGER.warn("Dungeons: {} spawned no enemies — the room clears itself on entry. "
@@ -124,13 +138,15 @@ public final class EnemySpawner {
         }
     }
 
-    private static List<Entity> spawnWave(ServerLevel level, BuiltDungeon built, Room room, SeededRng rng) {
+    private static List<Entity> spawnWave(ServerLevel level, BuiltDungeon built, Room room,
+                                          SeededRng rng, float sizeFactor) {
         SpawnTables.StageTable table = SpawnTables.stageTable(built.layout().stage());
         List<BlockPos> positions = spawnPositions(built, room, "spawn");
         int count = rng.between(table.countMin(), table.countMax());
         if (room.shape().cellCount() > 1) {
             count = count * room.shape().cellCount() / 2 + 1;
         }
+        count = Math.max(1, Math.round(count * sizeFactor));
         List<Entity> spawned = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             BlockPos pos = positions.get(i % positions.size());
@@ -142,9 +158,13 @@ public final class EnemySpawner {
         return spawned;
     }
 
+    /**
+     * {@code tierTag} is what makes a boss worth more than the adds it summons: the coin payout
+     * reads it off the entity, so a wave spawned mid-fight by an ability pays the ordinary rate.
+     */
     private static List<Entity> spawnFromPool(ServerLevel level, BuiltDungeon built, Room room,
                                               List<SpawnTables.SpawnEntry> pool, String markerKind,
-                                              SeededRng rng) {
+                                              SeededRng rng, String tierTag) {
         List<BlockPos> markers = markerPositions(built, room, markerKind);
         // A template without a boss marker puts its boss in the middle of the chamber. The
         // per-cell fallback would give the anchor cell — the corner quadrant of a 2x2 boss room.
@@ -157,7 +177,11 @@ public final class EnemySpawner {
                     + "Add one to its template with the room editor.", room, markerKind);
         }
         Entity boss = spawnOne(level, SpawnTables.pickWeighted(pool, rng), pos);
-        return boss == null ? List.of() : List.of(boss);
+        if (boss == null) {
+            return List.of();
+        }
+        boss.addTag(tierTag);
+        return List.of(boss);
     }
 
     private static Entity spawnOne(ServerLevel level, SpawnTables.SpawnEntry entry, BlockPos pos) {

@@ -28,6 +28,8 @@ public final class RunCore {
     private final Map<Room, RoomState> states = new HashMap<>();
     private final Map<Room, Integer> ledger = new HashMap<>();
     private final Set<Room> discovered = new LinkedHashSet<>();
+    /** Waves still owed by a challenge room after the one currently standing. */
+    private final Map<Room, Integer> wavesLeft = new HashMap<>();
     private boolean trapdoorOpen;
 
     public RunCore(DungeonLayout layout, RunCallbacks callbacks) {
@@ -122,7 +124,32 @@ public final class RunCore {
         }
         states.put(room, RoomState.DISCOVERED);
         ledger.remove(room);
+        // A deserted challenge starts over from wave one — the plate is there to be stepped on again.
+        wavesLeft.remove(room);
         callbacks.openRoom(room);
+        callbacks.syncMap();
+    }
+
+    /**
+     * A challenge room's plate was stepped on. Unlike every other encounter this one is opt-in:
+     * the room is entered freely and only the plate starts the fight, which is what makes it a
+     * challenge rather than an ambush. Ignored unless the room is a discovered, not-yet-fought
+     * CHALLENGE, so a cleared room's plate is inert and a second player cannot restart a fight.
+     */
+    public void activatePlate(Room room) {
+        if (room.type() != RoomType.CHALLENGE || states.get(room) != RoomState.DISCOVERED) {
+            return;
+        }
+        int waves = Math.max(1, callbacks.challengeWaves(room));
+        wavesLeft.put(room, waves - 1);
+        states.put(room, RoomState.IN_COMBAT);
+        callbacks.sealRoom(room);
+        callbacks.sound(DungeonSound.CHALLENGE_STARTED, room);
+        int spawned = callbacks.spawnChallengeWave(room, 0);
+        ledger.put(room, spawned);
+        if (spawned <= 0) {
+            advanceWave(room);
+        }
         callbacks.syncMap();
     }
 
@@ -134,8 +161,38 @@ public final class RunCore {
         }
         ledger.put(room, remaining);
         if (remaining <= 0) {
-            clear(room);
+            advanceWave(room);
         }
+    }
+
+    /**
+     * A wave fell. For a challenge with waves still owed, the doors stay shut and the next one
+     * spawns; for everything else this is the clear. A wave that spawns nothing falls through to
+     * the next rather than leaving the room sealed on an empty ledger.
+     */
+    private void advanceWave(Room room) {
+        int left = wavesLeft.getOrDefault(room, 0);
+        if (left <= 0) {
+            wavesLeft.remove(room);
+            clear(room);
+            return;
+        }
+        // Clamped the same way activatePlate does, so a config reload mid-fight cannot make the
+        // wave index disagree with the countdown that was set when the plate was stepped on.
+        int waves = Math.max(1, callbacks.challengeWaves(room));
+        int next = waves - left;
+        wavesLeft.put(room, left - 1);
+        callbacks.sound(DungeonSound.WAVE_CLEARED, room);
+        int spawned = callbacks.spawnChallengeWave(room, next);
+        ledger.put(room, spawned);
+        if (spawned <= 0) {
+            advanceWave(room);
+        }
+    }
+
+    /** Waves a challenge room still owes after the one standing; 0 when it is on its last. */
+    public int wavesRemaining(Room room) {
+        return wavesLeft.getOrDefault(room, 0);
     }
 
     public int enemiesRemaining(Room room) {
@@ -175,6 +232,9 @@ public final class RunCore {
         callbacks.openRoom(room);
         callbacks.sound(DungeonSound.ROOM_OPENED, room);
         callbacks.roomCleared(room);
+        if (room.type() == RoomType.CHALLENGE) {
+            callbacks.challengeCompleted(room);
+        }
         if (room.type() == RoomType.BOSS) {
             trapdoorOpen = true;
             callbacks.sound(DungeonSound.BOSS_DEFEATED, room);
@@ -187,10 +247,16 @@ public final class RunCore {
         return room.type() == RoomType.BOSS || room.type() == RoomType.MINI_BOSS;
     }
 
+    /**
+     * Which rooms fight you for walking in. CHALLENGE is deliberately absent: it seals on its
+     * plate instead ({@link #activatePlate}), so entering one is safe and committing to it is a
+     * choice.
+     */
     static boolean hasEncounter(Room room) {
         return switch (room.type()) {
-            case NORMAL, MINI_BOSS, BOSS, CHALLENGE -> true;
-            case START, TREASURE, SHOP, SECRET, SUPER_SECRET, CURSE -> false;
+            case NORMAL, MINI_BOSS, BOSS -> true;
+            case START, TREASURE, SHOP, SECRET, SUPER_SECRET, CURSE, CHALLENGE,
+                 SACRIFICE, ARCADE, DEVIL_DEAL -> false;
         };
     }
 }

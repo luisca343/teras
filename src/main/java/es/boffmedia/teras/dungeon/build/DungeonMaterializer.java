@@ -196,9 +196,26 @@ public final class DungeonMaterializer {
             List<TemplateMarkers.Marker> roomMarkers =
                     TemplateMarkers.extract(template, settings, corrected);
             for (TemplateMarkers.Marker marker : roomMarkers) {
-                level.setBlock(marker.pos(), Blocks.AIR.defaultBlockState(), 2);
+                level.setBlock(marker.pos(), markerFloor(marker.kind(), marker.pos()), 2);
             }
             markers.put(room, roomMarkers);
+        }
+
+        /**
+         * What a marker block leaves behind. Every marker is consumed into air except the ones a
+         * player is meant to find and stand on: a challenge or sacrifice plate is triggered by
+         * position, so the block is only decoration — but without it the trigger is an invisible
+         * tile on an empty floor.
+         *
+         * <p>Only laid on something solid. A plate authored a block off the ground would pop off
+         * as an item on the first block update, leaving litter in the room and no visible plate.</p>
+         */
+        private BlockState markerFloor(String kind, BlockPos pos) {
+            boolean plate = kind.equals("challenge") || kind.equals("sacrifice");
+            if (plate && level.getBlockState(pos.below()).isSolidRender(level, pos.below())) {
+                return Blocks.POLISHED_BLACKSTONE_PRESSURE_PLATE.defaultBlockState();
+            }
+            return Blocks.AIR.defaultBlockState();
         }
 
         private void carveDoors() {
@@ -208,11 +225,30 @@ public final class DungeonMaterializer {
                             Blocks.AIR.defaultBlockState(), roomSize,
                             DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
                     case SECRET_CRACK -> DoorCarver.fillDoorway(level, origin, door,
-                            Blocks.CRACKED_STONE_BRICKS.defaultBlockState(), roomSize,
+                            crackState(), roomSize,
+                            DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                    // Barred rather than walled: the door is visible from the first step onto the
+                    // floor, and the boss falling is what opens it.
+                    case DEVIL -> DoorCarver.fillDoorway(level, origin, door,
+                            sealState(), roomSize,
                             DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
                     case HIDDEN -> { }
                 }
             }
+        }
+
+        /** The dedicated cracked wall, falling back to vanilla if the config names an unknown block. */
+        private static BlockState crackState() {
+            var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                    .get(net.minecraft.resources.ResourceLocation.parse(DungeonsConfig.crackBlock()));
+            return block == null || block == Blocks.AIR
+                    ? Blocks.CRACKED_STONE_BRICKS.defaultBlockState() : block.defaultBlockState();
+        }
+
+        private static BlockState sealState() {
+            var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                    .get(net.minecraft.resources.ResourceLocation.parse(DungeonsConfig.sealBlock()));
+            return block == null ? Blocks.IRON_BARS.defaultBlockState() : block.defaultBlockState();
         }
     }
 

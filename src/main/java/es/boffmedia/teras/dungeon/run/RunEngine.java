@@ -16,6 +16,7 @@ import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomType;
 import es.boffmedia.teras.economy.EconomyStore;
 import es.boffmedia.teras.net.DungeonMapPayload;
+import es.boffmedia.teras.net.DungeonWalletPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -86,7 +87,13 @@ public final class RunEngine {
     private static final Map<UUID, Integer> RESPAWN_AT_START = new HashMap<>();
     private static long tick;
 
-    private static final class ActiveFloor {
+    /**
+     * Per-floor state. Everything here dies with the floor — which is exactly right for what the
+     * shop sold this floor (map, compass, insurance are all "for this floor"), and exactly wrong
+     * for the purse and the hearts a devil deal took, which live on {@link DungeonRun} and survive
+     * the descent.
+     */
+    static final class ActiveFloor {
         final DungeonRun run;
         final BuiltDungeon built;
         final ServerLevel level;
@@ -94,6 +101,27 @@ public final class RunEngine {
         final Map<UUID, Room> enemyRooms = new HashMap<>();
         final Map<UUID, GridPos> lastCell = new HashMap<>();
         final java.util.Set<DoorEdge> openedSecrets = new java.util.HashSet<>();
+        final DungeonShop shop = new DungeonShop();
+        /** Bought at the shop: reveal the floor's layout / its special rooms on the minimap. */
+        boolean mapRevealed;
+        boolean compassRevealed;
+        /** Halves the death penalty for this floor. */
+        boolean seguro;
+        /** Sacrifice plates: steps taken per room, and the rooms that have already paid out. */
+        final Map<Room, Integer> sacrificeSteps = new HashMap<>();
+        final java.util.Set<Room> sacrificeSpent = new java.util.HashSet<>();
+        /**
+         * Per-player, per-fixture cooldowns, so standing on a plate is a decision per step rather
+         * than a stream of damage. Keyed by fixture as well as player: one map would have the
+         * arcade's cooldown swallowing a sacrifice step taken half a second later.
+         */
+        final Map<String, Long> fixtureCooldown = new HashMap<>();
+        /** Arcade machines that have given up, per room. */
+        final java.util.Set<Room> arcadeBroken = new java.util.HashSet<>();
+        /** Devil pedestals already claimed. */
+        final java.util.Set<Room> devilClaimed = new java.util.HashSet<>();
+        /** Missing-marker warnings already logged, so the tick loop cannot repeat one. */
+        final java.util.Set<String> warnedMarkers = new java.util.HashSet<>();
         boolean advancing;
 
         ActiveFloor(DungeonRun run, BuiltDungeon built, ServerLevel level) {
@@ -102,6 +130,18 @@ public final class RunEngine {
             this.level = level;
             this.core = new RunCore(built.layout(), new FloorCallbacks(this));
         }
+
+        BuiltDungeon built() {
+            return built;
+        }
+
+        ServerLevel level() {
+            return level;
+        }
+
+        DungeonRun run() {
+            return run;
+        }
     }
 
     /** Starts (or replaces, on stage advance) the loop for a run's built floor. */
@@ -109,18 +149,78 @@ public final class RunEngine {
         ActiveFloor floor = new ActiveFloor(run, built, level);
         FLOORS.put(run.id(), floor);
         floor.core.start();
+        floor.shop.stock(floor);
+        broadcastWallet(floor);
     }
 
     public static void unregister(int runId) {
         ActiveFloor floor = FLOORS.remove(runId);
         if (floor != null) {
             removeRemainingEnemies(floor);
+            // The floor's own teardown sweeps these with everything else, but a stage advance
+            // discards the old pad a moment after this: clearing them here closes that window.
+            floor.shop.despawnDisplays(floor);
             for (UUID member : floor.run.party().keySet()) {
                 ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
                 if (player != null) {
                     PacketDistributor.sendToPlayer(player, DungeonMapPayload.hidden());
+                    PacketDistributor.sendToPlayer(player, DungeonWalletPayload.hidden());
                 }
             }
+        }
+    }
+
+    /**
+     * Everything a run did to a player's body or inventory, undone. Called on every way out —
+     * walking out, the run ending, being sent home by the boot sweep — because a devil deal's
+     * missing hearts, a shop blessing and a pocketful of dungeon potions must not survive into the
+     * overworld.
+     */
+    public static void clearRunEffects(ServerPlayer player) {
+        DungeonHealth.clearHpDebt(player);
+        DungeonShop.clearBlessings(player);
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.getItem() instanceof es.boffmedia.teras.dungeon.item.DungeonPotionItem
+                    || stack.is(es.boffmedia.teras.init.ItemInit.MONEDA_MAZMORRA.get())
+                    || stack.is(es.boffmedia.teras.init.ItemInit.CARGA_ROMPEMUROS.get())) {
+                inventory.setItem(slot, ItemStack.EMPTY);
+            }
+        }
+        if (player.getHealth() > player.getMaxHealth()) {
+            player.setHealth(player.getMaxHealth());
+        }
+    }
+
+    /** The party's purse, to every member's HUD. Called on every change — the wallet is shared. */
+    static void broadcastWallet(ActiveFloor floor) {
+        DungeonWalletPayload payload = new DungeonWalletPayload(true,
+                floor.run.wallet().coins(), floor.run.wallet().wallCharges());
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player != null) {
+                PacketDistributor.sendToPlayer(player, payload);
+            }
+        }
+    }
+
+    /** A line to everyone still in the run. */
+    static void message(ActiveFloor floor, String text) {
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player != null) {
+                player.sendSystemMessage(Component.literal(text));
+            }
+        }
+    }
+
+    /** A cue at a world position, for the things that happen at a block rather than to a room. */
+    static void playAt(ActiveFloor floor, BlockPos pos, DungeonSound cue, float pitch) {
+        SoundEvent event = soundEvent(cue.name());
+        if (event != null) {
+            floor.level.playSound(null, pos, event, SoundSource.BLOCKS,
+                    DungeonsConfig.soundVolume(), pitch);
         }
     }
 
@@ -228,19 +328,45 @@ public final class RunEngine {
     public static void onLivingDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             DungeonRun run = DungeonRunManager.runOf(player.getUUID());
-            if (run != null && FLOORS.containsKey(run.id())) {
-                RESPAWN_AT_START.put(player.getUUID(), run.id());
+            if (run == null || !FLOORS.containsKey(run.id())) {
+                return;
             }
+            // The charm is spent before anything else reads the death: cancelling here means no
+            // respawn, no coin penalty and no death on the record — the player simply stands back
+            // up where they fell, which is the whole point of paying 40 coins for it.
+            if (run.stateOf(player.getUUID()).consumePhoenix()) {
+                event.setCanceled(true);
+                player.setHealth(player.getMaxHealth() / 2.0f);
+                player.clearFire();
+                ActiveFloor floor = FLOORS.get(run.id());
+                if (floor != null) {
+                    playAt(floor, player.blockPosition(), DungeonSound.PHOENIX, 1.0f);
+                }
+                DungeonTitles.send(player, "§6Renaces", "§7El amuleto fénix se consume");
+                return;
+            }
+            run.stateOf(player.getUUID()).countDeath();
+            RESPAWN_AT_START.put(player.getUUID(), run.id());
             return;
         }
         UUID id = event.getEntity().getUUID();
         for (ActiveFloor floor : FLOORS.values()) {
             Room room = floor.enemyRooms.remove(id);
             if (room != null) {
+                payCoins(floor, event.getEntity());
                 floor.core.enemyRemoved(room);
                 return;
             }
         }
+    }
+
+    /**
+     * A dead enemy's whole worth. Its ordinary drops and experience were cancelled upstream
+     * ({@link CoinDrops}), so this is the only thing a kill produces.
+     */
+    private static void payCoins(ActiveFloor floor, net.minecraft.world.entity.LivingEntity enemy) {
+        int coins = CoinDrops.coinsFor(enemy, floor.run.stage(), floor.level.random);
+        CoinDrops.spawnCoins(floor.level, enemy.position(), coins);
     }
 
     @SubscribeEvent
@@ -257,6 +383,20 @@ public final class RunEngine {
         player.teleportTo(floor.level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                 player.getYRot(), player.getXRot());
         land(player);
+        // A respawn is a fresh player entity with vanilla attributes: hearts sold to a devil deal
+        // have to be taken again, or dying would be the cheapest way to buy one back.
+        DungeonHealth.applyHpDebt(player, floor.run.stateOf(player.getUUID()).hpDebt());
+
+        int coinPct = floor.seguro ? DungeonsConfig.coinDeathPenaltyPct() / 2
+                : DungeonsConfig.coinDeathPenaltyPct();
+        int lost = floor.run.wallet().applyDeathPenalty(coinPct);
+        if (lost > 0) {
+            broadcastWallet(floor);
+            message(floor, "§c" + player.getName().getString() + " ha caído — el grupo pierde "
+                    + lost + " monedas.");
+        }
+        DungeonTitles.send(player, "§4Has caído", lost > 0 ? "§7−" + lost + " monedas" : "");
+
         int penaltyPct = DungeonsConfig.deathPenaltyPct();
         if (penaltyPct > 0) {
             BigDecimal balance = EconomyStore.get(player.getUUID());
@@ -276,12 +416,16 @@ public final class RunEngine {
     }
 
     /**
-     * Secret and super-secret rooms open by <b>interacting</b> with the wall, not by breaking it —
-     * the party plays in adventure mode, so breaking was never available, and Isaac's bomb becomes
-     * a touch: the cracked bricks of a SECRET edge are the visible invitation, while a HIDDEN edge
-     * looks like any other wall and rewards players who press the suspicious ones. When the shop
-     * arrives, a purchasable detector/charge can gate this same routine; the opening itself stays
-     * exactly {@link DoorCarver}'s doorway volume, so what gives way is precisely the passage.
+     * Every right-click a run cares about, in the order they can shadow each other: shop pedestals
+     * and room fixtures first, then secret walls.
+     *
+     * <p>Secret and super-secret rooms open by <b>interacting</b> with the wall, not by breaking
+     * it — the party plays in adventure mode, so breaking was never available, and Isaac's bomb
+     * becomes a purchased charge: the cracked bricks of a SECRET edge are the visible invitation,
+     * a HIDDEN edge looks like any other wall, and either way opening one spends a charge from the
+     * party's stock. That is what puts a price back on secrets now that there is a shop to sell it
+     * — pressing walls is free, opening them is not. The opening itself stays exactly
+     * {@link DoorCarver}'s doorway volume, so what gives way is precisely the passage.</p>
      */
     @SubscribeEvent
     public static void onRightClickBlock(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock event) {
@@ -295,6 +439,28 @@ public final class RunEngine {
             return;
         }
         BlockPos pos = event.getPos();
+        if (floor.shop.tryBuy(floor, player, pos)) {
+            event.setCanceled(true);
+            return;
+        }
+        Room room = roomAt(floor, pos);
+        if (room != null && room.type() == RoomType.ARCADE
+                && ArcadeMachine.tryPlay(floor, player, room, pos)) {
+            event.setCanceled(true);
+            return;
+        }
+        if (room != null && room.type() == RoomType.DEVIL_DEAL
+                && DevilDeal.tryClaim(floor, player, room, pos, player.isShiftKeyDown())) {
+            event.setCanceled(true);
+            return;
+        }
+        if (tryOpenSecret(floor, player, pos)) {
+            event.setCanceled(true);
+        }
+    }
+
+    /** False when the click was not on a secret wall at all; true once it was the run's business. */
+    private static boolean tryOpenSecret(ActiveFloor floor, ServerPlayer player, BlockPos pos) {
         for (DoorEdge door : floor.built.layout().doors()) {
             if (door.kind() != DoorKind.SECRET_CRACK && door.kind() != DoorKind.HIDDEN) {
                 continue;
@@ -303,21 +469,151 @@ public final class RunEngine {
                     DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight())) {
                 continue;
             }
-            if (!floor.openedSecrets.add(door)) {
-                return;
+            if (floor.openedSecrets.contains(door)) {
+                return true;
             }
+            if (!floor.run.wallet().tryUseCharge()) {
+                player.displayClientMessage(Component.literal(
+                        "§7El muro suena hueco — necesitas una carga rompemuros."), true);
+                playAt(floor, pos, DungeonSound.PURCHASE_DENIED, 1.0f);
+                return true;
+            }
+            floor.openedSecrets.add(door);
             DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
                     Blocks.AIR.defaultBlockState(), floor.built.roomSize(),
                     DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
-            SoundEvent sound = soundEvent("SECRET_OPENED");
-            if (sound != null) {
-                floor.level.playSound(null, pos, sound, SoundSource.BLOCKS,
-                        DungeonsConfig.soundVolume(), 1.0f);
+            playAt(floor, pos, DungeonSound.SECRET_OPENED, 1.0f);
+            DungeonTitles.send(player, "§bSala secreta", "§7El muro cede");
+            broadcastWallet(floor);
+            return true;
+        }
+        return false;
+    }
+
+    /** The room a world position falls in, or null when it is outside the floor's rooms. */
+    static Room roomAt(ActiveFloor floor, BlockPos pos) {
+        int cellX = Math.floorDiv(pos.getX() - floor.built.origin().getX(), floor.built.roomSize());
+        int cellY = Math.floorDiv(pos.getZ() - floor.built.origin().getZ(), floor.built.roomSize());
+        return floor.built.layout().grid().roomAt(new GridPos(cellX, cellY));
+    }
+
+    /**
+     * The room's marker of {@code kind}, clamped a block off the walls, else its exact center —
+     * loudly, because a template missing a marker is an authoring mistake that otherwise shows up
+     * only as a fixture standing in an odd place.
+     *
+     * <p>Warned once per room and kind. Plates are read from the tick loop, so warning every time
+     * would put the same line in the log twenty times a second for as long as a player stood in
+     * the room.</p>
+     */
+    static BlockPos markerPos(ActiveFloor floor, Room room, String kind) {
+        for (TemplateMarkers.Marker marker : floor.built.markers().getOrDefault(room, List.of())) {
+            if (marker.kind().equals(kind)) {
+                return floor.built.clampInside(room, marker.pos(), 1);
             }
-            player.displayClientMessage(
-                    Component.literal("§7El muro cede — un pasaje se abre."), true);
-            event.setCanceled(true);
+        }
+        if (floor.warnedMarkers.add(room + "/" + kind)) {
+            Teras.LOGGER.warn("Dungeons: {} has no '{}' marker — using the room center. "
+                    + "Add one to its template with the room editor.", room, kind);
+        }
+        return floor.built.roomCenter(room);
+    }
+
+    /**
+     * Whether {@code pos} is close enough to a room fixture to count as being at it — standing on
+     * a plate, or clicking a pedestal from the block beside it.
+     *
+     * <p>One test for every fixture in the dungeon (plates, shop pedestals, the arcade machine,
+     * the devil's offer). They all mean the same thing, and four hand-rolled copies had already
+     * drifted to three different reaches for no stated reason. {@code reach} is the horizontal
+     * slack in blocks; vertical is always generous, because a marker authored a block above the
+     * floor is common and a player's feet are not where they clicked.</p>
+     */
+    static boolean isAtFixture(BlockPos fixture, BlockPos pos, int reach) {
+        return Math.abs(pos.getX() - fixture.getX()) <= reach
+                && Math.abs(pos.getZ() - fixture.getZ()) <= reach
+                && Math.abs(pos.getY() - fixture.getY()) <= 2;
+    }
+
+    /** Whether a player is standing on the room's {@code kind} marker. */
+    private static boolean isOnMarker(ActiveFloor floor, Room room, String kind, ServerPlayer player) {
+        return isAtFixture(markerPos(floor, room, kind), player.blockPosition(), 1);
+    }
+
+    /**
+     * Plates are read from the tick loop rather than from a block event: the party is in adventure
+     * mode and the "plate" is decoration over a template marker, so standing on the position is
+     * the trigger. The cooldown is what keeps a sacrifice from draining a player who simply stopped
+     * walking on it.
+     */
+    private static void checkPlates(ActiveFloor floor, ServerPlayer player, GridPos cell) {
+        Room room = floor.built.layout().grid().roomAt(cell);
+        if (room == null) {
             return;
+        }
+        if (room.type() == RoomType.CHALLENGE && floor.core.state(room) == RoomState.DISCOVERED
+                && isOnMarker(floor, room, "challenge", player)) {
+            floor.core.activatePlate(room);
+            return;
+        }
+        if (room.type() == RoomType.SACRIFICE && !floor.sacrificeSpent.contains(room)
+                && isOnMarker(floor, room, "sacrifice", player)) {
+            SacrificePlate.step(floor, player, room);
+        }
+    }
+
+    /**
+     * True when {@code player} may act on {@code fixture} again; stamps the next cooldown when it
+     * returns true. Cooldowns are per fixture, so one room's pacing never gates another's.
+     */
+    static boolean fixtureReady(ActiveFloor floor, ServerPlayer player, String fixture,
+                                int cooldownTicks) {
+        String key = player.getUUID() + "/" + fixture;
+        long ready = floor.fixtureCooldown.getOrDefault(key, 0L);
+        if (tick < ready) {
+            return false;
+        }
+        floor.fixtureCooldown.put(key, tick + cooldownTicks);
+        return true;
+    }
+
+    /** Resyncs every member's minimap — after a shop reveal, or any state change. */
+    static void syncMapFor(ActiveFloor floor) {
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player != null && player.serverLevel() == floor.level) {
+                sendMap(floor, player, floor.lastCell.getOrDefault(member,
+                        floor.built.layout().start().cells().get(0)));
+            }
+        }
+    }
+
+    /**
+     * Rolls a loot table at a position. Coins and charges in a table are respawned as the
+     * never-pickup entities the magnet sweep understands, so a reward roll credits the shared purse
+     * instead of putting currency in someone's backpack.
+     */
+    static void rollLootAt(ActiveFloor floor, BlockPos pos, String tableId) {
+        LootTable table = floor.level.getServer().reloadableRegistries().getLootTable(
+                ResourceKey.create(Registries.LOOT_TABLE, ResourceLocation.parse(tableId)));
+        LootParams params = new LootParams.Builder(floor.level)
+                .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                .create(LootContextParamSets.CHEST);
+        for (ItemStack stack : table.getRandomItems(params)) {
+            if (stack.is(es.boffmedia.teras.init.ItemInit.MONEDA_MAZMORRA.get())) {
+                CoinDrops.spawnCoins(floor.level, pos, stack.getCount());
+            } else if (stack.is(es.boffmedia.teras.init.ItemInit.CARGA_ROMPEMUROS.get())) {
+                CoinDrops.spawnCharges(floor.level, Vec3.atCenterOf(pos), stack.getCount());
+            } else {
+                // The 5-arg constructor gives drops a random pop of velocity — fine for a mob
+                // kill, wrong for a reward pedestal: items scattered around the room, sometimes
+                // out of sight, and read as the loot not having spawned at all. Zero motion: the
+                // reward stands exactly on its marker.
+                ItemEntity item = new ItemEntity(floor.level,
+                        pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack, 0, 0, 0);
+                item.setDefaultPickUpDelay();
+                floor.level.addFreshEntity(item);
+            }
         }
     }
 
@@ -397,6 +693,8 @@ public final class RunEngine {
                 land(player);
                 continue;
             }
+            DungeonHealth.holdHunger(player);
+            collectPickups(floor, player);
             int cellX = Math.floorDiv(player.blockPosition().getX() - origin.getX(), floor.built.roomSize());
             int cellY = Math.floorDiv(player.blockPosition().getZ() - origin.getZ(), floor.built.roomSize());
             GridPos cell = new GridPos(cellX, cellY);
@@ -404,7 +702,43 @@ public final class RunEngine {
             if (!cell.equals(floor.lastCell.put(member, cell))) {
                 sendMap(floor, player, cell);
             }
+            checkPlates(floor, player, cell);
         }
+    }
+
+    /**
+     * Walking over a coin is what banks it. The drops themselves refuse to be picked up into an
+     * inventory, so this sweep is the only way they become money — which is what keeps the purse
+     * authoritative and stops anyone carrying dungeon currency out of the dungeon.
+     */
+    private static void collectPickups(ActiveFloor floor, ServerPlayer player) {
+        double radius = DungeonsConfig.coinPickupRadius();
+        List<ItemEntity> nearby = floor.level.getEntitiesOfClass(ItemEntity.class,
+                player.getBoundingBox().inflate(radius, 1.0, radius),
+                item -> item.isAlive()
+                        && (item.getTags().contains(CoinDrops.COIN_TAG)
+                            || item.getTags().contains(CoinDrops.CHARGE_TAG)));
+        if (nearby.isEmpty()) {
+            return;
+        }
+        int coins = 0;
+        int charges = 0;
+        for (ItemEntity item : nearby) {
+            if (item.getTags().contains(CoinDrops.COIN_TAG)) {
+                coins += item.getItem().getCount();
+            } else {
+                charges += item.getItem().getCount();
+            }
+            item.discard();
+        }
+        floor.run.wallet().add(coins);
+        floor.run.wallet().addCharges(charges);
+        playAt(floor, player.blockPosition(), DungeonSound.COIN_PICKUP, 1.4f);
+        if (charges > 0) {
+            player.displayClientMessage(Component.literal(
+                    "§b+" + charges + " carga" + (charges == 1 ? "" : "s") + " rompemuros"), true);
+        }
+        broadcastWallet(floor);
     }
 
     /**
@@ -484,7 +818,8 @@ public final class RunEngine {
         for (Room room : discovered) {
             for (GridPos cell : room.cells()) {
                 cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
-                        room.type().ordinal(), floor.core.state(room).ordinal()));
+                        room.type().ordinal(), floor.core.state(room).ordinal(),
+                        cell.equals(room.cells().get(0))));
             }
         }
         for (Room room : discovered) {
@@ -498,8 +833,30 @@ public final class RunEngine {
                     GridPos cell = door.from() == room ? door.neighborCell() : door.cell();
                     if (outlined.add(cell)) {
                         cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
-                                DungeonMapPayload.TYPE_UNKNOWN, 0));
+                                DungeonMapPayload.TYPE_UNKNOWN, 0, false));
                     }
+                }
+            }
+        }
+        // Bought at the shop. The map draws the floor's shape; the compass names its special
+        // rooms. Neither ever reveals a secret room — those are the one thing the payload keeps
+        // back on purpose, and a purchasable X-ray would undo the whole point of hunting walls.
+        if (floor.mapRevealed || floor.compassRevealed) {
+            for (Room room : floor.built.layout().rooms()) {
+                if (discovered.contains(room) || isSecret(room)) {
+                    continue;
+                }
+                boolean named = floor.compassRevealed && room.type() != RoomType.NORMAL;
+                if (!named && !floor.mapRevealed) {
+                    continue;
+                }
+                for (GridPos cell : room.cells()) {
+                    if (!outlined.add(cell)) {
+                        continue;
+                    }
+                    cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
+                            named ? room.type().ordinal() : DungeonMapPayload.TYPE_UNKNOWN, 0,
+                            named && cell.equals(room.cells().get(0))));
                 }
             }
         }
@@ -507,6 +864,10 @@ public final class RunEngine {
         PacketDistributor.sendToPlayer(player, new DungeonMapPayload(true,
                 floor.built.layout().grid().size(), floor.run.stage(), mapHidden,
                 playerCell.x(), playerCell.y(), cells));
+    }
+
+    private static boolean isSecret(Room room) {
+        return room.type() == RoomType.SECRET || room.type() == RoomType.SUPER_SECRET;
     }
 
     /**
@@ -642,9 +1003,10 @@ public final class RunEngine {
         @Override
         public void roomDiscovered(Room room, UUID discoverer) {
             if (room.type() == RoomType.TREASURE) {
-                rollTreasure(room);
+                rollLootAt(floor, markerPos(floor, room, "loot"),
+                        DungeonsConfig.treasureLootTable());
             } else if (room.type() == RoomType.CURSE && discoverer != null) {
-                chargeToll(discoverer);
+                chargeToll(room, discoverer);
             }
         }
 
@@ -676,10 +1038,18 @@ public final class RunEngine {
                 }
                 case BOSS_DEFEATED -> playBody(floor, room, "BOSS_DEFEATED", 1.0f);
                 case TRAPDOOR_OPEN -> playBody(floor, room, "TRAPDOOR_OPEN", 1.4f);
-                // Fired directly at the clicked wall by onRightClickBlock, not through the
-                // callback; the case keeps this switch total over the enum.
+                case CHALLENGE_STARTED -> {
+                    playCue(floor, room, "ROOM_SEALED", 0.7f);
+                    playBody(floor, room, "CHALLENGE_STARTED", 1.0f);
+                }
+                case WAVE_CLEARED -> playBody(floor, room, "WAVE_CLEARED", 1.2f);
+                // Everything below is fired at a block by the room fixtures rather than through
+                // the core's callback; the cases keep this switch total over the enum.
                 case SECRET_OPENED -> playBody(floor, room, "SECRET_OPENED", 1.0f);
                 case ENEMY_ENRAGED -> playBody(floor, room, "ENEMY_ENRAGED", 1.1f);
+                case COIN_PICKUP, PURCHASE, PURCHASE_DENIED, SACRIFICE, SACRIFICE_REWARD,
+                     ARCADE_PLAY, ARCADE_WIN, ARCADE_BREAK, DEVIL_OPENED, DEVIL_DEAL, PHOENIX ->
+                        playBody(floor, room, sound.name(), 1.0f);
             }
         }
 
@@ -691,6 +1061,42 @@ public final class RunEngine {
                 floor.enemyRooms.put(enemy.getUUID(), room);
             }
             return spawned.size();
+        }
+
+        /**
+         * Later waves are bigger. Salted by wave index so a challenge is not the same wave three
+         * times over, and sized by a growth factor so the third one is the one that hurts.
+         */
+        @Override
+        public int spawnChallengeWave(Room room, int wave) {
+            int roomIndex = floor.built.layout().rooms().indexOf(room);
+            float growth = (float) Math.pow(
+                    1.0 + DungeonsConfig.challengeWaveGrowthPct() / 100.0, wave);
+            List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room,
+                    roomIndex + wave * 1000, growth);
+            for (Entity enemy : spawned) {
+                floor.enemyRooms.put(enemy.getUUID(), room);
+            }
+            return spawned.size();
+        }
+
+        @Override
+        public int challengeWaves(Room room) {
+            int waves = DungeonsConfig.challengeWaves();
+            int extraFrom = DungeonsConfig.challengeExtraWaveStage();
+            return extraFrom > 0 && floor.run.stage() >= extraFrom ? waves + 1 : waves;
+        }
+
+        @Override
+        public void challengeCompleted(Room room) {
+            BlockPos plate = markerPos(floor, room, "challenge");
+            int reward = CoinDrops.scaleToStage(DungeonsConfig.challengeReward(), floor.run.stage());
+            CoinDrops.spawnCoins(floor.level, plate, reward);
+            rollLootAt(floor, plate, DungeonsConfig.treasureLootTable());
+            for (UUID member : floor.run.party().keySet()) {
+                DungeonTitles.send(floor.level.getServer().getPlayerList().getPlayer(member),
+                        "§6Desafío superado", "§7+" + reward + " monedas");
+            }
         }
 
         @Override
@@ -735,19 +1141,37 @@ public final class RunEngine {
                 if (player != null) {
                     player.sendSystemMessage(Component.literal(
                             "§6La trampilla al siguiente piso se ha abierto."));
+                    DungeonTitles.send(player, "§6Jefe derrotado", "§7La trampilla se abre");
                 }
+            }
+            openDevilDoors();
+        }
+
+        /**
+         * The boss falling is what unbars the devil room — the offer is the floor's reward for
+         * finishing it, and the party has to decide before dropping through the trapdoor.
+         */
+        private void openDevilDoors() {
+            boolean opened = false;
+            for (DoorEdge door : floor.built.layout().doors()) {
+                if (door.kind() != DoorKind.DEVIL) {
+                    continue;
+                }
+                DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
+                        Blocks.AIR.defaultBlockState(), floor.built.roomSize(),
+                        DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                opened = true;
+            }
+            if (opened) {
+                message(floor, "§5Los barrotes del trato ceden — algo espera al otro lado.");
+                playAt(floor, floor.built.roomCenter(floor.built.layout().start()),
+                        DungeonSound.DEVIL_OPENED, 1.0f);
             }
         }
 
         @Override
         public void syncMap() {
-            for (UUID member : floor.run.party().keySet()) {
-                ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
-                if (player != null && player.serverLevel() == floor.level) {
-                    sendMap(floor, player, floor.lastCell.getOrDefault(member,
-                            floor.built.layout().start().cells().get(0)));
-                }
-            }
+            syncMapFor(floor);
         }
 
         /**
@@ -755,57 +1179,40 @@ public final class RunEngine {
          * out from this position, and a marker authored against a wall would otherwise eat it.
          */
         private BlockPos trapdoorPos(Room bossRoom) {
-            return floor.built.clampInside(bossRoom, markerPos(bossRoom, "trapdoor"), 3);
+            return floor.built.clampInside(bossRoom, markerPos(floor, bossRoom, "trapdoor"), 3);
         }
 
-        private void rollTreasure(Room room) {
-            BlockPos pos = floor.built.clampInside(room, markerPos(room, "loot"), 1);
-            LootTable table = floor.level.getServer().reloadableRegistries().getLootTable(
-                    ResourceKey.create(Registries.LOOT_TABLE,
-                            ResourceLocation.parse(DungeonsConfig.treasureLootTable())));
-            LootParams params = new LootParams.Builder(floor.level)
-                    .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
-                    .create(LootContextParamSets.CHEST);
-            for (ItemStack stack : table.getRandomItems(params)) {
-                // The 5-arg constructor gives drops a random pop of velocity — fine for a mob
-                // kill, wrong for a reward pedestal: items scattered around the room, sometimes
-                // out of sight, and read as the loot not having spawned at all. Zero motion: the
-                // reward stands exactly on its marker.
-                ItemEntity item = new ItemEntity(floor.level,
-                        pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack, 0, 0, 0);
-                item.setDefaultPickUpDelay();
-                floor.level.addFreshEntity(item);
-            }
-        }
-
-        /** The room's marker of {@code kind}, else its exact center — loudly, not silently. */
-        private BlockPos markerPos(Room room, String kind) {
-            for (TemplateMarkers.Marker marker : floor.built.markers().getOrDefault(room, List.of())) {
-                if (marker.kind().equals(kind)) {
-                    return marker.pos();
-                }
-            }
-            Teras.LOGGER.warn("Dungeons: {} has no '{}' marker — using the room center. "
-                    + "Add one to its template with the room editor.", room, kind);
-            return floor.built.roomCenter(room);
-        }
-
-        private void chargeToll(UUID player) {
-            BigDecimal toll = BigDecimal.valueOf(DungeonsConfig.curseToll());
-            if (toll.signum() <= 0) {
-                return;
-            }
+        /**
+         * The curse room charges at the door and pays inside. The toll used to be the whole room,
+         * which made walking in a straight loss — there was nothing on the other side of it. Now
+         * the price buys a roll on a rare-skewed table, so it is a wager rather than a tax.
+         *
+         * <p>Priced in coins; the old ₽ toll still fires when a server sets one, but it defaults to
+         * zero. Being unable to pay costs blood instead, and under the health lockdown that bite
+         * does not heal off.</p>
+         */
+        private void chargeToll(Room room, UUID player) {
             ServerPlayer online = floor.level.getServer().getPlayerList().getPlayer(player);
-            if (EconomyStore.withdraw(player, toll)) {
-                if (online != null) {
+            int coinToll = DungeonsConfig.curseCoinToll();
+            if (coinToll > 0) {
+                if (floor.run.wallet().trySpend(coinToll)) {
+                    broadcastWallet(floor);
+                    if (online != null) {
+                        online.sendSystemMessage(Component.literal(
+                                "§5La sala maldita cobra su peaje: " + coinToll + " monedas."));
+                    }
+                } else if (online != null) {
+                    online.hurt(online.damageSources().magic(), 6.0f);
                     online.sendSystemMessage(Component.literal(
-                            "§5La sala maldita cobra su peaje: " + toll + " ₽."));
+                            "§5No podéis pagar el peaje — la maldición muerde."));
                 }
-            } else if (online != null) {
-                online.hurt(online.damageSources().magic(), 6.0f);
-                online.sendSystemMessage(Component.literal(
-                        "§5No puedes pagar el peaje — la maldición muerde."));
             }
+            BigDecimal toll = BigDecimal.valueOf(DungeonsConfig.curseToll());
+            if (toll.signum() > 0 && EconomyStore.withdraw(player, toll) && online != null) {
+                online.sendSystemMessage(Component.literal(
+                        "§5La maldición también cobra " + toll + " ₽."));
+            }
+            rollLootAt(floor, markerPos(floor, room, "loot"), DungeonsConfig.curseLootTable());
         }
     }
 }
