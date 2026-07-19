@@ -46,6 +46,7 @@ public class Teras {
         ItemInit.ITEMS.register(modBus);
         ItemInit.CREATIVE_TABS.register(modBus);
         ComponentInit.COMPONENTS.register(modBus);
+        es.boffmedia.teras.init.EntityInit.ENTITY_TYPES.register(modBus);
 
         // Config belongs to whoever runs the server, so it loads at server start (TerasConfig), not
         // here: a client connected to a remote server has no business reading its own copy.
@@ -60,6 +61,9 @@ public class Teras {
             // Quest system: no-op unless CustomNPCs is installed. QuestBridge is the only class named
             // here, so no `noppes` class is loaded on a server without it.
             es.boffmedia.teras.quests.QuestBridge.registerIfPresent();
+            // Dungeon enemy abilities on CustomNPCs' own event bus. Same isolation — AbilityBridge
+            // names no `noppes` class, and the animated enemy runs its abilities either way.
+            es.boffmedia.teras.dungeon.ability.AbilityBridge.registerIfPresent();
             // Economy: takes over the engine's bank (Pixelmon only; Cobblemon has none) so in-game
             // currency is the starbank balance. Same isolation — EconomyBridge names no engine class.
             es.boffmedia.teras.economy.EconomyBridge.registerIfPresent();

@@ -21,8 +21,13 @@ public final class DungeonRun {
 
     public enum State { BUILDING, ACTIVE }
 
-    /** Where a member goes back to; the dimension is stored as a location string for the journal. */
-    public record ReturnPoint(String dimension, double x, double y, double z, float yaw, float pitch) {}
+    /**
+     * Where a member goes back to; the dimension is stored as a location string for the journal.
+     * {@code gameMode} is the mode they entered with: runs force adventure (dungeon geometry is
+     * not the party's to mine through), so going home has to give back whatever they had.
+     */
+    public record ReturnPoint(String dimension, double x, double y, double z, float yaw, float pitch,
+                              String gameMode) {}
 
     private final int id;
     private final int slot;

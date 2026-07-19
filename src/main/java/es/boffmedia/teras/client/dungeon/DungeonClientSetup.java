@@ -1,11 +1,13 @@
 package es.boffmedia.teras.client.dungeon;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.init.EntityInit;
 import net.minecraft.client.gui.LayeredDraw;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 
 /**
@@ -21,5 +23,10 @@ public final class DungeonClientSetup {
         event.registerAboveAll(
                 ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_map"),
                 (LayeredDraw.Layer) DungeonMapOverlay::render);
+    }
+
+    @SubscribeEvent
+    public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(EntityInit.DUNGEON_ENEMY.get(), DungeonGeoEnemyRenderer::new);
     }
 }

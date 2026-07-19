@@ -1,7 +1,12 @@
-# Gradle / build
+# Gradle / build. Anchored to the repo root on purpose: unanchored `build/` and `run/` match a
+# directory of that name at ANY depth, which silently excluded the whole of
+# src/main/java/.../dungeon/build (the materializer) and .../dungeon/run (the floor loop) — 12
+# source files that were never committed and that a fresh clone could not compile without.
 .gradle/
-build/
-run/
+/build/
+/run/
+legacy-1.16/build/
+legacy-1.16/run/
 bin/
 out/
 

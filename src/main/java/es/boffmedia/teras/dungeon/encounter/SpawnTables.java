@@ -6,6 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.dungeon.ability.Abilities;
 import es.boffmedia.teras.dungeon.model.SeededRng;
 import net.neoforged.fml.loading.FMLPaths;
 
@@ -29,7 +30,7 @@ import java.util.Map;
 public final class SpawnTables {
     private SpawnTables() {}
 
-    public enum Kind { ENTITY, CNPC }
+    public enum Kind { ENTITY, CNPC, GEO }
 
     public record SpawnEntry(Kind kind, String id, int tab, int weight) {}
 
@@ -48,6 +49,9 @@ public final class SpawnTables {
 
     public static void load() {
         resetToDefaults();
+        // Seeded before the file is read so a parse failure below still leaves the built-in
+        // abilities standing, the same way the spawn tables keep their defaults.
+        Abilities.load(DungeonEnemyPacks.abilities(), null);
         Path path = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons").resolve("enemies.json");
         try {
             if (!Files.exists(path)) {
@@ -75,6 +79,8 @@ public final class SpawnTables {
             if (root.has("miniBosses")) {
                 readPools(root.getAsJsonObject("miniBosses"), miniBosses);
             }
+            Abilities.load(DungeonEnemyPacks.abilities(),
+                    root.has("abilities") ? root.getAsJsonObject("abilities") : null);
             Teras.LOGGER.info("Dungeons: enemy tables loaded from {}", path);
         } catch (Exception e) {
             Teras.LOGGER.warn("Dungeons: failed to load enemies.json, using defaults: {}", e.toString());
@@ -91,6 +97,114 @@ public final class SpawnTables {
 
     public static List<SpawnEntry> miniBossPool(int stage) {
         return miniBosses.getOrDefault(String.valueOf(stage), miniBosses.get(DEFAULT_KEY));
+    }
+
+    /**
+     * Rewrites {@code enemies.json} so the stage tables point at the installed CustomNPCs
+     * bestiary instead of the vanilla fallback. Called by
+     * {@code /teras dungeon enemigos instalar}; the previous file is kept as {@code .bak} because
+     * this replaces hand-tuned tables.
+     */
+    public static void writeCnpcBestiary(int tab) {
+        Path path = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons").resolve("enemies.json");
+        try {
+            Files.createDirectories(path.getParent());
+            if (Files.exists(path)) {
+                Files.copy(path, path.resolveSibling("enemies.json.bak"),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.writeString(path, GSON.toJson(renderBestiary(tab)));
+            Teras.LOGGER.info("Dungeons: enemies.json rewritten against the CustomNPCs bestiary");
+        } catch (Exception e) {
+            Teras.LOGGER.error("Dungeons: could not write enemies.json: {}", e.toString());
+        }
+    }
+
+    /**
+     * Stage curve: early floors are chaff, elites fade in from stage 3 and take over by the late
+     * game. Bosses and mini-bosses draw from their own pools throughout.
+     */
+    private static JsonObject renderBestiary(int tab) {
+        JsonObject stages = new JsonObject();
+        stages.add(DEFAULT_KEY, renderStage(new StageTable(3, 5,
+                mix(DungeonEnemyPacks.chaff(), 3, DungeonEnemyPacks.elites(), 1, tab))));
+        stages.add("1", renderStage(new StageTable(3, 4,
+                mix(DungeonEnemyPacks.chaff(), 1, List.of(), 0, tab))));
+        stages.add("2", renderStage(new StageTable(3, 5,
+                mix(DungeonEnemyPacks.chaff(), 1, List.of(), 0, tab))));
+        stages.add("3", renderStage(new StageTable(4, 6,
+                mix(DungeonEnemyPacks.chaff(), 4, DungeonEnemyPacks.elites(), 1, tab))));
+        // 4-7 used to be missing, so the whole mid-game fell through to "default" — the
+        // elite-heavy late table — and the curve flattened exactly where it should be ramping.
+        stages.add("4", renderStage(new StageTable(4, 6,
+                mix(DungeonEnemyPacks.chaff(), 3, DungeonEnemyPacks.elites(), 1, tab))));
+        stages.add("5", renderStage(new StageTable(4, 6,
+                mix(DungeonEnemyPacks.chaff(), 5, DungeonEnemyPacks.elites(), 2, tab))));
+        stages.add("6", renderStage(new StageTable(4, 7,
+                mix(DungeonEnemyPacks.chaff(), 2, DungeonEnemyPacks.elites(), 1, tab))));
+        stages.add("7", renderStage(new StageTable(4, 7,
+                mix(DungeonEnemyPacks.chaff(), 3, DungeonEnemyPacks.elites(), 2, tab))));
+        for (int stage = 8; stage <= 12; stage++) {
+            stages.add(String.valueOf(stage), renderStage(new StageTable(4, 7,
+                    mix(DungeonEnemyPacks.chaff(), 1, DungeonEnemyPacks.elites(), 2, tab))));
+        }
+
+        JsonObject root = new JsonObject();
+        root.add("stages", stages);
+        JsonObject bosses = new JsonObject();
+        bosses.add(DEFAULT_KEY, renderPool(cnpcPool(DungeonEnemyPacks.bosses(), 1, tab)));
+        root.add("bosses", bosses);
+        JsonObject miniBosses = new JsonObject();
+        miniBosses.add(DEFAULT_KEY, renderPool(cnpcPool(DungeonEnemyPacks.miniBosses(), 1, tab)));
+        root.add("miniBosses", miniBosses);
+        root.add("abilities", Abilities.render(DungeonEnemyPacks.abilities()));
+        return root;
+    }
+
+    private static List<SpawnEntry> mix(List<EnemyPreset> common, int commonWeight,
+                                        List<EnemyPreset> rare, int rareWeight, int tab) {
+        List<SpawnEntry> pool = new ArrayList<>(cnpcPool(common, commonWeight, tab));
+        if (rareWeight > 0) {
+            pool.addAll(cnpcPool(rare, rareWeight, tab));
+        }
+        return pool;
+    }
+
+    private static List<SpawnEntry> cnpcPool(List<EnemyPreset> presets, int weight, int tab) {
+        List<SpawnEntry> pool = new ArrayList<>(presets.size());
+        for (EnemyPreset preset : presets) {
+            pool.add(new SpawnEntry(Kind.CNPC, preset.id(), tab, weight));
+        }
+        return pool;
+    }
+
+    /**
+     * A single entry written as one string, for places where a whole JSON object would be noise —
+     * {@code entity:minecraft:zombie}, {@code geo:husk_guardian}, {@code cnpc:7:esqueleto_guardia}.
+     * Used by the {@code SUMMON} ability's spec. Null when it does not parse.
+     */
+    public static SpawnEntry parseSpec(String spec) {
+        if (spec == null || spec.isBlank()) {
+            return null;
+        }
+        String[] parts = spec.split(":", 2);
+        if (parts.length != 2) {
+            return null;
+        }
+        try {
+            Kind kind = Kind.valueOf(parts[0].trim().toUpperCase(java.util.Locale.ROOT));
+            if (kind != Kind.CNPC) {
+                return new SpawnEntry(kind, parts[1].trim(), 0, 1);
+            }
+            // cnpc carries its tab: cnpc:<tab>:<name>
+            String[] clone = parts[1].split(":", 2);
+            if (clone.length != 2) {
+                return null;
+            }
+            return new SpawnEntry(Kind.CNPC, clone[1].trim(), Integer.parseInt(clone[0].trim()), 1);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public static SpawnEntry pickWeighted(List<SpawnEntry> pool, SeededRng rng) {
@@ -133,7 +247,7 @@ public final class SpawnTables {
             try {
                 JsonObject obj = item.getAsJsonObject();
                 Kind kind = Kind.valueOf(obj.get("kind").getAsString().toUpperCase(java.util.Locale.ROOT));
-                String id = kind == Kind.ENTITY ? obj.get("id").getAsString() : obj.get("name").getAsString();
+                String id = kind == Kind.CNPC ? obj.get("name").getAsString() : obj.get("id").getAsString();
                 int tab = obj.has("tab") ? obj.get("tab").getAsInt() : 0;
                 int weight = obj.has("weight") ? Math.max(1, obj.get("weight").getAsInt()) : 1;
                 entries.add(new SpawnEntry(kind, id, tab, weight));
@@ -165,6 +279,9 @@ public final class SpawnTables {
         root.add("stages", stagesJson);
         root.add("bosses", renderPools(bosses));
         root.add("miniBosses", renderPools(miniBosses));
+        // Written out even though the vanilla fallback wave cannot use them: the block is where an
+        // admin discovers abilities exist and what the shipped tuning looks like.
+        root.add("abilities", Abilities.render(DungeonEnemyPacks.abilities()));
         return root;
     }
 
@@ -189,11 +306,11 @@ public final class SpawnTables {
         for (SpawnEntry entry : pool) {
             JsonObject obj = new JsonObject();
             obj.addProperty("kind", entry.kind().name().toLowerCase(java.util.Locale.ROOT));
-            if (entry.kind() == Kind.ENTITY) {
-                obj.addProperty("id", entry.id());
-            } else {
+            if (entry.kind() == Kind.CNPC) {
                 obj.addProperty("name", entry.id());
                 obj.addProperty("tab", entry.tab());
+            } else {
+                obj.addProperty("id", entry.id());
             }
             obj.addProperty("weight", entry.weight());
             array.add(obj);

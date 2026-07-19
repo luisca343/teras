@@ -34,7 +34,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Instanced runs on a slot lattice in the dungeon dimension ({@code teras:vacio} by default):
+ * Instanced runs on a slot lattice in the dungeon dimension ({@code teras:vacio} by default,
+ * coordinates claimed through {@link es.boffmedia.teras.world.VoidZones}):
  * allocate a slot, build the floor there, teleport the party in, and always leave the world as it
  * was — the run journal is written before the first block and deleted after the last one is
  * swept, so a crash at any point leaves a file the boot sweep can act on instead of an orphan
@@ -255,9 +256,7 @@ public final class DungeonRunManager {
 
     /** A slot holds two build pads so stage advances can build before tearing down. */
     static BlockPos padOrigin(int slot, int pad) {
-        int spacing = DungeonsConfig.slotSpacing();
-        return new BlockPos((slot % 8) * spacing + pad * (spacing / 2),
-                DungeonsConfig.slotY(), (slot / 8) * spacing);
+        return es.boffmedia.teras.world.VoidZones.dungeonRunPad(slot, pad);
     }
 
     private static List<BlockPos> cellOrigins(DungeonLayout layout, BlockPos origin) {
@@ -302,7 +301,8 @@ public final class DungeonRunManager {
     private static DungeonRun.ReturnPoint returnPointOf(ServerPlayer player) {
         return new DungeonRun.ReturnPoint(
                 player.serverLevel().dimension().location().toString(),
-                player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+                player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot(),
+                player.gameMode.getGameModeForPlayer().getName());
     }
 
     private static void teleportPartyIn(MinecraftServer server, DungeonRun run, BuiltDungeon built) {
@@ -310,7 +310,7 @@ public final class DungeonRunManager {
         if (level == null) {
             return;
         }
-        BlockPos start = built.anchorCenter(built.layout().start());
+        BlockPos start = built.roomCenter(built.layout().start());
         for (UUID member : run.party().keySet()) {
             ServerPlayer player = server.getPlayerList().getPlayer(member);
             if (player != null) {
@@ -319,6 +319,10 @@ public final class DungeonRunManager {
                 // Clears the descent: gravity back on, and no fall distance carried into the
                 // landing (arriving mid-drop from the floor above was fatal).
                 RunEngine.land(player);
+                // Always adventure, whatever they came in as — the floor is not the party's to
+                // mine through or brick over. On every floor, not just the first: idempotent, and
+                // it covers a member who talked an op into a mode change mid-run.
+                player.setGameMode(net.minecraft.world.level.GameType.ADVENTURE);
                 player.sendSystemMessage(Component.literal(
                         "§aMazmorra lista — etapa " + run.stage()
                                 + ", semilla " + run.layout().seedString()));
@@ -346,5 +350,8 @@ public final class DungeonRunManager {
         player.teleportTo(level, point.x(), point.y(), point.z(), point.yaw(), point.pitch());
         // A run can end while its party is mid-descent, so going home has to clear the fall too.
         RunEngine.land(player);
+        // The run forced adventure; home means their own mode again.
+        player.setGameMode(net.minecraft.world.level.GameType.byName(
+                point.gameMode(), net.minecraft.world.level.GameType.SURVIVAL));
     }
 }

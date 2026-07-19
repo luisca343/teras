@@ -4,6 +4,7 @@ import es.boffmedia.teras.dungeon.model.GridDir;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomGrid;
+import es.boffmedia.teras.dungeon.model.RoomShape;
 import es.boffmedia.teras.dungeon.model.RoomType;
 
 import java.util.ArrayDeque;
@@ -38,6 +39,7 @@ final class LayoutValidator {
 
         checkCounts(grid, errors, warnings, stage, config);
         checkShapes(grid, errors);
+        checkBossEntrance(grid, errors);
         checkConnectivity(grid, errors);
 
         int deadEnds = grid.deadEndCells().size();
@@ -94,8 +96,30 @@ final class LayoutValidator {
 
     private static void checkShapes(RoomGrid grid, List<String> errors) {
         for (Room room : grid.rooms()) {
-            if (room.type().isSpecial() && !room.isSingle()) {
-                errors.add("Special room larger than 1x1: " + room);
+            if (!room.type().isSpecial() || room.isSingle()) {
+                continue;
+            }
+            // The boss chamber is the one special room allowed to be large, and only as a 2×2.
+            if (room.type() == RoomType.BOSS && room.shape() == RoomShape.QUAD) {
+                continue;
+            }
+            errors.add("Special room with an unsupported shape: " + room);
+        }
+    }
+
+    /**
+     * The boss chamber has exactly one way in. This used to fall out of "the boss claims a 1×1 dead
+     * end"; once it can span four cells that is no longer implied, and it is what makes the boss
+     * door sealable, so it becomes a rule of its own.
+     */
+    private static void checkBossEntrance(RoomGrid grid, List<String> errors) {
+        for (Room room : grid.rooms()) {
+            if (room.type() != RoomType.BOSS) {
+                continue;
+            }
+            int entrances = grid.externalNeighborCount(room);
+            if (entrances != 1) {
+                errors.add("Boss room with " + entrances + " entrances: " + room);
             }
         }
     }

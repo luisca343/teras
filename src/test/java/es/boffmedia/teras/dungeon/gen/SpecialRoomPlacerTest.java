@@ -71,4 +71,82 @@ class SpecialRoomPlacerTest {
         assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SHOP)
                 || grid.rooms().stream().anyMatch(r -> r.type() == RoomType.TREASURE));
     }
+
+    /** A corridor of rooms ending in a clear corner: the chamber has somewhere to go. */
+    @Test
+    void bossGrowsIntoAQuadWhenTheSpaceIsClear() {
+        RoomGrid grid = new RoomGrid(9);
+        grid.place(new Room(RoomType.START, new GridPos(4, 4), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.NORMAL, new GridPos(4, 3), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.BOSS, new GridPos(4, 2), RoomShape.SINGLE));
+
+        SpecialRoomPlacer.growBossRoom(grid, new SeededRng(1));
+
+        Room grown = grid.roomAt(new GridPos(4, 2));
+        assertEquals(RoomShape.QUAD, grown.shape());
+        assertEquals(RoomType.BOSS, grown.type());
+        assertEquals(1, grid.externalNeighborCount(grown));
+    }
+
+    /** Boxed in on both sides: every quad would open a second door, so it stays 1x1 rather than. */
+    @Test
+    void bossStaysSingleWhenEveryQuadWouldAddADoor() {
+        RoomGrid grid = new RoomGrid(9);
+        grid.place(new Room(RoomType.START, new GridPos(4, 4), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.BOSS, new GridPos(4, 3), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.NORMAL, new GridPos(3, 2), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.NORMAL, new GridPos(5, 2), RoomShape.SINGLE));
+
+        SpecialRoomPlacer.growBossRoom(grid, new SeededRng(1));
+
+        assertTrue(grid.roomAt(new GridPos(4, 3)).isSingle());
+    }
+
+    /**
+     * A quad cell laid against the SUPER_SECRET would be a hidden second door into the boss room —
+     * and {@code occupiedNeighborCount} cannot see it, which is why growth reads occupancy raw.
+     */
+    @Test
+    void bossNeverGrowsAgainstTheSuperSecretRoom() {
+        RoomGrid grid = new RoomGrid(9);
+        grid.place(new Room(RoomType.START, new GridPos(4, 4), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.NORMAL, new GridPos(4, 3), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.BOSS, new GridPos(4, 2), RoomShape.SINGLE));
+        // Beside every cell the chamber could claim, in all four candidate quads.
+        grid.place(new Room(RoomType.SUPER_SECRET, new GridPos(3, 1), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.SUPER_SECRET, new GridPos(5, 1), RoomShape.SINGLE));
+
+        SpecialRoomPlacer.growBossRoom(grid, new SeededRng(1));
+
+        assertTrue(grid.roomAt(new GridPos(4, 2)).isSingle(),
+                "grew against a secret room, giving the boss a hidden second door");
+    }
+
+    /** The chamber must never cost the floor its boss-is-deepest ordering. */
+    @Test
+    void theGrownBossIsStillNoNearerThanTheTreasure() {
+        GenConfig config = GenConfig.defaults();
+        for (int seed = 0; seed < 40; seed++) {
+            SeededRng rng = new SeededRng(seed);
+            RoomGrid grid = RoomCarver.carve(config, 22, 7, rng);
+            SpecialRoomPlacer.place(grid, config, 3, rng);
+
+            var distances = grid.distancesFromCenter();
+            Room boss = grid.rooms().stream()
+                    .filter(r -> r.type() == RoomType.BOSS).findFirst().orElseThrow();
+            Room treasure = grid.rooms().stream()
+                    .filter(r -> r.type() == RoomType.TREASURE).findFirst().orElse(null);
+            if (treasure == null) {
+                continue;
+            }
+            assertTrue(nearestDistance(distances, boss) >= nearestDistance(distances, treasure),
+                    "seed " + seed + ": treasure ended up farther than the boss");
+        }
+    }
+
+    private int nearestDistance(java.util.Map<GridPos, Integer> distances, Room room) {
+        return room.cells().stream()
+                .mapToInt(c -> distances.getOrDefault(c, Integer.MAX_VALUE))
+                .min().orElseThrow();
+    }
 }

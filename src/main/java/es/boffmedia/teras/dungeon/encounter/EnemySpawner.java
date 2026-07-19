@@ -1,8 +1,12 @@
 package es.boffmedia.teras.dungeon.encounter;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.dungeon.ability.Abilities;
 import es.boffmedia.teras.dungeon.build.BuiltDungeon;
 import es.boffmedia.teras.dungeon.build.TemplateMarkers;
+import es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy;
+import es.boffmedia.teras.dungeon.entity.GeoEnemyVariant;
+import es.boffmedia.teras.init.EntityInit;
 import es.boffmedia.teras.dungeon.model.DungeonSeeds;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
@@ -16,6 +20,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +48,7 @@ public final class EnemySpawner {
 
     /** Spawns the room's encounter; the returned entities are the room's kill ledger. */
     public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex) {
+        purgeLeftovers(level, built, room);
         SeededRng rng = new SeededRng(DungeonSeeds.derive(built.layout().baseSeed(), 0x656E656DL + roomIndex));
         List<Entity> spawned = switch (room.type()) {
             case BOSS -> spawnFromPool(level, built, room,
@@ -57,7 +64,46 @@ public final class EnemySpawner {
             Teras.LOGGER.debug("Dungeons: {} spawned {} enemies", room, spawned.size());
         }
         warnIfPeaceful(level, spawned);
+        aggro(level, spawned);
         return spawned;
+    }
+
+    /**
+     * A tagged enemy already standing in the room at spawn time is a leftover — a deserted fight
+     * whose wave unloaded before it could be discarded, thawed back in when the player returned.
+     * The fresh wave replaces it; without this the rematch stacks both wave instances, and the
+     * leftovers fight outside the new kill ledger.
+     */
+    private static void purgeLeftovers(ServerLevel level, BuiltDungeon built, Room room) {
+        for (GridPos cell : room.cells()) {
+            BlockPos origin = built.cellOrigin(cell);
+            net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+                    origin.getX(), origin.getY(), origin.getZ(),
+                    origin.getX() + built.roomSize(), origin.getY() + built.roomHeight(),
+                    origin.getZ() + built.roomSize());
+            for (Entity leftover : level.getEntities((Entity) null, box,
+                    e -> e.getTags().contains(DUNGEON_TAG))) {
+                leftover.discard();
+            }
+        }
+    }
+
+    /**
+     * Points the wave at the nearest player. A sealed room is not an ambush to be discovered: the
+     * doors shut and the fight starts. It also means combat does not depend on getting a
+     * CustomNPCs faction's player attitude right — an NPC handed a target fights whatever its
+     * faction says.
+     */
+    private static void aggro(ServerLevel level, List<Entity> spawned) {
+        for (Entity entity : spawned) {
+            if (!(entity instanceof Mob mob)) {
+                continue;
+            }
+            Player nearest = level.getNearestPlayer(mob, 64);
+            if (nearest instanceof ServerPlayer player) {
+                mob.setTarget(player);
+            }
+        }
     }
 
     /**
@@ -99,16 +145,64 @@ public final class EnemySpawner {
     private static List<Entity> spawnFromPool(ServerLevel level, BuiltDungeon built, Room room,
                                               List<SpawnTables.SpawnEntry> pool, String markerKind,
                                               SeededRng rng) {
-        List<BlockPos> positions = spawnPositions(built, room, markerKind);
-        Entity boss = spawnOne(level, SpawnTables.pickWeighted(pool, rng), positions.get(0));
+        List<BlockPos> markers = markerPositions(built, room, markerKind);
+        // A template without a boss marker puts its boss in the middle of the chamber. The
+        // per-cell fallback would give the anchor cell — the corner quadrant of a 2x2 boss room.
+        // Marker positions are clamped a block off the walls: an authored marker inside or against
+        // a wall spawns a boss embedded in it.
+        BlockPos pos = markers.isEmpty() ? built.roomCenter(room)
+                : built.clampInside(room, markers.get(0), 1);
+        if (markers.isEmpty()) {
+            Teras.LOGGER.warn("Dungeons: {} has no '{}' marker — spawning at the room center. "
+                    + "Add one to its template with the room editor.", room, markerKind);
+        }
+        Entity boss = spawnOne(level, SpawnTables.pickWeighted(pool, rng), pos);
         return boss == null ? List.of() : List.of(boss);
     }
 
     private static Entity spawnOne(ServerLevel level, SpawnTables.SpawnEntry entry, BlockPos pos) {
-        return switch (entry.kind()) {
+        Entity entity = switch (entry.kind()) {
             case ENTITY -> spawnEntity(level, entry.id(), pos);
             case CNPC -> spawnClone(level, entry, pos);
+            case GEO -> spawnGeo(level, entry.id(), pos);
         };
+        if (entity != null) {
+            // Which authored enemy this is, for the ability layer. A tag rather than the NPC's
+            // display name because installed clones are meant to be renamed in the CNPC editor.
+            entity.addTag(Abilities.TAG_PREFIX + entry.id());
+        }
+        return entity;
+    }
+
+    /**
+     * Spawns one enemy outside the wave flow — a boss's adds. Public because the ability layer
+     * summons them mid-fight; the caller is responsible for getting the result into the room's kill
+     * ledger (see {@code RunEngine.registerSummon}) or discarding it.
+     */
+    public static Entity spawnSummon(ServerLevel level, SpawnTables.SpawnEntry entry, BlockPos pos) {
+        Entity add = spawnOne(level, entry, pos);
+        if (add != null) {
+            aggro(level, List.of(add));
+        }
+        return add;
+    }
+
+    /** The animated first-party enemy; {@code id} selects its {@link GeoEnemyVariant}. */
+    private static Entity spawnGeo(ServerLevel level, String variantId, BlockPos pos) {
+        DungeonGeoEnemy enemy = EntityInit.DUNGEON_ENEMY.get().create(level);
+        if (enemy == null) {
+            Teras.LOGGER.warn("Dungeons: could not create the animated enemy for variant '{}'", variantId);
+            return null;
+        }
+        enemy.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, level.random.nextFloat() * 360f, 0);
+        enemy.applyVariant(variantId);
+        enemy.addTag(DUNGEON_TAG);
+        enemy.setPersistenceRequired();
+        if (!level.addFreshEntity(enemy)) {
+            Teras.LOGGER.warn("Dungeons: level refused the animated enemy at {}", pos);
+            return null;
+        }
+        return enemy;
     }
 
     private static Entity spawnEntity(ServerLevel level, String id, BlockPos pos) {
@@ -156,14 +250,20 @@ public final class EnemySpawner {
         return clone;
     }
 
-    /** Marker positions of {@code kind}; cell centers when the template shipped without markers. */
-    private static List<BlockPos> spawnPositions(BuiltDungeon built, Room room, String kind) {
+    /** Marker positions of {@code kind}, empty when the template shipped without any. */
+    private static List<BlockPos> markerPositions(BuiltDungeon built, Room room, String kind) {
         List<BlockPos> positions = new ArrayList<>();
         for (TemplateMarkers.Marker marker : built.markers().getOrDefault(room, List.of())) {
             if (marker.kind().equals(kind)) {
                 positions.add(marker.pos());
             }
         }
+        return positions;
+    }
+
+    /** Wave spawn points: the template's markers, or one per cell when it shipped without any. */
+    private static List<BlockPos> spawnPositions(BuiltDungeon built, Room room, String kind) {
+        List<BlockPos> positions = markerPositions(built, room, kind);
         if (positions.isEmpty()) {
             for (GridPos cell : room.cells()) {
                 positions.add(built.cellOrigin(cell).offset(built.roomSize() / 2, 1, built.roomSize() / 2));

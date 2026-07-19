@@ -80,6 +80,18 @@ versionRange = "[1.21.1,)"
 ordering = "AFTER"
 side = "BOTH"
 
+# REQUIRED: teras:dungeon_enemy implements GeckoLib's GeoEntity and its type is registered
+# unconditionally at construction, so the class is loaded on every server whether or not a dungeon
+# ever runs. Unlike CustomNPCs there is no bridge to hide behind — a mod that implements another
+# mod's interface cannot degrade, it simply fails to link — so this is declared rather than
+# guarded, and the failure is a clean load-time message instead of a NoClassDefFoundError mid-run.
+[[dependencies.${mod_id}]]
+modId = "geckolib"
+type = "required"
+versionRange = "[4.9,)"
+ordering = "AFTER"
+side = "BOTH"
+
 # Optional: /teras region create|redefine read the caller's WorldEdit selection. Without WorldEdit
 # the commands explain what's missing; everything else about regions (tracking, banners, protection,
 # sync, HTTP) needs no WorldEdit.

@@ -78,6 +78,69 @@ public final class RoomGrid {
         rooms.add(room);
     }
 
+    /**
+     * Swaps {@code existing} for {@code replacement}, which must cover every cell the old room
+     * held; the extra cells have to be free. The room keeps its slot in {@link #rooms()} —
+     * template variants and encounter seeds are both derived from placement index, so a room that
+     * grows must not shift itself, or anything after it, onto a different index.
+     *
+     * <p>Like {@link #place}, every cell is checked before any is written, so a rejected replace
+     * leaves the grid exactly as it was.</p>
+     */
+    public void replace(Room existing, Room replacement) {
+        int index = rooms.indexOf(existing);
+        if (index < 0) {
+            throw new IllegalArgumentException("Room is not on the grid: " + existing);
+        }
+        List<GridPos> footprint = replacement.cells();
+        for (GridPos cell : footprint) {
+            if (!inBounds(cell)) {
+                throw new IllegalArgumentException("Room out of bounds at " + cell + ": " + replacement);
+            }
+            Room occupant = cells[cell.y()][cell.x()];
+            if (occupant != null && occupant != existing) {
+                throw new IllegalArgumentException("Cell already occupied at " + cell + ": " + replacement);
+            }
+        }
+        if (!new java.util.HashSet<>(footprint).containsAll(existing.cells())) {
+            throw new IllegalArgumentException("Replacement drops cells of " + existing);
+        }
+        for (GridPos cell : existing.cells()) {
+            cells[cell.y()][cell.x()] = null;
+        }
+        for (GridPos cell : footprint) {
+            cells[cell.y()][cell.x()] = replacement;
+        }
+        rooms.set(index, replacement);
+    }
+
+    /**
+     * Occupied cells orthogonally adjacent to {@code footprint} but outside it — one per door edge
+     * the door graph will emit for that room.
+     *
+     * <p>Unlike {@link #occupiedNeighborCount} this <b>counts secret rooms</b>, and that difference
+     * is the whole point: a cracked wall is still a way in, so "the boss chamber has exactly one
+     * entrance" has to mean exactly one. Counting the secret-aware way would let a room sit against
+     * the SUPER_SECRET and still look sealed.</p>
+     */
+    public int externalNeighborCount(java.util.Collection<GridPos> footprint) {
+        java.util.Set<GridPos> body = new java.util.HashSet<>(footprint);
+        int count = 0;
+        for (GridPos cell : body) {
+            for (GridDir dir : GridDir.values()) {
+                GridPos outside = cell.step(dir);
+                if (!body.contains(outside) && roomAt(outside) != null) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    public int externalNeighborCount(Room room) {
+        return externalNeighborCount(room.cells());
+    }
+
     /** Occupied orthogonal neighbors of {@code pos}, secret rooms excluded. */
     public int occupiedNeighborCount(GridPos pos) {
         int count = 0;

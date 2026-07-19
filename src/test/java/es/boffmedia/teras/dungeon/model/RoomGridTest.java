@@ -71,6 +71,65 @@ class RoomGridTest {
     }
 
     @Test
+    void replacingARoomGrowsItInPlaceAndKeepsItsIndex() {
+        RoomGrid grid = new RoomGrid(7);
+        grid.place(new Room(RoomType.START, new GridPos(3, 3), RoomShape.SINGLE));
+        Room boss = new Room(RoomType.BOSS, new GridPos(3, 2), RoomShape.SINGLE);
+        grid.place(boss);
+        grid.place(new Room(RoomType.NORMAL, new GridPos(0, 0), RoomShape.SINGLE));
+
+        Room grown = new Room(RoomType.BOSS, new GridPos(2, 1), RoomShape.QUAD);
+        grid.replace(boss, grown);
+
+        assertSame(grown, grid.roomAt(new GridPos(3, 2)));
+        assertSame(grown, grid.roomAt(new GridPos(2, 1)));
+        // Template variants and encounter seeds both derive from placement index, so a room that
+        // grows must not move itself — or anything after it — onto a different index.
+        assertEquals(1, grid.rooms().indexOf(grown));
+        assertEquals(3, grid.rooms().size());
+        assertEquals(6, grid.occupiedCellCount());
+    }
+
+    @Test
+    void replacingOverAnotherRoomThrowsAndChangesNothing() {
+        RoomGrid grid = new RoomGrid(7);
+        Room boss = new Room(RoomType.BOSS, new GridPos(3, 2), RoomShape.SINGLE);
+        grid.place(boss);
+        grid.place(new Room(RoomType.NORMAL, new GridPos(4, 2), RoomShape.SINGLE));
+
+        Room grown = new Room(RoomType.BOSS, new GridPos(3, 2), RoomShape.QUAD);
+        assertThrows(IllegalArgumentException.class, () -> grid.replace(boss, grown));
+        assertSame(boss, grid.roomAt(new GridPos(3, 2)));
+        assertEquals(2, grid.occupiedCellCount());
+    }
+
+    @Test
+    void replacingWithARoomThatDropsCellsThrows() {
+        RoomGrid grid = new RoomGrid(7);
+        Room quad = new Room(RoomType.NORMAL, new GridPos(1, 1), RoomShape.QUAD);
+        grid.place(quad);
+
+        assertThrows(IllegalArgumentException.class, () -> grid.replace(quad,
+                new Room(RoomType.NORMAL, new GridPos(1, 1), RoomShape.SINGLE)));
+    }
+
+    /**
+     * The regression guard for the boss-growth constraint: a cracked wall is still a way in, so
+     * "exactly one entrance" has to see the secret room that {@code occupiedNeighborCount} hides.
+     */
+    @Test
+    void externalNeighborsCountSecretRoomsThatOccupiedNeighborsSkip() {
+        RoomGrid grid = new RoomGrid(7);
+        Room quad = new Room(RoomType.BOSS, new GridPos(2, 2), RoomShape.QUAD);
+        grid.place(quad);
+        grid.place(new Room(RoomType.NORMAL, new GridPos(1, 2), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.SUPER_SECRET, new GridPos(4, 2), RoomShape.SINGLE));
+
+        assertEquals(2, grid.externalNeighborCount(quad));
+        assertEquals(1, grid.occupiedNeighborCount(new GridPos(1, 2)));
+    }
+
+    @Test
     void distancesWalkOutwardFromTheCenter() {
         RoomGrid grid = new RoomGrid(7);
         grid.place(new Room(RoomType.START, new GridPos(3, 3), RoomShape.SINGLE));

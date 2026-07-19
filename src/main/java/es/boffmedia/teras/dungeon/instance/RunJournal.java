@@ -125,11 +125,7 @@ final class RunJournal {
         try (Reader reader = Files.newBufferedReader(returnsFile())) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
             for (String key : root.keySet()) {
-                JsonObject p = root.getAsJsonObject(key);
-                returns.put(UUID.fromString(key), new DungeonRun.ReturnPoint(
-                        p.get("dim").getAsString(), p.get("x").getAsDouble(),
-                        p.get("y").getAsDouble(), p.get("z").getAsDouble(),
-                        p.get("yaw").getAsFloat(), p.get("pitch").getAsFloat()));
+                returns.put(UUID.fromString(key), parsePoint(root.getAsJsonObject(key)));
             }
         } catch (Exception e) {
             Teras.LOGGER.warn("Dungeons: unreadable returns.json: {}", e.toString());
@@ -158,7 +154,17 @@ final class RunJournal {
         obj.addProperty("z", p.z());
         obj.addProperty("yaw", p.yaw());
         obj.addProperty("pitch", p.pitch());
+        obj.addProperty("mode", p.gameMode());
         return obj;
+    }
+
+    /** {@code mode} is lenient: journals written before runs forced adventure lack the field. */
+    private static DungeonRun.ReturnPoint parsePoint(JsonObject p) {
+        return new DungeonRun.ReturnPoint(
+                p.get("dim").getAsString(), p.get("x").getAsDouble(),
+                p.get("y").getAsDouble(), p.get("z").getAsDouble(),
+                p.get("yaw").getAsFloat(), p.get("pitch").getAsFloat(),
+                p.has("mode") ? p.get("mode").getAsString() : "survival");
     }
 
     private static JsonArray renderParty(Map<UUID, DungeonRun.ReturnPoint> party) {
@@ -178,10 +184,7 @@ final class RunJournal {
         }
         for (var element : players) {
             JsonObject p = element.getAsJsonObject();
-            party.put(UUID.fromString(p.get("uuid").getAsString()), new DungeonRun.ReturnPoint(
-                    p.get("dim").getAsString(), p.get("x").getAsDouble(),
-                    p.get("y").getAsDouble(), p.get("z").getAsDouble(),
-                    p.get("yaw").getAsFloat(), p.get("pitch").getAsFloat()));
+            party.put(UUID.fromString(p.get("uuid").getAsString()), parsePoint(p));
         }
         return party;
     }

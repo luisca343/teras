@@ -57,8 +57,16 @@ repositories {
         url = 'https://maven.blamejared.com'
         content { includeGroup 'info.journeymap' }
     }
-    // Modrinth (GeckoLib, Armourer's Workshop) — used where the author opted the CurseForge file
-    // out of API distribution (cursemaven answers 401 for those).
+    // GeckoLib's own Cloudsmith maven. NOT Modrinth: its `maven.modrinth:geckolib:4.9.2`
+    // coordinate resolves by version *number*, which GeckoLib reuses across loaders, and the jar
+    // that comes back is the Fabric build — intermediary-named (class_2960), so nothing written
+    // against Mojmap would compile. This repo publishes the loader in the artifact id.
+    maven {
+        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+        content { includeGroup 'software.bernie.geckolib' }
+    }
+    // Modrinth (Armourer's Workshop) — its CurseForge files are not API-distributable
+    // (cursemaven answers 401). Verified NeoForge-flavoured, unlike GeckoLib's.
     maven {
         url = 'https://api.modrinth.com/maven'
         content { includeGroup 'maven.modrinth' }
@@ -114,13 +122,12 @@ dependencies {
     // and the Tocadiscos audio path.
     compileOnly("curse.maven:voicechat-416089:8293091") { transitive = false }
 
-    // GeckoLib 4.9.2 for 1.21.1 NeoForge — animated models for dungeon enemies. Compiled from
-    // Modrinth because GeckoLib's CurseForge files opt out of API distribution (the server runtime
-    // pin is CurseForge file 8350073). CustomNPCs' GeckoLib compat layer (the "CNPC Custom Model
-    // Addon") never reached 1.21.1, so the dungeon plan carries a slim first-party bridge instead
-    // (DUNGEONS.md) — same shape as the Frames decision: build on the upstream library, don't fork
-    // the missing addon.
-    compileOnly("maven.modrinth:geckolib:4.9.2") { transitive = false }
+    // GeckoLib 4.9.2 for 1.21.1 NeoForge — animated models for dungeon enemies (server runtime
+    // pin: CurseForge file 8350073, the same 4.9.2). CustomNPCs' GeckoLib compat layer (the "CNPC
+    // Custom Model Addon") never reached 1.21.1, so the dungeon carries a first-party animated
+    // enemy instead (DUNGEONS.md §Enemies) — same shape as the Frames decision: build on the
+    // upstream library, don't fork the missing addon.
+    compileOnly("software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.2") { transitive = false }
 
     // Armourer's Workshop 3.4.0-beta.3 for 1.21.1 NeoForge (server runtime pin: CurseForge file
     // 8438936) — skin visuals for the dungeon-exclusive gear; the stats/effects/abilities layer is

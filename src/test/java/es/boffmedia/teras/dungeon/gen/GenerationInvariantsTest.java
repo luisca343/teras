@@ -6,6 +6,7 @@ import es.boffmedia.teras.dungeon.model.DoorKind;
 import es.boffmedia.teras.dungeon.model.DungeonLayout;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
+import es.boffmedia.teras.dungeon.model.RoomShape;
 import es.boffmedia.teras.dungeon.model.RoomType;
 import org.junit.jupiter.api.Test;
 
@@ -42,6 +43,38 @@ class GenerationInvariantsTest {
         }
     }
 
+    /**
+     * The 2x2 chamber is the point of the feature and its constraint is strict enough — three free
+     * cells that themselves touch nothing — that a tightening elsewhere could silently switch it
+     * off. Pinned as a rate rather than per seed: a floor with nowhere to put the chamber correctly
+     * keeps a 1x1 boss.
+     *
+     * <p>Measured at 92–95% across stages once the boss started claiming the farthest dead end that
+     * can actually grow rather than the farthest outright; it was 29% before. The bar sits well
+     * under that so ordinary generation drift does not fail the build, but a regression to the old
+     * pick-then-hope behaviour would.</p>
+     */
+    @Test
+    void theBossChamberGrowsIntoAQuadOnMostFloors() {
+        int floors = 200;
+        int quads = 0;
+        for (int i = 0; i < floors; i++) {
+            DungeonLayout layout = DungeonGenerator.generate(CONFIG, 6, Set.of(), "grow-" + i);
+            if (layout.roomOfType(RoomType.BOSS).orElseThrow().shape() == RoomShape.QUAD) {
+                quads++;
+            }
+        }
+        assertTrue(quads >= floors * 85 / 100,
+                "boss grew on only " + quads + " of " + floors + " floors");
+    }
+
+    /** How deep into the floor a room sits: the distance of its nearest cell to the start. */
+    private int distanceTo(Map<GridPos, Integer> distances, Room room) {
+        return room.cells().stream()
+                .mapToInt(cell -> distances.getOrDefault(cell, Integer.MAX_VALUE))
+                .min().orElseThrow();
+    }
+
     private void assertInvariants(DungeonLayout layout, int stage, Set<Curse> curses) {
         String context = "stage " + stage + " curses " + curses + " seed " + layout.seedString();
 
@@ -52,18 +85,24 @@ class GenerationInvariantsTest {
         assertEquals(layout.grid().center(), layout.start().anchor(), context);
 
         for (Room room : layout.rooms()) {
-            if (room.type().isSpecial()) {
-                assertTrue(room.isSingle(), context + ": special room not 1x1: " + room);
+            if (!room.type().isSpecial()) {
+                continue;
             }
+            // The boss chamber is the one special room allowed to be large, and only as a 2x2.
+            boolean allowed = room.isSingle()
+                    || (room.type() == RoomType.BOSS && room.shape() == RoomShape.QUAD);
+            assertTrue(allowed, context + ": special room with an unsupported shape: " + room);
         }
 
         Room boss = layout.roomOfType(RoomType.BOSS).orElseThrow();
-        assertEquals(1, layout.grid().occupiedNeighborCount(boss.anchor()),
-                context + ": boss not on a dead end");
+        // One way in, 1x1 or grown. occupiedNeighborCount cannot say this any more — it counts a
+        // quad's own cells as neighbours of its anchor — so ask the door graph, which is what the
+        // seal actually operates on.
+        assertEquals(1, layout.doorsOf(boss).size(), context + ": boss not on a dead end");
 
         Map<GridPos, Integer> distances = layout.grid().distancesFromCenter();
         Room treasure = layout.roomOfType(RoomType.TREASURE).orElseThrow();
-        assertTrue(distances.get(boss.anchor()) >= distances.get(treasure.anchor()),
+        assertTrue(distanceTo(distances, boss) >= distanceTo(distances, treasure),
                 context + ": treasure farther than boss");
 
         int minDeadEnds = DungeonGenerator.minDeadEnds(CONFIG, stage, curses);

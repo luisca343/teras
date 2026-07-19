@@ -24,6 +24,14 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public final class DungeonGenerator {
 
+    /**
+     * The dead end the boss spends when it grows into a 2×2: its cell stops being a 1×1 room, and
+     * the validator re-checks the minimum <i>after</i> placement. {@link RoomCarver} tops up to
+     * exactly the number it is given, so without this reserve every floor that grew its boss would
+     * fail validation and lean on the reroll loop to find one that could not.
+     */
+    private static final int BOSS_GROWTH_RESERVE = 1;
+
     private DungeonGenerator() {}
 
     public static DungeonLayout generate(GenConfig config, int stage, Set<Curse> curses, String seedString) {
@@ -41,7 +49,7 @@ public final class DungeonGenerator {
             int targetCells = targetCells(config, stage, curses, rng);
             int minDeadEnds = minDeadEnds(config, stage, curses);
 
-            RoomGrid grid = RoomCarver.carve(config, targetCells, minDeadEnds, rng);
+            RoomGrid grid = RoomCarver.carve(config, targetCells, minDeadEnds + BOSS_GROWTH_RESERVE, rng);
             SpecialRoomPlacer.place(grid, config, stage, rng);
 
             LayoutValidator.Result result = LayoutValidator.validate(grid, config, stage, targetCells, minDeadEnds);

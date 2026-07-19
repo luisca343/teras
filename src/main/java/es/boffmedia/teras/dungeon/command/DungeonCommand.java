@@ -11,6 +11,14 @@ import es.boffmedia.teras.dungeon.build.BuiltDungeon;
 import es.boffmedia.teras.dungeon.build.DungeonMaterializer;
 import es.boffmedia.teras.dungeon.build.DungeonsConfig;
 import es.boffmedia.teras.dungeon.build.RoomTemplates;
+import es.boffmedia.teras.dungeon.editor.RoomEditor;
+import es.boffmedia.teras.dungeon.encounter.CnpcBridge;
+import es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks;
+import es.boffmedia.teras.dungeon.encounter.EnemyPreset;
+import es.boffmedia.teras.dungeon.encounter.SpawnTables;
+import es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy;
+import es.boffmedia.teras.dungeon.entity.GeoEnemyVariant;
+import es.boffmedia.teras.init.EntityInit;
 import es.boffmedia.teras.dungeon.gen.DungeonGenerationException;
 import es.boffmedia.teras.dungeon.gen.DungeonGenerator;
 import es.boffmedia.teras.dungeon.gen.GenConfig;
@@ -46,6 +54,20 @@ public final class DungeonCommand {
 
     private static final int PERMISSION_LEVEL = 2;
 
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> GEO_VARIANTS =
+            (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                    GeoEnemyVariant.all().stream().map(GeoEnemyVariant::id), builder);
+
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> ROOM_TYPES =
+            (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                    RoomTemplates.knownPoolKeys(), builder);
+
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> MARKER_KINDS =
+            (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                    java.util.List.of("spawn:default", "loot:default", "boss", "trapdoor",
+                            "shopslot:1", "door:n", "challenge"),
+                    builder);
+
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> d = event.getDispatcher();
@@ -66,6 +88,38 @@ public final class DungeonCommand {
                         .then(Commands.literal("debug")
                                 .then(Commands.argument("run", IntegerArgumentType.integer(1))
                                         .executes(DungeonCommand::debug)))
+                        .then(Commands.literal("enemigos")
+                                .then(Commands.literal("instalar")
+                                        .executes(ctx -> installEnemies(ctx, false))
+                                        .then(Commands.literal("sobrescribir")
+                                                .executes(ctx -> installEnemies(ctx, true))))
+                                .then(Commands.literal("listar")
+                                        .executes(DungeonCommand::listEnemies))
+                                .then(Commands.literal("invocar")
+                                        .then(Commands.argument("variante", StringArgumentType.word())
+                                                .suggests(GEO_VARIANTS)
+                                                .executes(DungeonCommand::summonGeo))))
+                        .then(Commands.literal("sala")
+                                .then(Commands.literal("editar")
+                                        .then(Commands.argument("tipo", StringArgumentType.word())
+                                                .suggests(ROOM_TYPES)
+                                                .executes(ctx -> editRoom(ctx, 0))
+                                                .then(Commands.argument("variante", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> editRoom(ctx,
+                                                                IntegerArgumentType.getInteger(ctx, "variante"))))))
+                                .then(Commands.literal("marcar")
+                                        // greedyString: a bare string() would refuse the ':' in
+                                        // "spawn:default" unless the caller remembered to quote it.
+                                        .then(Commands.argument("marca", StringArgumentType.greedyString())
+                                                .suggests(MARKER_KINDS)
+                                                .executes(DungeonCommand::markRoom)))
+                                .then(Commands.literal("guardar")
+                                        .executes(ctx -> saveRoom(ctx, null))
+                                        .then(Commands.argument("nombre", StringArgumentType.word())
+                                                .executes(ctx -> saveRoom(ctx,
+                                                        StringArgumentType.getString(ctx, "nombre")))))
+                                .then(Commands.literal("salir")
+                                        .executes(DungeonCommand::exitRoom)))
                         .then(Commands.literal("descartar")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(1))
                                         .executes(DungeonCommand::discard)))
@@ -134,7 +188,7 @@ public final class DungeonCommand {
         ServerLevel level = player.serverLevel();
         BlockPos origin = player.blockPosition();
         int id = DungeonMaterializer.enqueueBuild(level, layout, origin, built -> {
-            BlockPos start = built.anchorCenter(built.layout().start());
+            BlockPos start = built.roomCenter(built.layout().start());
             player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
             es.boffmedia.teras.dungeon.run.RunEngine.land(player);
@@ -169,6 +223,66 @@ public final class DungeonCommand {
                             + ", " + run.party().size() + " jugador(es)"), false);
         }
         return built.size() + runs.size();
+    }
+
+    /**
+     * Writes the built-in bestiary into CustomNPCs as clones and points {@code enemies.json} at
+     * it. Safe to re-run: existing clones are left alone unless {@code sobrescribir} is used, so
+     * an admin's edits in the NPC editor survive.
+     */
+    private static int installEnemies(CommandContext<CommandSourceStack> ctx, boolean overwrite) {
+        if (!CnpcBridge.available()) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "CustomNPCs no está instalado: los enemigos con guion necesitan ese mod."));
+            return 0;
+        }
+        int installed = CnpcBridge.install(ctx.getSource().getLevel(), DungeonEnemyPacks.TAB,
+                DungeonEnemyPacks.all(), overwrite);
+        SpawnTables.writeCnpcBestiary(DungeonEnemyPacks.TAB);
+        SpawnTables.load();
+        int total = DungeonEnemyPacks.all().size();
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§aBestiario instalado: " + installed + " de " + total + " enemigos escritos en la "
+                        + "pestaña de clones " + DungeonEnemyPacks.TAB
+                        + (installed < total && !overwrite
+                                ? " (el resto ya existía — usa 'instalar sobrescribir' para rehacerlos)"
+                                : "")
+                        + ". enemies.json actualizado."), true);
+        return installed;
+    }
+
+    /** Drops one animated enemy in front of the caller — the way to look at a model without a run. */
+    private static int summonGeo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        String variantId = StringArgumentType.getString(ctx, "variante");
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        DungeonGeoEnemy enemy = EntityInit.DUNGEON_ENEMY.get().create(player.serverLevel());
+        if (enemy == null) {
+            ctx.getSource().sendFailure(Component.literal("No se pudo crear la entidad."));
+            return 0;
+        }
+        var spot = player.position().add(player.getLookAngle().scale(3).multiply(1, 0, 1));
+        enemy.moveTo(spot.x, player.getY(), spot.z, player.getYRot() + 180f, 0);
+        enemy.applyVariant(variantId);
+        player.serverLevel().addFreshEntity(enemy);
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "Invocado " + enemy.variant().id() + "."), false);
+        return 1;
+    }
+
+    private static int listEnemies(CommandContext<CommandSourceStack> ctx) {
+        if (!CnpcBridge.available()) {
+            ctx.getSource().sendFailure(Component.literal("CustomNPCs no está instalado."));
+            return 0;
+        }
+        var installed = CnpcBridge.clonesIn(DungeonEnemyPacks.TAB);
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "Clones en la pestaña " + DungeonEnemyPacks.TAB + ": " + installed.size()), false);
+        for (EnemyPreset preset : DungeonEnemyPacks.all()) {
+            boolean present = installed.contains(preset.id());
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    (present ? "§a✔ " : "§7✘ ") + preset.id() + " — " + preset.displayName()), false);
+        }
+        return installed.size();
     }
 
     private static int debug(CommandContext<CommandSourceStack> ctx) {
@@ -212,6 +326,36 @@ public final class DungeonCommand {
             return 0;
         }
         ctx.getSource().sendSuccess(() -> Component.literal("Retirando mazmorra " + id + "…"), false);
+        return 1;
+    }
+
+    // --- the room editor: every handler is a thin shell over RoomEditor's error-or-null API ------
+
+    private static int editRoom(CommandContext<CommandSourceStack> ctx, int variant)
+            throws CommandSyntaxException {
+        return editorCall(ctx, RoomEditor.start(ctx.getSource().getPlayerOrException(),
+                StringArgumentType.getString(ctx, "tipo"), variant));
+    }
+
+    private static int markRoom(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        return editorCall(ctx, RoomEditor.placeMarker(ctx.getSource().getPlayerOrException(),
+                StringArgumentType.getString(ctx, "marca")));
+    }
+
+    private static int saveRoom(CommandContext<CommandSourceStack> ctx, String name)
+            throws CommandSyntaxException {
+        return editorCall(ctx, RoomEditor.save(ctx.getSource().getPlayerOrException(), name));
+    }
+
+    private static int exitRoom(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        return editorCall(ctx, RoomEditor.exit(ctx.getSource().getPlayerOrException()));
+    }
+
+    private static int editorCall(CommandContext<CommandSourceStack> ctx, String error) {
+        if (error != null) {
+            ctx.getSource().sendFailure(Component.literal(error));
+            return 0;
+        }
         return 1;
     }
 
