@@ -244,7 +244,7 @@ public final class TerasHttpServer {
         if (open) {
             Teras.LOGGER.warn("Teras HTTP API has no 'httpToken' — requests are UNAUTHENTICATED "
                     + "(this matches the old Wungill API, so the SmartRotom backend works as-is). "
-                    + "Set 'httpToken' in config/teras/config.json to require a bearer token.");
+                    + "Set 'httpToken' in config/teras/config.yml to require a bearer token.");
         }
         if (TerasConfig.isHttpBindPublic()) {
             Teras.LOGGER.warn("Teras HTTP API is bound to '{}', reachable off this machine, over "

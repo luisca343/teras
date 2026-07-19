@@ -141,6 +141,50 @@ dependencies {
     //   curse.maven:sophisticatedcore-618298:8440438      (1.4.75.2161, SB's hard dependency)
     // See INTEGRATIONS.md for why, and for what the capability view does and does not show.
 
+    // SQLite, jar-in-jar'd: the durable store for plot ownership and the money ledger. The whole
+    // reason it is not another json store is BEGIN/COMMIT — a purchase is a debit plus an ownership
+    // row plus a ledger row, and a crash between them leaves a player charged and unowned.
+    // Bundled rather than compileOnly because no other mod supplies it; the version must be a range
+    // for NeoForge's jar-in-jar metadata, which picks the newest among mods shipping the same lib.
+    // Loaded through SQLiteDataSource, never DriverManager — see PlotDatabase.
+    jarJar(implementation("org.xerial:sqlite-jdbc")) {
+        version {
+            strictly "[3.47.1.0,3.48)"
+            prefer "${sqlite_version}"
+        }
+    }
+    // MySQL, for the deployment where the SmartRotom backend shares this database and reads plot
+    // ownership directly instead of being mirrored to over HTTP. Both drivers ship: SQLite is the
+    // default and needs no setup (the tests and single-player use it), MySQL is opt-in via
+    // config.json's sql block. transitive=false — the connector's POM drags in protobuf-java, which
+    // nothing here calls.
+    jarJar(implementation("com.mysql:mysql-connector-j")) {
+        version {
+            strictly "[9.1.0,10.0)"
+            prefer "${mysql_version}"
+        }
+        transitive = false
+    }
+
+    // SnakeYAML — the admin-facing configs (config.yml, karts/config.yml) are YAML so they can carry
+    // comments explaining each key. NeoForge ships NightConfig core+toml but not its YAML module, so
+    // the parser has to come from here. Deliberately NOT used for the data stores: those are rewritten
+    // by the mod on every mutation, which would destroy any comments in them, and their models are
+    // already serialized by Gson for the HTTP wire format.
+    jarJar(implementation("org.yaml:snakeyaml")) {
+        version {
+            strictly "[2.3,3.0)"
+            prefer "${snakeyaml_version}"
+        }
+    }
+
+    // Dev runs do not unpack jar-in-jar — FML only does that for real mod jars — so runClient and
+    // runServer need these handed to them separately or the mod dies on NoClassDefFoundError at
+    // startup. This configuration is the one the runs load.
+    additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${sqlite_version}"
+    additionalRuntimeClasspath("com.mysql:mysql-connector-j:${mysql_version}") { transitive = false }
+    additionalRuntimeClasspath "org.yaml:snakeyaml:${snakeyaml_version}"
+
     // Unit tests for the engine-agnostic battle layer (config/mode/level parsing) — no Minecraft
     // or engine runtime required, so they run anywhere with `./gradlew test`.
     testImplementation platform("org.junit:junit-bom:5.11.3")
@@ -152,6 +196,13 @@ dependencies {
     // without it, so a test for such a class needs the API here. Pinned to what Minecraft 1.21.1 ships.
     testImplementation "org.slf4j:slf4j-api:2.0.9"
     testRuntimeOnly "org.slf4j:slf4j-nop:2.0.9"
+    // PlotDatabase takes its file path as an argument precisely so tests can point it at a temp dir
+    // and exercise the real engine — transactions and constraints are the point, so mocking is not.
+    testImplementation "org.xerial:sqlite-jdbc:${sqlite_version}"
+    // PlotDatabase names MysqlDataSource, so the test sourceset needs it on the classpath even
+    // though the tests themselves only ever open SQLite.
+    testImplementation("com.mysql:mysql-connector-j:${mysql_version}") { transitive = false }
+    testImplementation "org.yaml:snakeyaml:${snakeyaml_version}"
 }
 
 tasks.named('test', Test) {

@@ -1,5 +1,6 @@
 package es.boffmedia.teras.region;
 
+import es.boffmedia.teras.plot.PlotStore;
 import es.boffmedia.teras.region.model.RegionFlag;
 import es.boffmedia.teras.region.model.TerasRegion;
 
@@ -8,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Read-side lookups over {@link RegionStore}: regions grouped per dimension, containment queries,
@@ -22,7 +24,10 @@ public final class RegionIndex {
 
     private static volatile Snapshot snapshot = new Snapshot(-1, Map.of());
 
-    /** Regions in the given dimension (key like {@code minecraft:overworld}); may be empty. */
+    /**
+     * Regions in the given dimension (key like {@code minecraft:overworld}), highest priority
+     * first as {@link RegionResolver#ordered} requires; may be empty.
+     */
     public static List<TerasRegion> inDimension(String dimension) {
         return current().byDimension.getOrDefault(dimension, List.of());
     }
@@ -37,14 +42,22 @@ public final class RegionIndex {
     }
 
     /**
-     * Whether any region containing the position explicitly denies {@code flag}
-     * (most-restrictive-wins; regions with no opinion allow).
+     * Whether {@code flag} is denied at the position by an explicit flag; see
+     * {@link RegionResolver#denies}. Plot ownership is not consulted — use
+     * {@link #decide} for anything a player did.
      */
     public static boolean denies(String dimension, double x, double y, double z, RegionFlag flag) {
-        for (TerasRegion region : inDimension(dimension)) {
-            if (region.deniesFlag(flag) && region.contains(x, y, z)) return true;
-        }
-        return false;
+        return RegionResolver.denies(inDimension(dimension), x, y, z, flag);
+    }
+
+    /**
+     * The full verdict for {@code player} acting at the position, plots included; see
+     * {@link RegionResolver#decide}.
+     */
+    public static RegionResolver.Decision decide(String dimension, double x, double y, double z,
+                                                 RegionFlag flag, UUID player) {
+        return RegionResolver.decide(inDimension(dimension), x, y, z, flag, player,
+                PlotStore::get, System.currentTimeMillis());
     }
 
     private static Snapshot current() {
@@ -56,7 +69,7 @@ public final class RegionIndex {
         for (TerasRegion region : RegionStore.all().values()) {
             byDimension.computeIfAbsent(region.getDimension(), k -> new java.util.ArrayList<>()).add(region);
         }
-        byDimension.replaceAll((dim, list) -> List.copyOf(list));
+        byDimension.replaceAll((dim, list) -> RegionResolver.ordered(list));
         Snapshot rebuilt = new Snapshot(generation, Map.copyOf(byDimension));
         snapshot = rebuilt;
         return rebuilt;

@@ -1,6 +1,7 @@
 package es.boffmedia.teras.region.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -73,6 +74,14 @@ public final class RegionCommand {
                     + String.join(", ", Arrays.stream(RegionFlag.values()).map(RegionFlag::key).toList())));
     private static final DynamicCommandExceptionType ERROR_BAD_COLOR = new DynamicCommandExceptionType(
             value -> Component.literal("Color inválido '" + value + "': usa hex tipo #3388FF"));
+    private static final SimpleCommandExceptionType ERROR_NO_DATABASE = new SimpleCommandExceptionType(
+            Component.literal("La base de datos no está disponible, así que no se puede cambiar "
+                    + "ninguna región; revisa el log del servidor. Las regiones actuales siguen "
+                    + "protegiendo desde regions.json."));
+    private static final DynamicCommandExceptionType ERROR_REGION_IS_PLOT = new DynamicCommandExceptionType(
+            name -> Component.literal("No se puede borrar '" + name + "': es una parcela y borrarla "
+                    + "dejaría a su dueño sin terreno. Retírala primero con /teras parcela retirar "
+                    + name));
 
     private static final SuggestionProvider<CommandSourceStack> REGION_NAMES =
             (ctx, builder) -> SharedSuggestionProvider.suggest(RegionStore.names(), builder);
@@ -120,6 +129,11 @@ public final class RegionCommand {
                                                         .executes(ctx -> setFlag(ctx, Boolean.FALSE)))
                                                 .then(Commands.literal("quitar")
                                                         .executes(ctx -> setFlag(ctx, null))))))
+                        .then(Commands.literal("prioridad")
+                                .then(Commands.argument("nombre", StringArgumentType.word())
+                                        .suggests(REGION_NAMES)
+                                        .then(Commands.argument("valor", IntegerArgumentType.integer())
+                                                .executes(RegionCommand::priority))))
                         .then(Commands.literal("color")
                                 .then(Commands.argument("nombre", StringArgumentType.word())
                                         .suggests(REGION_NAMES)
@@ -147,8 +161,7 @@ public final class RegionCommand {
         region.setStrokeColor(DEFAULT_STROKE);
         region.setCreatedBy(player.getGameProfile().getName());
         region.setCreatedAt(System.currentTimeMillis());
-        RegionStore.put(region);
-        RegionStore.saveIfDirty();
+        saveRegion(region);
         afterMutation();
 
         String shape = region.getShape() == TerasRegion.Shape.POLYGON
@@ -166,8 +179,7 @@ public final class RegionCommand {
 
         TerasRegion region = fromSelection(player, name);
         region.inheritSettingsFrom(existing);
-        RegionStore.put(region);
-        RegionStore.saveIfDirty();
+        saveRegion(region);
         afterMutation();
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Región '" + name + "' redefinida (colores, flags y cartel conservados)"), true);
@@ -176,8 +188,12 @@ public final class RegionCommand {
 
     private static int delete(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         String name = StringArgumentType.getString(ctx, "nombre");
+        require(name);
+        if (!RegionStore.isAvailable()) throw ERROR_NO_DATABASE.create();
+        // Checked here as well as by the foreign key, so the refusal explains itself instead of
+        // surfacing as a constraint violation the admin has to go read the log to understand.
+        if (RegionStore.isReferencedByPlot(name)) throw ERROR_REGION_IS_PLOT.create(name);
         if (!RegionStore.remove(name)) throw ERROR_UNKNOWN_REGION.create(name);
-        RegionStore.saveIfDirty();
         afterMutation();
         ctx.getSource().sendSuccess(() -> Component.literal("Región '" + name + "' borrada"), true);
         return 1;
@@ -218,12 +234,19 @@ public final class RegionCommand {
             source.sendSuccess(() -> Component.literal("  forma: polígono de "
                     + region.getPoints().size() + " puntos, " + height), false);
         }
+        source.sendSuccess(() -> Component.literal("  prioridad: " + region.getPriority()), false);
+        // The name prefix says nothing about this, so an admin staring at 'parcela_x' wondering why
+        // it is not a plot needs the answer here, where they are already looking.
+        source.sendSuccess(() -> Component.literal("  parcela: "
+                + (es.boffmedia.teras.plot.PlotStore.isPlot(name)
+                        ? "sí (ver /teras parcela info " + name + ")"
+                        : "no — ponla en venta con /teras parcela vender " + name + " <precio>")), false);
         source.sendSuccess(() -> Component.literal(String.format("  colores: relleno #%06X, borde #%06X",
                 region.getFillColor(), region.getStrokeColor())), false);
         Map<String, Boolean> flags = region.getFlags();
         source.sendSuccess(() -> Component.literal("  flags: " + (flags == null || flags.isEmpty()
                 ? "(ninguna; todo permitido)" : flags.toString()
-                + " — denegar gana si hay regiones superpuestas")), false);
+                + " — denegar gana entre regiones de la misma prioridad")), false);
         String banner = region.bannerOrNull();
         source.sendSuccess(() -> Component.literal("  cartel: "
                 + (banner == null ? "(ninguno)" : banner + ".png")), false);
@@ -244,12 +267,23 @@ public final class RegionCommand {
         RegionFlag flag = RegionFlag.fromKey(flagKey);
         if (flag == null) throw ERROR_UNKNOWN_FLAG.create(flagKey);
         region.setFlag(flag, value);
-        RegionStore.put(region);
-        RegionStore.saveIfDirty();
+        saveRegion(region);
         afterMutation();
         String state = value == null ? "sin opinión" : value ? "permitido" : "denegado";
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Flag '" + flagKey + "' de '" + name + "': " + state), true);
+        return 1;
+    }
+
+    private static int priority(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(ctx, "nombre");
+        int value = IntegerArgumentType.getInteger(ctx, "valor");
+        TerasRegion region = require(name);
+        region.setPriority(value);
+        saveRegion(region);
+        afterMutation();
+        ctx.getSource().sendSuccess(() -> Component.literal("Prioridad de '" + name + "': " + value
+                + " — solo las regiones de mayor prioridad en un punto deciden sus flags"), true);
         return 1;
     }
 
@@ -258,8 +292,7 @@ public final class RegionCommand {
         TerasRegion region = require(name);
         region.setFillColor(parseColor(StringArgumentType.getString(ctx, "relleno")));
         region.setStrokeColor(parseColor(StringArgumentType.getString(ctx, "borde")));
-        RegionStore.put(region);
-        RegionStore.saveIfDirty();
+        saveRegion(region);
         afterMutation();
         ctx.getSource().sendSuccess(() -> Component.literal(String.format(
                 "Colores de '%s': relleno #%06X, borde #%06X", name,
@@ -278,8 +311,7 @@ public final class RegionCommand {
         } else {
             region.setBanner(value);
         }
-        RegionStore.put(region);
-        RegionStore.saveIfDirty();
+        saveRegion(region);
         afterMutation();
         String resolved = region.bannerOrNull();
         ctx.getSource().sendSuccess(() -> Component.literal("Cartel de '" + name + "': "
@@ -317,6 +349,12 @@ public final class RegionCommand {
             // Full-height policy: see class javadoc.
             case POLYGON -> TerasRegion.polygon(name, dimension, selection.points(), null, null);
         };
+    }
+
+    /** Persists a region, turning a refused or failed write into a message instead of silence. */
+    private static void saveRegion(TerasRegion region) throws CommandSyntaxException {
+        if (!RegionStore.isAvailable()) throw ERROR_NO_DATABASE.create();
+        if (!RegionStore.put(region)) throw ERROR_NO_DATABASE.create();
     }
 
     private static TerasRegion require(String name) throws CommandSyntaxException {

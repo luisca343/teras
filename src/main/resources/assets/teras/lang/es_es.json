@@ -43,5 +43,7 @@
   "gui.teras.frame_border": "Borde",
   "message.teras.frame_no_permission": "No tienes permiso para editar este marco.",
   "message.teras.region_protected": "Esta zona está protegida.",
+  "message.teras.plot_owned_by": "%s es de %s.",
+  "message.teras.plot_for_sale": "%s está en venta — todavía no es tuya.",
   "message.teras.gps_arrived": "Has llegado a tu destino."
 }

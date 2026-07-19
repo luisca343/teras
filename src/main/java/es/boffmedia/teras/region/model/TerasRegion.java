@@ -56,6 +56,24 @@ public final class TerasRegion {
     private Corner min;
     private Corner max;
 
+    /**
+     * WorldGuard's shadowing rank. Among the regions containing a position, only those at the
+     * highest priority get a say; lower ones are ignored entirely rather than merged. Defaults to
+     * 0, which is also what Gson gives a region file written before this field existed — so every
+     * region that shipped resolves exactly as it did before.
+     */
+    private int priority;
+
+    /**
+     * The standing offer, if any. Geometry and price are admin-authored and reviewable, so they
+     * live here in {@code regions.json}; who actually owns the plot and what was paid live in
+     * SQLite, where a purchase can be one transaction. Whether a region is a <em>plot</em> is
+     * decided by the ownership row, not by this flag — clearing it withdraws the offer without
+     * evicting the current owner.
+     */
+    private boolean purchasable;
+    private long price;
+
     private int fillColor;
     private int strokeColor;
     private Map<String, Boolean> flags;
@@ -222,6 +240,9 @@ public final class TerasRegion {
     public Integer getMaxY() { return maxY; }
     public Corner getMin() { return min; }
     public Corner getMax() { return max; }
+    public int getPriority() { return priority; }
+    public boolean isPurchasable() { return purchasable; }
+    public long getPrice() { return price; }
     public int getFillColor() { return fillColor; }
     public int getStrokeColor() { return strokeColor; }
     public Map<String, Boolean> getFlags() { return flags; }
@@ -229,11 +250,23 @@ public final class TerasRegion {
     public String getCreatedBy() { return createdBy; }
     public long getCreatedAt() { return createdAt; }
 
+    public void setPriority(int priority) { this.priority = priority; }
+    public void setPurchasable(boolean purchasable) { this.purchasable = purchasable; }
+    public void setPrice(long price) { this.price = price; }
     public void setFillColor(int fillColor) { this.fillColor = fillColor; }
     public void setStrokeColor(int strokeColor) { this.strokeColor = strokeColor; }
     public void setBanner(String banner) { this.banner = banner; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
+
+    /**
+     * Replaces the whole flag map. Exists for the storage layer, which round-trips flags as a JSON
+     * blob: going through {@link #setFlag} would silently drop any key this version does not know
+     * as a {@link RegionFlag}, turning an unrecognised flag into data loss on the next write.
+     */
+    public void setFlags(Map<String, Boolean> flags) {
+        this.flags = flags == null || flags.isEmpty() ? null : new java.util.LinkedHashMap<>(flags);
+    }
 
     public void setFlag(RegionFlag flag, Boolean value) {
         if (value == null) {
@@ -278,6 +311,9 @@ public final class TerasRegion {
 
     /** Copies the cosmetic/behavior fields (colors, flags, banner, creator) from {@code other}. */
     public void inheritSettingsFrom(TerasRegion other) {
+        priority = other.priority;
+        purchasable = other.purchasable;
+        price = other.price;
         fillColor = other.fillColor;
         strokeColor = other.strokeColor;
         flags = other.flags;

@@ -5,7 +5,7 @@ import es.boffmedia.teras.net.ServerConfigPayload;
 
 /**
  * The config of the server this client is connected to, as sent by {@link ServerConfigPayload} at
- * join. Client-side mirror only — the authoritative copy is {@code config/teras/config.json} on the
+ * join. Client-side mirror only — the authoritative copy is {@code config/teras/config.yml} on the
  * server, and this class deliberately has no fallback to the local file: on a server the local one is
  * not ours to read.
  *

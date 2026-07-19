@@ -13,17 +13,29 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 
 /**
  * Port of the 1.16.5 {@code TerasConfig} + {@code FileHelper.getConfig()}. Reads
- * {@code config/teras/config.json}:
- * <pre>{ "id": "...", "home": "...", "API_URL": "...", "apiToken": "...",
- *   "requireHttps": false }</pre>
+ * {@code config/teras/config.yml}:
+ * <pre>
+ * id: "..."
+ * home: "..."
+ * API_URL: "..."
+ * requireHttps: false
+ * sql:
+ *   use: false
+ * </pre>
+ *
+ * <p>YAML rather than JSON so the file can carry comments explaining each key; a pre-existing
+ * {@code config.json} is migrated once on startup and kept as {@code config.json.migrated}.
+ * Defaults and migrations render a commented template ({@link #renderTemplate()}) instead of
+ * serializing this class, because every YAML writer discards comments.</p>
  *
  * <p>This is the <b>server's</b> configuration, and only the server's. It is loaded when a server
  * starts — a dedicated server, or the integrated one behind a single-player world — and never on a
- * client that is merely connecting somewhere: a player's own {@code config.json} describes the world
+ * client that is merely connecting somewhere: a player's own {@code config.yml} describes the world
  * <i>they</i> host, so honouring it while on someone else's server would point their SmartRotom at
  * the wrong site. What the client needs travels over the wire instead, from the server it joined
  * ({@code net.ServerConfigPayload} → {@code client.ServerConfig}); single-player goes through that
@@ -47,7 +59,7 @@ public final class TerasConfig {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
-     * The real SmartRotom site. Admins override this in {@code config/teras/config.json}. Its host is
+     * The real SmartRotom site. Admins override this in {@code config/teras/config.yml}. Its host is
      * the trusted origin every SmartRotom browser is confined to ({@link #isSiteAllowed(String)}), so
      * it must be an absolute URL. Switch to {@code https://} in config once the endpoint serves TLS.
      */
@@ -83,6 +95,58 @@ public final class TerasConfig {
      */
     private static String httpToken = "";
 
+    // ---- Plot storage (see plot/PlotDatabase). SQLite unless a dsn is configured. ----
+
+    /**
+     * Where plot ownership and the money ledger are stored.
+     *
+     * <p>{@code use = false} (the default) keeps everything in a local SQLite file, which needs no
+     * setup and is what the tests and single-player run against. Setting it points the mod at
+     * MySQL instead — the deployment where the SmartRotom backend shares the same database and
+     * reads plot ownership directly, rather than being mirrored to over HTTP.</p>
+     *
+     * <p>{@code tablePrefix} exists because that shared database is not ours alone: it namespaces
+     * our tables away from whatever else lives there.</p>
+     *
+     * <p>The password is a credential on disk. It must never reach a log line or an HTTP response
+     * — see {@link #describe()}, which is the only form of these settings safe to print.</p>
+     */
+    public record SqlSettings(boolean use, String dsn, String username, String password,
+                              String tablePrefix) {
+
+        public static final String DEFAULT_TABLE_PREFIX = "teras_";
+
+        public static SqlSettings sqliteDefault() {
+            return new SqlSettings(false, "", "", "", DEFAULT_TABLE_PREFIX);
+        }
+
+        /** Loggable form: everything except the password, which is only ever reported as set/unset. */
+        public String describe() {
+            if (!use) return "sqlite (local file)";
+            return "mysql dsn=" + dsn + " user=" + username
+                    + " password=" + (password == null || password.isEmpty() ? "(unset)" : "(set)")
+                    + " prefix=" + tablePrefix;
+        }
+
+        /** Why these settings are unusable, or {@code null} if they are fine. */
+        public String validationError() {
+            if (!use) return null;
+            if (dsn == null || dsn.isBlank()) {
+                return "sql.use is true but sql.dsn is empty";
+            }
+            if (!dsn.startsWith("jdbc:")) {
+                return "sql.dsn must be a JDBC url starting with 'jdbc:' (got '" + dsn + "')";
+            }
+            return null;
+        }
+    }
+
+    private static SqlSettings sql = SqlSettings.sqliteDefault();
+
+    public static SqlSettings sql() {
+        return sql;
+    }
+
     /**
      * Loaded before the world does, so everything downstream (the HTTP API at
      * {@code ServerStartedEvent}, the join-time sync to clients) already has it.
@@ -99,40 +163,46 @@ public final class TerasConfig {
             resetToDefaults();
 
             Path dir = FMLPaths.CONFIGDIR.get().resolve("teras");
-            Path path = dir.resolve("config.json");
+            Path path = dir.resolve("config.yml");
+            Path legacy = dir.resolve("config.json");
+
+            if (!Files.exists(path) && Files.exists(legacy)) {
+                migrateFromJson(dir, path, legacy);
+                // Fall through and read the file just written, so the migrated and steady-state
+                // paths cannot drift apart.
+            }
 
             if (!Files.exists(path)) {
                 id = randomId();
-                writeDefault(dir, path);
-                Teras.LOGGER.info("Created default config/teras/config.json (id={}, home={})", id, home);
+                YamlConfig.write(path, renderTemplate());
+                Teras.LOGGER.info("Created default config/teras/config.yml (id={}, home={})", id, home);
                 return;
             }
 
-            JsonObject json;
-            try (Reader r = Files.newBufferedReader(path)) {
-                json = GSON.fromJson(r, JsonObject.class);
-            }
-            if (json == null) json = new JsonObject();
+            YamlConfig yaml = YamlConfig.read(path);
 
-            if (has(json, "home")) home = json.get("home").getAsString();
-            if (has(json, "API_URL")) apiUrl = json.get("API_URL").getAsString();
-            if (has(json, "apiToken")) apiToken = json.get("apiToken").getAsString();
-            if (has(json, "requireHttps")) requireHttps = json.get("requireHttps").getAsBoolean();
-            if (has(json, "httpEnabled")) httpEnabled = json.get("httpEnabled").getAsBoolean();
-            if (has(json, "httpBind")) httpBind = json.get("httpBind").getAsString();
-            if (has(json, "httpPort")) httpPort = json.get("httpPort").getAsInt();
-            if (has(json, "httpToken")) httpToken = json.get("httpToken").getAsString();
+            home = yaml.string("home", home);
+            apiUrl = yaml.string("API_URL", apiUrl);
+            apiToken = yaml.string("apiToken", apiToken);
+            requireHttps = yaml.bool("requireHttps", requireHttps);
+            httpEnabled = yaml.bool("httpEnabled", httpEnabled);
+            httpBind = yaml.string("httpBind", httpBind);
+            httpPort = yaml.integer("httpPort", httpPort);
+            httpToken = yaml.string("httpToken", httpToken);
+            if (yaml.has("sql")) {
+                sql = readSql(yaml.section("sql"));
+            }
 
             // The server/world id must be stable across restarts. If an existing file has none,
-            // mint one and write it back (preserving any unknown fields already in the file).
-            boolean dirty = false;
-            if (has(json, "id")) {
-                id = json.get("id").getAsString();
+            // mint one and append it — appending rather than rewriting so the admin's comments and
+            // any keys this version does not know about survive untouched.
+            if (yaml.has("id")) {
+                id = yaml.string("id", "");
             } else {
                 id = randomId();
-                json.addProperty("id", id);
-                dirty = true;
-                Teras.LOGGER.info("config/teras/config.json had no 'id'; generated server id '{}'", id);
+                Files.writeString(path, "\n# Generated on first run; keep it stable across restarts.\nid: \""
+                        + id + "\"\n", java.nio.file.StandardOpenOption.APPEND);
+                Teras.LOGGER.info("config/teras/config.yml had no 'id'; generated server id '{}'", id);
             }
 
             // NOTE: no token is minted here. A blank httpToken deliberately means "no auth", matching
@@ -140,7 +210,7 @@ public final class TerasConfig {
             // every backend call. TerasHttpServer warns at startup instead. See docs/HTTP_API.md.
 
             if (home == null || home.isBlank()) {
-                Teras.LOGGER.warn("config/teras/config.json has no 'home'; falling back to {}", DEFAULT_HOME);
+                Teras.LOGGER.warn("config/teras/config.yml has no 'home'; falling back to {}", DEFAULT_HOME);
                 home = DEFAULT_HOME;
             }
             // The home defines the trusted origin, so it must have a parseable host: with none, the
@@ -151,10 +221,15 @@ public final class TerasConfig {
                         + "and the JS bridge will refuse every query until this is fixed.", home);
             }
 
-            if (dirty) {
-                Files.writeString(path, GSON.toJson(json));
+            String sqlError = sql.validationError();
+            if (sqlError != null) {
+                Teras.LOGGER.error("Invalid plot storage config ({}); falling back to local SQLite. "
+                        + "Plots will NOT be shared with the SmartRotom backend until this is fixed.",
+                        sqlError);
+                sql = SqlSettings.sqliteDefault();
             }
-            Teras.LOGGER.info("Teras config loaded (id={}, home={})", id, home);
+
+            Teras.LOGGER.info("Teras config loaded (id={}, home={}, plots={})", id, home, sql.describe());
         } catch (Exception e) {
             Teras.LOGGER.error("Failed to load Teras config", e);
         }
@@ -170,21 +245,135 @@ public final class TerasConfig {
         httpBind = DEFAULT_HTTP_BIND;
         httpPort = DEFAULT_HTTP_PORT;
         httpToken = "";
+        sql = SqlSettings.sqliteDefault();
     }
 
-    private static void writeDefault(Path dir, Path path) throws IOException {
-        Files.createDirectories(dir);
-        JsonObject json = new JsonObject();
-        json.addProperty("id", id);
-        json.addProperty("home", home);
-        json.addProperty("API_URL", apiUrl);
-        json.addProperty("apiToken", apiToken);
-        json.addProperty("requireHttps", requireHttps);
-        json.addProperty("httpEnabled", httpEnabled);
-        json.addProperty("httpBind", httpBind);
-        json.addProperty("httpPort", httpPort);
-        json.addProperty("httpToken", httpToken);
-        Files.writeString(path, GSON.toJson(json));
+    private static SqlSettings readSql(YamlConfig o) {
+        SqlSettings defaults = SqlSettings.sqliteDefault();
+        return new SqlSettings(
+                o.bool("use", defaults.use()),
+                o.string("dsn", defaults.dsn()),
+                o.string("username", defaults.username()),
+                o.string("password", defaults.password()),
+                o.string("tablePrefix", defaults.tablePrefix()));
+    }
+
+    /**
+     * One-shot upgrade from the pre-YAML {@code config.json}. Values are carried into the
+     * commented template and the old file is renamed rather than deleted — a template render
+     * cannot preserve keys this version does not know about, so the original stays on disk as the
+     * record of what was there.
+     */
+    private static void migrateFromJson(Path dir, Path path, Path legacy) throws IOException {
+        JsonObject json;
+        try (Reader r = Files.newBufferedReader(legacy)) {
+            json = GSON.fromJson(r, JsonObject.class);
+        }
+        if (json == null) json = new JsonObject();
+
+        if (has(json, "id")) id = json.get("id").getAsString();
+        if (has(json, "home")) home = json.get("home").getAsString();
+        if (has(json, "API_URL")) apiUrl = json.get("API_URL").getAsString();
+        if (has(json, "apiToken")) apiToken = json.get("apiToken").getAsString();
+        if (has(json, "requireHttps")) requireHttps = json.get("requireHttps").getAsBoolean();
+        if (has(json, "httpEnabled")) httpEnabled = json.get("httpEnabled").getAsBoolean();
+        if (has(json, "httpBind")) httpBind = json.get("httpBind").getAsString();
+        if (has(json, "httpPort")) httpPort = json.get("httpPort").getAsInt();
+        if (has(json, "httpToken")) httpToken = json.get("httpToken").getAsString();
+        if (has(json, "sql") && json.get("sql").isJsonObject()) {
+            JsonObject o = json.getAsJsonObject("sql");
+            SqlSettings defaults = SqlSettings.sqliteDefault();
+            sql = new SqlSettings(
+                    has(o, "use") ? o.get("use").getAsBoolean() : defaults.use(),
+                    has(o, "dsn") ? o.get("dsn").getAsString() : defaults.dsn(),
+                    has(o, "username") ? o.get("username").getAsString() : defaults.username(),
+                    has(o, "password") ? o.get("password").getAsString() : defaults.password(),
+                    has(o, "tablePrefix") ? o.get("tablePrefix").getAsString() : defaults.tablePrefix());
+        }
+        if (id == null || id.isEmpty()) id = randomId();
+
+        YamlConfig.write(path, renderTemplate());
+        Path kept = dir.resolve("config.json.migrated");
+        try {
+            Files.move(legacy, kept, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            Teras.LOGGER.warn("Migrated config to config.yml but could not rename the old "
+                    + "config.json ({}). Delete it by hand — it is no longer read.", e.toString());
+        }
+        Teras.LOGGER.info("Migrated config/teras/config.json -> config.yml "
+                + "(the old file is kept as config.json.migrated and is no longer read)");
+    }
+
+    /**
+     * The config file as text, comments and all. Rendered rather than serialized: the whole reason
+     * this is YAML is that an admin can read what each key does, and every YAML writer discards
+     * comments. Values are quoted so that tokens YAML reads specially — {@code :} in a URL, a
+     * password of digits, {@code no} as a literal — survive a round trip.
+     */
+    private static String renderTemplate() {
+        return """
+                # Teras server configuration.
+                # Only the server reads this file; a client uses whatever the server it joined sends.
+
+                # Identifies this server/world to the SmartRotom backend. Generated on first run —
+                # set it to the value registered with the backend, and keep it stable.
+                id: "%s"
+
+                # The SmartRotom site. Must be an absolute URL: its host is the ONLY origin the
+                # in-game browser is allowed to navigate to.
+                home: "%s"
+
+                # Base URL of the SmartRotom HTTP API, for outbound calls.
+                API_URL: "%s"
+
+                # Bearer token sent WITH outbound requests to the API above. Leave blank if unused.
+                apiToken: "%s"
+
+                # Refuse to load the site over plain http.
+                requireHttps: %s
+
+                # ---------------------------------------------------------------------------
+                # Inbound HTTP API — what the SmartRotom backend calls to reach this server.
+                # See docs/HTTP_API.md.
+                # ---------------------------------------------------------------------------
+
+                httpEnabled: %s
+
+                # 127.0.0.1 only accepts connections from this machine. Use 0.0.0.0 to accept from
+                # anywhere, and only behind a firewall or reverse proxy.
+                httpBind: "%s"
+                httpPort: %s
+
+                # Token callers must present. BLANK MEANS NO AUTHENTICATION, which is what the
+                # SmartRotom backend currently expects — it sends no Authorization header.
+                httpToken: "%s"
+
+                # ---------------------------------------------------------------------------
+                # Plot storage — ownership and the money ledger. Region geometry always stays in
+                # regions.json. See docs/PARCELAS.md.
+                # ---------------------------------------------------------------------------
+
+                sql:
+                  # false = a local SQLite file at config/teras/teras.db. Needs no setup and is the
+                  #         right choice unless the SmartRotom web must read plots directly.
+                  # true  = MySQL. Use this to share one database with the backend, so the web reads
+                  #         ownership itself instead of being mirrored to over HTTP.
+                  use: %s
+
+                  # JDBC url. The database must already exist; the mod creates and migrates its own
+                  # tables inside it.
+                  dsn: "%s"
+                  username: "%s"
+
+                  # Kept in this file in plain text — make sure it is not world-readable and not
+                  # committed to git. It is never written to the log.
+                  password: "%s"
+
+                  # Namespaces our tables away from anything else sharing that database.
+                  tablePrefix: "%s"
+                """.formatted(id, home, apiUrl, apiToken, requireHttps, httpEnabled, httpBind,
+                httpPort, httpToken, sql.use(), sql.dsn(), sql.username(), sql.password(),
+                sql.tablePrefix());
     }
 
     private static boolean has(JsonObject o, String key) {

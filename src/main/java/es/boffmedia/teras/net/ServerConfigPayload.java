@@ -8,7 +8,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Server -> client on join: the subset of {@code config/teras/config.json} the client needs.
+ * Server -> client on join: the subset of {@code config/teras/config.yml} the client needs.
  *
  * <p>The config file is the <b>server's</b> configuration. A client connected to a remote server has
  * its own copy of the file (for the world it hosts in single-player), and that copy must never leak

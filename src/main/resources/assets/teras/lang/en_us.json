@@ -43,5 +43,7 @@
   "gui.teras.frame_border": "Border",
   "message.teras.frame_no_permission": "You don't have permission to edit this frame.",
   "message.teras.region_protected": "This zone is protected.",
+  "message.teras.plot_owned_by": "%s belongs to %s.",
+  "message.teras.plot_for_sale": "%s is for sale — you don't own it yet.",
   "message.teras.gps_arrived": "You have arrived at your destination."
 }
