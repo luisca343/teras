@@ -71,6 +71,38 @@ public final class RoomKeys {
     }
 
     /**
+     * The markers a finished room of this key is expected to carry.
+     *
+     * <p>Here rather than in the editor because the editor is no longer the only thing that asks:
+     * the audit checks the same list, and two copies of "what a shop room needs" drift the moment
+     * one of them gains a room type. Absence is never fatal — every consumer falls back to a
+     * calculated position — so this is what a room *should* declare, not what it must.</p>
+     */
+    public static List<String> requiredMarkers(String roomKey) {
+        if (roomKey.startsWith("boss")) {
+            return List.of("boss", "trapdoor");
+        }
+        return switch (roomKey) {
+            case "mini_boss" -> List.of("boss");
+            case "treasure" -> List.of("loot");
+            case "shop" -> List.of("shopslot");
+            // The curse room pays out where its loot marker stands; without one the reward lands
+            // in the middle of the room, which works but reads like a bug.
+            case "curse" -> List.of("loot");
+            case "sacrifice" -> List.of("sacrifice");
+            case "arcade" -> List.of("arcade");
+            case "devil_deal" -> List.of("deal");
+            // The challenge plate is where the fight starts, so its marker is load-bearing on top
+            // of the wave spawns.
+            case "challenge" -> List.of("spawn", "challenge");
+            // Every normal room, whatever its footprint — keys carry the shape family, never the
+            // orientation.
+            case "normal", "normal_large", "normal_l", "normal_big" -> List.of("spawn");
+            default -> List.of();
+        };
+    }
+
+    /**
      * A representative shape for a key, for the editor's pad: the family's base orientation, which
      * is the one a template is authored in.
      */

@@ -738,7 +738,8 @@ public final class RoomEditor {
         }
         player.sendSystemMessage(Component.literal("§7Marcadores guardados: "
                 + (byKind.isEmpty() ? "ninguno" : byKind.toString())));
-        for (String required : requiredMarkers(session.poolKey)) {
+        for (String required : es.boffmedia.teras.dungeon.piso.RoomKeys
+                .requiredMarkers(session.poolKey)) {
             if (!byKind.containsKey(required)) {
                 player.sendSystemMessage(Component.literal(
                         "§eAviso: una sala '" + session.poolKey + "' debería tener un marcador '"
@@ -747,30 +748,6 @@ public final class RoomEditor {
         }
     }
 
-    private static List<String> requiredMarkers(String poolKey) {
-        if (poolKey.startsWith("boss")) {
-            return List.of("boss", "trapdoor");
-        }
-        return switch (poolKey) {
-            case "mini_boss" -> List.of("boss");
-            case "treasure" -> List.of("loot");
-            case "shop" -> List.of("shopslot");
-            // The curse room pays out where its loot marker stands; without one the reward lands
-            // in the middle of the room, which works but reads like a bug.
-            case "curse" -> List.of("loot");
-            case "sacrifice" -> List.of("sacrifice");
-            case "arcade" -> List.of("arcade");
-            case "devil_deal" -> List.of("deal");
-            // The challenge plate is where the fight starts, so its marker is load-bearing on top
-            // of the wave spawns.
-            case "challenge" -> List.of("spawn", "challenge");
-            // Every normal room, whatever its footprint. Keys carry the shape *family* — a room key
-            // has never been per-orientation, and listing them that way meant the large, L and 2x2
-            // normals were saved without anyone being told they had no enemy spawns.
-            case "normal", "normal_large", "normal_l", "normal_big" -> List.of("spawn");
-            default -> List.of();
-        };
-    }
 
     // --- small helpers --------------------------------------------------------------------------
 

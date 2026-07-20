@@ -80,16 +80,16 @@ public final class GearDefs {
         // Weapons. Attack speed is a delta on the vanilla base (-2.4 bare-handed), so the hammer's
         // -0.4 is a real cost and the fang's +0.6 is one paid for elsewhere.
         put(map, "minecraft:diamond_sword",
-                sword("espada_abisal", RARO, 7.0, 0.2, GearAbility.VAMPIRISMO, 0.10));
+                sword("espada_abisal", RARO, 6.0, 0.2, GearAbility.VAMPIRISMO, 0.10));
         put(map, "minecraft:netherite_sword",
                 sword("colmillo_diablo", EPICO, 5.0, 0.6, GearAbility.DESGARRO, 3.0));
         put(map, "minecraft:netherite_axe",
-                sword("martillo_rompemuros", EPICO, 9.0, -0.4, GearAbility.ONDA, 0.30));
+                sword("martillo_rompemuros", EPICO, 9.0, -0.4, GearAbility.ONDA, 0.15));
         put(map, "minecraft:golden_sword", new GearDef("hoja_maldita", GearKind.SWORD, RARO, List.of(
                 new GearDef.Stat(GearStat.ATTACK_DAMAGE, 8.0, FLAT),
                 // The curse: it hits hard and leaves you softer for carrying it.
                 new GearDef.Stat(GearStat.ARMOR, -2.0, FLAT)),
-                GearAbility.BOTIN, 15, "", ""));
+                GearAbility.BOTIN, 4, "", ""));
 
         // Armour. The base's worn model shows on the body until the AW skin covers it, so the
         // material is picked to read right on its own: chainmail common, diamond rare, gold boss.
@@ -103,7 +103,7 @@ public final class GearDefs {
                 GearAbility.ESPINAS, 0.15, "", ""));
         put(map, "minecraft:chainmail_leggings", new GearDef("grebas_saqueador", GearKind.LEGGINGS, COMUN, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 4.0, FLAT)),
-                GearAbility.BOTIN, 10, "", ""));
+                GearAbility.BOTIN, 3, "", ""));
         put(map, "minecraft:diamond_boots", new GearDef("botas_fantasma", GearKind.BOOTS, RARO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 2.0, FLAT),
                 new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.15, FRACTION_OF_BASE)),
@@ -111,7 +111,7 @@ public final class GearDefs {
         put(map, "minecraft:golden_helmet", new GearDef("corona_jefe", GearKind.HELMET, EPICO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 3.0, FLAT),
                 new GearDef.Stat(GearStat.ARMOR_TOUGHNESS, 2.0, FLAT),
-                new GearDef.Stat(GearStat.MAX_HEALTH, 4.0, FLAT)),
+                new GearDef.Stat(GearStat.MAX_HEALTH, 2.0, FLAT)),
                 GearAbility.NINGUNA, 0, "", ""));
         put(map, "minecraft:golden_chestplate", new GearDef("alas_fenix", GearKind.CHESTPLATE, EPICO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 4.0, FLAT)),
@@ -121,7 +121,7 @@ public final class GearDefs {
         put(map, "minecraft:heart_of_the_sea", new GearDef("talisman_sangre", GearKind.CHARM, EPICO, List.of(),
                 GearAbility.VAMPIRISMO, 0.05, "", ""));
         put(map, "minecraft:emerald", new GearDef("amuleto_avaro", GearKind.CHARM, COMUN, List.of(),
-                GearAbility.BOTIN, 5, "", ""));
+                GearAbility.BOTIN, 2, "", ""));
 
         return map;
     }

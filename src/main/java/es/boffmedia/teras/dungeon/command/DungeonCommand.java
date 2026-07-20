@@ -149,6 +149,10 @@ public final class DungeonCommand {
                                         .then(Commands.argument("piso", StringArgumentType.word())
                                                 .suggests(PISOS)
                                                 .executes(DungeonCommand::pisoInfo)))
+                                .then(Commands.literal("auditar")
+                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                .suggests(PISOS)
+                                                .executes(DungeonCommand::auditPiso)))
                                 .then(Commands.literal("limpiar")
                                         .then(Commands.argument("piso", StringArgumentType.word())
                                                 .suggests(PISOS)
@@ -624,6 +628,57 @@ public final class DungeonCommand {
                 ctx.getSource().getServer().getStructureManager());
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "§aVariante " + variant + " de '" + type + "' borrada de " + pisoId + "."), false);
+        return 1;
+    }
+
+    /**
+     * Holds every room of a piso against the rules in DUNGEONS_PISOS.md §21.
+     *
+     * <p>Written for the authoring loop: an apron built shut, a spawn marker in a doorway or a room
+     * with fewer spawn points than the wave it will hold all look right on the editor pad, and
+     * otherwise surface mid-run as an enemy in a wall or a door that will not open. The author is
+     * the last person able to see any of it cheaply.</p>
+     */
+    private static int auditPiso(CommandContext<CommandSourceStack> ctx) {
+        String id = StringArgumentType.getString(ctx, "piso");
+        var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(id);
+        if (piso == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el piso '" + id + "'."));
+            return 0;
+        }
+        var results = es.boffmedia.teras.dungeon.build.RoomAuditor.audit(piso,
+                ctx.getSource().getServer().getStructureManager(),
+                DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(),
+                DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+        if (results.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "No hay plantillas que auditar — 'piso info " + id + "'."));
+            return 0;
+        }
+        long dirty = results.stream().filter(r -> !r.clean()).count();
+        long errors = results.stream().mapToLong(
+                es.boffmedia.teras.dungeon.build.RoomAuditor.Result::errors).sum();
+        for (var result : results) {
+            if (result.clean()) {
+                continue;
+            }
+            ctx.getSource().sendSuccess(() -> Component.literal("§e" + result.roomKey() + " §7("
+                    + result.template() + ")"), false);
+            for (var finding : result.findings()) {
+                boolean error = finding.level()
+                        == es.boffmedia.teras.dungeon.piso.RoomAudit.Level.ERROR;
+                ctx.getSource().sendSuccess(() -> Component.literal(
+                        (error ? "  §c✖ " : "  §6! ") + finding.message()), false);
+            }
+        }
+        if (dirty == 0) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§a" + results.size()
+                    + " plantillas auditadas, todas correctas."), false);
+        } else {
+            ctx.getSource().sendSuccess(() -> Component.literal("§7" + dirty + " de "
+                    + results.size() + " plantillas con avisos; §c" + errors + " error(es)§7. "
+                    + "Los §c✖§7 rompen la sala en partida; los §6!§7 solo la empeoran."), false);
+        }
         return 1;
     }
 
