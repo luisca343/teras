@@ -31,7 +31,8 @@ final class SpecialRoomPlacer {
 
     private SpecialRoomPlacer() {}
 
-    static void place(RoomGrid grid, GenConfig config, int stage, SeededRng rng) {
+    static void place(RoomGrid grid, GenConfig config, FloorDepth depth,
+                      java.util.Set<RoomShape> shapes, SeededRng rng) {
         Map<GridPos, Integer> distances = grid.distancesFromCenter();
         List<Room> deadEnds = normalDeadEnds(grid, distances);
 
@@ -47,10 +48,10 @@ final class SpecialRoomPlacer {
         if (index < deadEnds.size() && rng.chance(config.curseRoomChance())) {
             deadEnds.get(index++).setType(RoomType.CURSE);
         }
-        if (index < deadEnds.size() && rng.chance(miniBossChance(config, stage))) {
+        if (index < deadEnds.size() && rng.chance(miniBossChance(config, depth))) {
             deadEnds.get(index++).setType(RoomType.MINI_BOSS);
         }
-        if (index < deadEnds.size() && stage > 1 && rng.chance(config.challengeRoomChance())) {
+        if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.challengeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.CHALLENGE);
         }
         // The three optional side rooms, claimed after the classics and before the treasure so a
@@ -60,10 +61,10 @@ final class SpecialRoomPlacer {
         if (index < deadEnds.size() && rng.chance(config.sacrificeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.SACRIFICE);
         }
-        if (index < deadEnds.size() && stage > 1 && rng.chance(config.arcadeRoomChance())) {
+        if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.arcadeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.ARCADE);
         }
-        if (index < deadEnds.size() && stage > 1 && rng.chance(config.devilDealChance())) {
+        if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.devilDealChance())) {
             deadEnds.get(index++).setType(RoomType.DEVIL_DEAL);
         }
 
@@ -89,7 +90,12 @@ final class SpecialRoomPlacer {
         }
 
         keepBossBeyondTreasure(grid);
-        growBossRoom(grid, rng);
+        // Only when this piso actually builds 2x2 rooms. Growing regardless was the bug behind a
+        // boss chamber materialising as a void: the room asked for boss_big, the piso had never
+        // been required to author it, and the materializer left the cell empty.
+        if (shapes.contains(RoomShape.QUAD)) {
+            growBossRoom(grid, rng);
+        }
         placeSecretRoom(grid, rng);
     }
 
@@ -237,8 +243,8 @@ final class SpecialRoomPlacer {
         return grid.externalNeighborCount(quad) == 1;
     }
 
-    static double miniBossChance(GenConfig config, int stage) {
-        return stage == 1
+    static double miniBossChance(GenConfig config, FloorDepth depth) {
+        return depth.isFirst()
                 ? config.miniBossChance() + config.firstStageMiniBossBoost() * config.miniBossChance()
                 : config.miniBossChance();
     }

@@ -67,7 +67,9 @@ public final class DungeonEntrance {
         }
 
         DungeonRunManager.StartOutcome outcome =
-                DungeonRunManager.start(leader, entering, stage, curses, null);
+                DungeonRunManager.start(leader, entering,
+                        es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultDungeonId(),
+                        stage, curses, null);
         if (outcome.error() != null) {
             return outcome.error();
         }

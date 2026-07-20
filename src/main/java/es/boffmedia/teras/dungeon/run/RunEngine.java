@@ -249,6 +249,28 @@ public final class RunEngine {
         return false;
     }
 
+    /**
+     * Adds a nest hatchling to a room's kill ledger. Takes the room outright rather than deriving
+     * it the way {@link #registerSummon} does from its summoner — a nest is a block, and the caller
+     * already knows which room it sealed.
+     *
+     * <p>False means nothing is tracking that room any more (a floor that ended mid-hatch), and the
+     * caller must discard the entity rather than leave a stray mob standing in a swept floor.</p>
+     */
+    public static boolean registerNestSpawn(ServerLevel level, Room room, Entity add) {
+        for (ActiveFloor floor : FLOORS.values()) {
+            if (floor.level != level) {
+                continue;
+            }
+            if (!floor.core.enemyAdded(room)) {
+                return false;
+            }
+            floor.enemyRooms.put(add.getUUID(), room);
+            return true;
+        }
+        return false;
+    }
+
     /** Plays a cue positioned on an enemy, for the ability layer's telegraphs. */
     public static void playAbilityCue(Entity source, DungeonSound cue) {
         SoundEvent event = soundEvent(cue.name());
@@ -1015,6 +1037,8 @@ public final class RunEngine {
         public void sealRoom(Room room) {
             clearDoorways(floor, room);
             DoorCarver.setRoomDoors(floor.level, floor.built, room, sealState());
+            es.boffmedia.teras.dungeon.mecanica.Nests.onRoomSealed(
+                    floor.level, floor.built, room, floor.run.plan().piso());
         }
 
         @Override

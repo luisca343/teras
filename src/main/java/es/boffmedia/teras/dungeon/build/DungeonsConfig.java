@@ -29,7 +29,6 @@ public final class DungeonsConfig {
     private static int roomHeight;
     private static int doorWidth;
     private static int doorHeight;
-    private static String theme;
     private static String dimension;
     private static int slotY;
     private static int slotSpacing;
@@ -47,6 +46,13 @@ public final class DungeonsConfig {
     private static int entranceRadius;
     private static final Map<String, String> sounds = new LinkedHashMap<>();
     private static float soundVolume;
+    /**
+     * How likely each curse is per floor, before the piso's own {@code maldiciones} filter it. A
+     * curse every eligible piso at that depth refuses simply cannot occur there — the intended
+     * consequence, not a gap.
+     */
+    private static final Map<es.boffmedia.teras.dungeon.model.Curse, Double> CURSE_CHANCES =
+            new LinkedHashMap<>();
 
     // Coins: what enemies pay, how it is picked up, and what it is worth on the way out.
     private static int coinsNormalMin;
@@ -156,7 +162,11 @@ public final class DungeonsConfig {
     @SubscribeEvent
     public static void onServerAboutToStart(ServerAboutToStartEvent event) {
         load();
-        RoomTemplates.load();
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.load();
+        // Needs the server: a piso passes its structural checks naming templates that resolve to
+        // nothing on disk, and with no fallback between pisos that is fatal to any floor it fills.
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
+                event.getServer().getStructureManager());
         es.boffmedia.teras.dungeon.encounter.SpawnTables.load();
         es.boffmedia.teras.dungeon.gear.GearConfig.load();
         es.boffmedia.teras.world.VoidZones.logZoneMap();
@@ -177,7 +187,6 @@ public final class DungeonsConfig {
             roomHeight = yaml.integer("alturaSala", roomHeight);
             doorWidth = yaml.integer("anchoPuerta", doorWidth);
             doorHeight = yaml.integer("altoPuerta", doorHeight);
-            theme = yaml.string("tema", theme);
             dimension = yaml.string("dimension", dimension);
             slotY = yaml.integer("slotY", slotY);
             slotSpacing = yaml.integer("separacionSlots", slotSpacing);
@@ -194,6 +203,15 @@ public final class DungeonsConfig {
             maxParty = Math.max(1, yaml.integer("maxGrupo", maxParty));
             entranceRadius = Math.max(1, yaml.integer("radioEntrada", entranceRadius));
             backendPostEnabled = yaml.bool("enviarResultados", backendPostEnabled);
+
+            YamlConfig curseBlock = yaml.section("maldiciones");
+            for (es.boffmedia.teras.dungeon.model.Curse curse
+                    : es.boffmedia.teras.dungeon.model.Curse.values()) {
+                String key = curse.name().toLowerCase(java.util.Locale.ROOT);
+                int pct = curseBlock.integer(key,
+                        (int) Math.round(CURSE_CHANCES.getOrDefault(curse, 0.0) * 100));
+                CURSE_CHANCES.put(curse, Math.max(0, Math.min(100, pct)) / 100.0);
+            }
 
             YamlConfig coins = yaml.section("monedas");
             coinsNormalMin = coins.integer("normalMin", coinsNormalMin);
@@ -251,10 +269,9 @@ public final class DungeonsConfig {
 
     private static void resetToDefaults() {
         roomSize = 21;
-        roomHeight = 8;
+        roomHeight = 12;
         doorWidth = 3;
         doorHeight = 3;
-        theme = "base";
         dimension = "teras:vacio";
         slotY = 64;
         slotSpacing = 4096;
@@ -319,11 +336,16 @@ public final class DungeonsConfig {
                 # tamanoSala is the cell pitch AND the per-cell template footprint; a template for a
                 # 2x1 room must be exactly twice as wide. alturaSala is the template height.
                 tamanoSala: 21
-                alturaSala: 8
+                alturaSala: 12
                 anchoPuerta: 3
                 altoPuerta: 3
-                # Room template pools live in rooms.json next to this file.
-                tema: base
+                # Per-floor curse chances, as percentages. A piso only receives the curses its own
+                # 'maldiciones' accepts, so one every eligible piso refuses never occurs at that depth.
+                maldiciones:
+                  labyrinth: 10
+                  lost: 10
+                # Places live in pisos/*.json and the dungeons that use them in mazmorras.json.
+                # There is no global theme: a piso owns its own rooms outright.
                 # Instanced runs build in this dimension, on a slot lattice at slotY. The void is
                 # shared: which coordinates belong to what is the VoidZones map (runs keep the
                 # x>=0,z>=0 quadrant; room-editor pads the strip just north of it; the rest free).
@@ -474,8 +496,8 @@ public final class DungeonsConfig {
         return doorHeight;
     }
 
-    public static String theme() {
-        return theme;
+    public static Map<es.boffmedia.teras.dungeon.model.Curse, Double> curseChances() {
+        return Map.copyOf(CURSE_CHANCES);
     }
 
     public static String dimension() {

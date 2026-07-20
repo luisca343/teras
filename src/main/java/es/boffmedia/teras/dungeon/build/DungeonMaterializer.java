@@ -59,10 +59,12 @@ public final class DungeonMaterializer {
         boolean step();
     }
 
-    public static int enqueueBuild(ServerLevel level, DungeonLayout layout, BlockPos origin,
+    /** @param piso the place this floor is; it supplies every template the build pastes. */
+    public static int enqueueBuild(ServerLevel level, DungeonLayout layout,
+                                   es.boffmedia.teras.dungeon.piso.FloorDef piso, BlockPos origin,
                                    Consumer<BuiltDungeon> onComplete) {
         int id = nextId++;
-        JOBS.add(new BuildJob(id, level, layout, origin, onComplete));
+        JOBS.add(new BuildJob(id, level, layout, piso, origin, onComplete));
         return id;
     }
 
@@ -130,16 +132,19 @@ public final class DungeonMaterializer {
         private final BlockPos origin;
         private final Consumer<BuiltDungeon> onComplete;
         private final List<Room> rooms;
+        private final es.boffmedia.teras.dungeon.piso.FloorDef piso;
         private final Map<Room, List<TemplateMarkers.Marker>> markers = new HashMap<>();
         private final int roomSize = DungeonsConfig.roomSize();
         private final int roomHeight = DungeonsConfig.roomHeight();
         private int index;
 
-        BuildJob(int id, ServerLevel level, DungeonLayout layout, BlockPos origin,
+        BuildJob(int id, ServerLevel level, DungeonLayout layout,
+                 es.boffmedia.teras.dungeon.piso.FloorDef piso, BlockPos origin,
                  Consumer<BuiltDungeon> onComplete) {
             this.id = id;
             this.level = level;
             this.layout = layout;
+            this.piso = piso;
             this.origin = origin;
             this.onComplete = onComplete;
             this.rooms = layout.rooms();
@@ -169,11 +174,15 @@ public final class DungeonMaterializer {
 
         private void placeRoom(Room room, int roomIndex) {
             RoomTemplates.TemplateEntry entry =
-                    RoomTemplates.select(DungeonsConfig.theme(), room, layout.baseSeed(), roomIndex);
+                    RoomTemplates.select(piso, room, layout.baseSeed(), roomIndex);
             StructureTemplate template = level.getStructureManager().get(entry.template()).orElse(null);
             if (template == null) {
                 Teras.LOGGER.error("Dungeons: missing template {} for {} — leaving the cell empty",
                         entry.template(), room);
+                markers.put(room, List.of());
+                return;
+            }
+            if (!fitsItsCells(room, template, entry)) {
                 markers.put(room, List.of());
                 return;
             }
@@ -196,9 +205,50 @@ public final class DungeonMaterializer {
             List<TemplateMarkers.Marker> roomMarkers =
                     TemplateMarkers.extract(template, settings, corrected);
             for (TemplateMarkers.Marker marker : roomMarkers) {
-                level.setBlock(marker.pos(), markerFloor(marker.kind(), marker.pos()), 2);
+                level.setBlock(marker.pos(), markerFloor(room, marker.kind(), marker.pos()), 2);
             }
             markers.put(room, roomMarkers);
+        }
+
+        /**
+         * Whether {@code template}, once turned, covers exactly the cells {@code room} owns — the
+         * one thing the paste itself cannot check, because it pins the rotated bounding box to the
+         * anchor and writes whatever size the template happens to be.
+         *
+         * <p>A template larger than its room does not merely look wrong: the excess lands inside
+         * whichever room occupies the next cell, and since rooms are pasted in placement order, the
+         * damage depends on which was built first. That is unfixable from the floor's side, so an
+         * oversized room is refused outright and the cells are left empty — one visibly missing room
+         * beats a floor whose neighbours have been quietly overwritten.</p>
+         *
+         * <p>A template smaller than its room is pasted anyway: it cannot touch anything else, and
+         * the room is at least partly there. Both cases log the same actionable line, because both
+         * have the same two causes — a stale {@code tamanoSala}, or templates in the world's
+         * {@code generated} folder (saved by the room editor, or stamped by {@code piso crear})
+         * shadowing the jar's with an older geometry.</p>
+         */
+        private boolean fitsItsCells(Room room, StructureTemplate template,
+                                     RoomTemplates.TemplateEntry entry) {
+            var size = template.getSize();
+            boolean quarterTurn = entry.rotation() == net.minecraft.world.level.block.Rotation.CLOCKWISE_90
+                    || entry.rotation() == net.minecraft.world.level.block.Rotation.COUNTERCLOCKWISE_90;
+            int pastedX = quarterTurn ? size.getZ() : size.getX();
+            int pastedZ = quarterTurn ? size.getX() : size.getZ();
+            int wantX = room.shape().cellsWide() * roomSize;
+            int wantZ = room.shape().cellsDeep() * roomSize;
+            if (pastedX == wantX && pastedZ == wantZ) {
+                return true;
+            }
+            boolean oversized = pastedX > wantX || pastedZ > wantZ;
+            Teras.LOGGER.error("Dungeons: {} covers {}x{} but its room owns {}x{} — {}. Either "
+                            + "config.yml's tamanoSala is stale, or a copy in the world's "
+                            + "'generated' folder is shadowing the jar's template. "
+                            + "'/teras dungeon piso info <piso>' lists both; "
+                            + "'/teras dungeon piso limpiar <piso>' drops the local copies.",
+                    entry.template(), pastedX, pastedZ, wantX, wantZ,
+                    oversized ? "the room was skipped so it cannot overwrite its neighbours"
+                            : "the room was placed and leaves part of its footprint empty");
+            return !oversized;
         }
 
         /**
@@ -210,12 +260,45 @@ public final class DungeonMaterializer {
          * <p>Only laid on something solid. A plate authored a block off the ground would pop off
          * as an item on the first block update, leaving litter in the room and no visible plate.</p>
          */
-        private BlockState markerFloor(String kind, BlockPos pos) {
+        private BlockState markerFloor(Room room, String kind, BlockPos pos) {
+            // A nest has to be visible on entry — seeing it is the decision the mechanic is built
+            // on, so unlike every other marker it leaves a block behind rather than being aired out.
+            // Never in a doorway, though: a template authored with one there would brick its own
+            // entrance, and the block outlives the marker.
+            if (kind.equals("nido")) {
+                if (inDoorway(room, pos)) {
+                    Teras.LOGGER.warn("Dungeons: a 'nido' in {} sits in a doorway and was dropped — "
+                            + "move it a few blocks inside the room", room);
+                    return Blocks.AIR.defaultBlockState();
+                }
+                return Blocks.SNIFFER_EGG.defaultBlockState();
+            }
             boolean plate = kind.equals("challenge") || kind.equals("sacrifice");
             if (plate && level.getBlockState(pos.below()).isSolidRender(level, pos.below())) {
                 return Blocks.POLISHED_BLACKSTONE_PRESSURE_PLATE.defaultBlockState();
             }
             return Blocks.AIR.defaultBlockState();
+        }
+
+        /** Whether a world position falls in one of {@code room}'s reserved doorway volumes. */
+        private boolean inDoorway(Room room, BlockPos pos) {
+            for (GridPos cell : room.shape().offsets()) {
+                BlockPos cellOrigin = origin.offset(
+                        (room.anchor().x() + cell.x()) * roomSize, 0,
+                        (room.anchor().y() + cell.y()) * roomSize);
+                int lx = pos.getX() - cellOrigin.getX();
+                int ly = pos.getY() - cellOrigin.getY();
+                int lz = pos.getZ() - cellOrigin.getZ();
+                if (lx < 0 || lz < 0 || lx >= roomSize || lz >= roomSize) {
+                    continue;
+                }
+                if (es.boffmedia.teras.dungeon.model.DoorwayZone.contains(cell, room.shape(),
+                        lx, ly, lz, roomSize,
+                        DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight())) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void carveDoors() {

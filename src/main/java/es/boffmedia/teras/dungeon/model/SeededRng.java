@@ -28,4 +28,19 @@ public final class SeededRng {
     public <T> T pick(List<T> options) {
         return options.get(random.nextInt(options.size()));
     }
+
+    /**
+     * A copy of {@code options} in random order — a Fisher–Yates on this generator, not
+     * {@code Collections.shuffle}, so the draws stay on the one sequence a seed reproduces.
+     */
+    public <T> List<T> shuffled(List<T> options) {
+        List<T> copy = new java.util.ArrayList<>(options);
+        for (int i = copy.size() - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            T swap = copy.get(i);
+            copy.set(i, copy.get(j));
+            copy.set(j, swap);
+        }
+        return copy;
+    }
 }

@@ -7,8 +7,14 @@ import es.boffmedia.teras.dungeon.build.DungeonsConfig;
 import es.boffmedia.teras.dungeon.gen.DungeonGenerationException;
 import es.boffmedia.teras.dungeon.gen.DungeonGenerator;
 import es.boffmedia.teras.dungeon.gen.GenConfig;
+import es.boffmedia.teras.dungeon.gen.FloorDepth;
 import es.boffmedia.teras.dungeon.model.Curse;
+import es.boffmedia.teras.dungeon.piso.DungeonDef;
+import es.boffmedia.teras.dungeon.piso.FloorPlan;
+import es.boffmedia.teras.dungeon.piso.FloorSelector;
+import es.boffmedia.teras.dungeon.piso.PisoCatalog;
 import es.boffmedia.teras.dungeon.model.DungeonLayout;
+import es.boffmedia.teras.dungeon.run.DungeonTitles;
 import es.boffmedia.teras.dungeon.run.RunEngine;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -70,9 +76,17 @@ public final class DungeonRunManager {
                 .findFirst().orElse(null);
     }
 
-    /** Starts a run for {@code members} (the leader among them); one slot, one shared floor. */
+    /**
+     * Starts a run for {@code members} (the leader among them); one slot, one shared floor.
+     *
+     * @param dungeonId which mazmorra to descend; its tramos decide the length and what each floor
+     *                  can be
+     * @param forced    curses applied on top of the rolled ones, bypassing the piso's preferences.
+     *                  The admin test commands' lab/lost switches — deliberately not filtered, so
+     *                  forcing a curse to see it actually shows it
+     */
     public static StartOutcome start(ServerPlayer leader, Collection<ServerPlayer> members,
-                                     int stage, Set<Curse> curses, String seed) {
+                                     String dungeonId, int stage, Set<Curse> forced, String seed) {
         for (ServerPlayer member : members) {
             if (runOf(member.getUUID()) != null) {
                 return StartOutcome.fail(member == leader ? "Ya estás en una mazmorra."
@@ -88,15 +102,36 @@ public final class DungeonRunManager {
             return StartOutcome.fail("No hay huecos de instancia libres.");
         }
 
+        DungeonDef dungeon = PisoCatalog.dungeon(dungeonId);
+        if (dungeon == null) {
+            return StartOutcome.fail("No existe la mazmorra '" + dungeonId + "'.");
+        }
+        if (!dungeon.isValidStage(stage)) {
+            return StartOutcome.fail(dungeon.nombre() + " tiene " + dungeon.length()
+                    + " pisos; no existe el " + stage + ".");
+        }
+        // Resolved before selection, not inside the generator: the piso is drawn from this seed too,
+        // so an invented one has to exist before anything is chosen from it.
+        String runSeed = (seed == null || seed.isBlank())
+                ? Long.toUnsignedString(java.util.concurrent.ThreadLocalRandom.current().nextLong(), 36)
+                : seed;
+        FloorPlan plan = planFor(dungeon, stage, runSeed, forced);
+        if (plan == null) {
+            return StartOutcome.fail("Ningún piso utilizable para el piso " + stage
+                    + " de " + dungeon.nombre() + " — revisa el log.");
+        }
+
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults(), stage, curses, seed);
+            layout = DungeonGenerator.generate(GenConfig.defaults(),
+                    FloorDepth.of(GenConfig.defaults(), stage, dungeon.length()),
+                    plan.curses(), plan.piso().shapes(), runSeed);
         } catch (DungeonGenerationException e) {
             return StartOutcome.fail("Generación fallida: " + e.getMessage());
         }
 
         SLOTS.set(slot);
-        DungeonRun run = new DungeonRun(nextRunId++, slot, stage, curses, layout);
+        DungeonRun run = new DungeonRun(nextRunId++, slot, dungeonId, stage, plan, layout);
         for (ServerPlayer member : members) {
             run.party().put(member.getUUID(), returnPointOf(member));
             run.names().put(member.getUUID(), member.getName().getString());
@@ -109,7 +144,7 @@ public final class DungeonRunManager {
                 cellOrigins(layout, origin), run.party());
 
         MinecraftServer server = leader.getServer();
-        DungeonMaterializer.enqueueBuild(level, layout, origin, built -> {
+        DungeonMaterializer.enqueueBuild(level, layout, plan.piso(), origin, built -> {
             run.activate(built.id());
             // The whole party can quit or log out during the second or two the floor takes to
             // build; a run with nobody in it must fold instead of standing registered forever.
@@ -121,6 +156,23 @@ public final class DungeonRunManager {
             teleportPartyIn(server, run, built);
         });
         return new StartOutcome(run, null);
+    }
+
+    /**
+     * The plan for one floor: which piso, and the curses it accepts. Forced curses are added after
+     * selection so an admin switch is never silently dropped by a piso that refuses it.
+     */
+    private static FloorPlan planFor(DungeonDef dungeon, int stage, String seed, Set<Curse> forced) {
+        FloorPlan plan = FloorSelector.select(dungeon, PisoCatalog.pisos(), stage, seed,
+                DungeonsConfig.curseChances());
+        if (plan == null || forced == null || forced.isEmpty()) {
+            return plan;
+        }
+        Set<Curse> combined = java.util.EnumSet.noneOf(Curse.class);
+        combined.addAll(plan.curses());
+        combined.addAll(forced);
+        return new FloorPlan(plan.stage(), plan.dungeonId(), plan.tierIndex(), plan.indexInTier(),
+                plan.piso(), plan.dificultad(), combined);
     }
 
     /**
@@ -161,15 +213,33 @@ public final class DungeonRunManager {
         }
         MinecraftServer server = level.getServer();
         int next = run.stage() + 1;
-        if (next > GenConfig.defaults().finalStage()) {
+        DungeonDef dungeon = PisoCatalog.dungeon(run.dungeonId());
+        if (dungeon == null) {
+            Teras.LOGGER.error("Dungeons: run {} is in mazmorra '{}', which is no longer loaded — "
+                    + "ending it rather than descending into nothing", run.id(), run.dungeonId());
+            completeRun(server, run);
+            return;
+        }
+        if (next > dungeon.length()) {
             completeRun(server, run);
             return;
         }
 
         DungeonLayout newLayout;
+        FloorPlan plan;
         try {
-            newLayout = DungeonGenerator.generate(GenConfig.defaults(), next, run.curses(),
-                    run.layout().seedString());
+            // Rolled afresh for this floor: curses are per floor, and each piso only accepts the
+            // ones it declares.
+            plan = planFor(dungeon, next, run.layout().seedString(), Set.of());
+            if (plan == null) {
+                Teras.LOGGER.error("Dungeons: no usable piso for floor {} of '{}' — ending run {}",
+                        next, dungeon.id(), run.id());
+                completeRun(server, run);
+                return;
+            }
+            newLayout = DungeonGenerator.generate(GenConfig.defaults(),
+                    FloorDepth.of(GenConfig.defaults(), next, dungeon.length()),
+                    plan.curses(), plan.piso().shapes(), run.layout().seedString());
         } catch (DungeonGenerationException e) {
             Teras.LOGGER.error("Dungeons: could not generate stage {} of run {}: {}",
                     next, run.id(), e.getMessage());
@@ -193,7 +263,9 @@ public final class DungeonRunManager {
                 DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(), journalCells, run.party());
         message(server, run, "§7Descendiendo al piso " + next + "…");
 
-        DungeonMaterializer.enqueueBuild(level, newLayout, newOrigin, built -> {
+        FloorPlan floorPlan = plan;
+        DungeonMaterializer.enqueueBuild(level, newLayout, floorPlan.piso(), newOrigin, built -> {
+            run.enterFloor(floorPlan);
             run.advanceFloor(next, newLayout, built.id(), newPad);
             if (run.party().isEmpty()) {
                 // Enqueued before end()'s own discard, so the journal (deleted only after the
@@ -313,7 +385,7 @@ public final class DungeonRunManager {
                         run.stateOf(member.getKey()).deaths(),
                         abandoned.contains(member.getKey())));
             }
-            List<String> curseNames = run.curses().stream().map(Enum::name).toList();
+            List<String> curseNames = run.cursesSeen().stream().map(Enum::name).toList();
             es.boffmedia.teras.util.net.SmartRotomService.saveDungeonRun(new DungeonRunResult(
                     run.layout().seedString(), run.startStage(), run.stage(), run.stagesCleared(),
                     completed, System.currentTimeMillis() - run.startedAtMs(), curseNames,
@@ -440,6 +512,42 @@ public final class DungeonRunManager {
                 player.gameMode.getGameModeForPlayer().getName());
     }
 
+    /**
+     * The floor's own name on arrival — "Cuevas II" over the piso's flavour line, with its music and
+     * ambience. The numeral is depth within the tramo, so two Cuevas floors in a row read as I and
+     * II rather than as the same place twice.
+     */
+    private static void announceFloor(ServerPlayer player, DungeonRun run) {
+        var plan = run.plan();
+        if (plan == null) {
+            return;
+        }
+        DungeonTitles.send(player, "§6" + plan.title(),
+                plan.subtitle().isBlank() ? "" : "§7" + plan.subtitle());
+        playPisoSound(player, plan.piso().musica());
+        playPisoSound(player, plan.piso().ambiente());
+    }
+
+    /**
+     * Plays a piso's sound if the id names one. The fields are resource locations either way, so
+     * swapping a vanilla track for a custom one later is a config edit, not a code change.
+     */
+    private static void playPisoSound(ServerPlayer player, String soundId) {
+        if (soundId == null || soundId.isBlank()) {
+            return;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(soundId);
+        if (id == null) {
+            return;
+        }
+        var sound = net.minecraft.core.registries.BuiltInRegistries.SOUND_EVENT.get(id);
+        if (sound == null) {
+            Teras.LOGGER.warn("Dungeons: piso sound '{}' is not a registered sound event", soundId);
+            return;
+        }
+        player.playNotifySound(sound, net.minecraft.sounds.SoundSource.AMBIENT, 0.7f, 1.0f);
+    }
+
     private static void teleportPartyIn(MinecraftServer server, DungeonRun run, BuiltDungeon built) {
         ServerLevel level = dungeonLevel(server);
         if (level == null) {
@@ -451,6 +559,7 @@ public final class DungeonRunManager {
             if (player != null) {
                 player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                         player.getYRot(), player.getXRot());
+                announceFloor(player, run);
                 // Clears the descent: gravity back on, and no fall distance carried into the
                 // landing (arriving mid-drop from the floor above was fatal).
                 RunEngine.land(player);

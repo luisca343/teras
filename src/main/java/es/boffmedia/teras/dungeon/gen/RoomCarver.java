@@ -29,18 +29,34 @@ final class RoomCarver {
 
     private RoomCarver() {}
 
-    /** Large shapes in the legacy try-order; SINGLE is the fallback, not part of the roll. */
-    private static final List<RoomShape> LARGE_SHAPES = List.of(
-            RoomShape.QUAD, RoomShape.HORIZONTAL, RoomShape.VERTICAL,
-            RoomShape.L_TOP_LEFT, RoomShape.L_TOP_RIGHT,
-            RoomShape.L_BOTTOM_LEFT, RoomShape.L_BOTTOM_RIGHT);
+    /**
+     * Large shapes biggest-first, which is the legacy try-order and the one that matters: a cell
+     * that could hold a 2×2 should be offered the 2×2 first. Within a size the orientations are
+     * shuffled per attempt by {@link #tryOrder} — they are rotations of one template with identical
+     * odds, so a fixed order is pure bias. Rolling them in list order gave L_TOP_LEFT first refusal
+     * on every L and left L_BOTTOM_RIGHT, dead last, four times rarer than its siblings.
+     */
+    private static final List<RoomShape> TWO_CELL =
+            List.of(RoomShape.HORIZONTAL, RoomShape.VERTICAL);
+    private static final List<RoomShape> L_SHAPES =
+            List.of(RoomShape.L_TOP_LEFT, RoomShape.L_TOP_RIGHT,
+                    RoomShape.L_BOTTOM_LEFT, RoomShape.L_BOTTOM_RIGHT);
 
-    static RoomGrid carve(GenConfig config, int targetCells, int minDeadEnds, SeededRng rng) {
+    private static List<RoomShape> tryOrder(SeededRng rng) {
+        List<RoomShape> order = new ArrayList<>(7);
+        order.add(RoomShape.QUAD);
+        order.addAll(rng.shuffled(TWO_CELL));
+        order.addAll(rng.shuffled(L_SHAPES));
+        return order;
+    }
+
+    static RoomGrid carve(GenConfig config, int targetCells, int minDeadEnds,
+                          java.util.Set<RoomShape> shapes, SeededRng rng) {
         RoomGrid grid = new RoomGrid(config.gridSize());
         Room start = new Room(RoomType.START, grid.center(), RoomShape.SINGLE);
         grid.place(start);
 
-        ShapeOdds odds = new ShapeOdds(config);
+        ShapeOdds odds = new ShapeOdds(config, shapes);
         int cellsCarved = 1;
         ArrayDeque<Room> pending = new ArrayDeque<>();
 
@@ -89,8 +105,8 @@ final class RoomCarver {
     }
 
     /**
-     * The frontier gate from the legacy carver: the anchor cell must be empty, touch fewer than
-     * two rooms, and win a coin toss. Only the anchor is gated — a large shape's other cells may
+     * The frontier gate from the legacy carver: the frontier cell must be empty, touch fewer than
+     * two rooms, and win a coin toss. Only that cell is gated — a large shape's other cells may
      * touch more rooms, as in the original.
      */
     private static Room tryExpand(RoomGrid grid, GridPos pos, SeededRng rng, ShapeOdds odds) {
@@ -100,19 +116,58 @@ final class RoomCarver {
         return tryShapes(grid, pos, rng, odds);
     }
 
-    private static Room tryShapes(RoomGrid grid, GridPos anchor, SeededRng rng, ShapeOdds odds) {
-        for (RoomShape shape : LARGE_SHAPES) {
-            if (rng.chance(odds.of(shape)) && canPlace(grid, anchor, shape)) {
+    /**
+     * Rolls each allowed shape in turn and places the first that both wins its roll and fits with
+     * {@code seed} as one of its cells, falling back to a single.
+     *
+     * <p>{@code seed} is the frontier cell the carve is growing from, <b>not</b> the room's anchor.
+     * The two used to be the same thing, and that quietly halved the carve: a shape was only ever
+     * tried in the one position where its anchor — its minimum corner — landed on the frontier cell,
+     * so a 2×1 could only ever extend east from it and never west, a 2×2 only ever south-east. Every
+     * large shape therefore grew away from the floor's centre and never back across it. Offering the
+     * shape at each of its cells in turn is what makes placement symmetric.</p>
+     *
+     * <p>It also fixes L_BOTTOM_RIGHT outright. That is the one shape whose minimum corner is the
+     * cell it does <i>not</i> own, so anchoring it at the frontier cell demanded a fourth free cell
+     * no other shape needed — the sole reason it appeared four times less often.</p>
+     */
+    private static Room tryShapes(RoomGrid grid, GridPos seed, SeededRng rng, ShapeOdds odds) {
+        for (RoomShape shape : tryOrder(rng)) {
+            // A shape the piso never authored is not rolled for at all, rather than rolled and
+            // rejected: the piso has no other piso to borrow the room from.
+            if (!odds.allows(shape)) {
+                continue;
+            }
+            if (!rng.chance(odds.of(shape))) {
+                continue;
+            }
+            GridPos anchor = anchorFor(grid, seed, shape, rng);
+            if (anchor != null) {
                 Room room = new Room(RoomType.NORMAL, anchor, shape);
                 grid.place(room);
                 odds.decayLarge();
                 return room;
             }
         }
-        if (canPlace(grid, anchor, RoomShape.SINGLE)) {
-            Room room = new Room(RoomType.NORMAL, anchor, RoomShape.SINGLE);
+        if (canPlace(grid, seed, RoomShape.SINGLE)) {
+            Room room = new Room(RoomType.NORMAL, seed, RoomShape.SINGLE);
             grid.place(room);
             return room;
+        }
+        return null;
+    }
+
+    /**
+     * An anchor that puts {@code shape} over {@code seed} and fits, or null. Candidates are the
+     * anchors that make each of the shape's cells the seed cell, tried in shuffled order so no
+     * direction is systematically preferred when several work.
+     */
+    private static GridPos anchorFor(RoomGrid grid, GridPos seed, RoomShape shape, SeededRng rng) {
+        for (GridPos offset : rng.shuffled(shape.offsets())) {
+            GridPos anchor = seed.offset(-offset.x(), -offset.y());
+            if (canPlace(grid, anchor, shape)) {
+                return anchor;
+            }
         }
         return null;
     }
@@ -190,10 +245,16 @@ final class RoomCarver {
     /** Large-shape odds with the explicit decay that replaces the legacy accidental normalization. */
     private static final class ShapeOdds {
         private final GenConfig config;
+        private final java.util.Set<RoomShape> allowed;
         private double factor = 1.0;
 
-        ShapeOdds(GenConfig config) {
+        ShapeOdds(GenConfig config, java.util.Set<RoomShape> allowed) {
             this.config = config;
+            this.allowed = allowed;
+        }
+
+        boolean allows(RoomShape shape) {
+            return allowed.contains(shape);
         }
 
         double of(RoomShape shape) {

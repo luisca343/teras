@@ -70,6 +70,25 @@ public final class BlockInit {
                     .strength(50.0F, 1200.0F)
                     .requiresCorrectToolForDrops()));
 
+    /**
+     * Combat webbing. No block item: it is placed by enemies and cleared by a left-click, never
+     * held — and a web in someone's inventory would be a dungeon mechanic leaving the dungeon.
+     *
+     * <p>{@code noCollission} is the <i>default</i> state's shape only; the block overrides
+     * {@code getCollisionShape} so its dense state is solid. {@code noOcclusion} keeps thin webbing
+     * from darkening the room it sits in.</p>
+     */
+    public static final DeferredBlock<es.boffmedia.teras.dungeon.mecanica.TelaranaBlock> TELARANA =
+            BLOCKS.register("telarana",
+                    () -> new es.boffmedia.teras.dungeon.mecanica.TelaranaBlock(
+                            BlockBehaviour.Properties.of()
+                                    .mapColor(MapColor.WOOL)
+                                    .sound(SoundType.WOOL)
+                                    .strength(1.0F)
+                                    .noCollission()
+                                    .noOcclusion()
+                                    .dynamicShape()));
+
     public static final DeferredBlock<BloqueAguasTermales> AGUAS_TERMALES = BLOCKS.register("aguas_termales",
             () -> new BloqueAguasTermales(FluidInit.AGUAS_TERMALES_SOURCE.get(),
                     BlockBehaviour.Properties.ofFullCopy(Blocks.WATER).randomTicks()));

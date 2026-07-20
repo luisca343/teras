@@ -15,6 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpecialRoomPlacerTest {
 
+    /** Every shape: these predate the piso opt-out and must keep their old behaviour. */
+    private static final java.util.Set<RoomShape> ALL_SHAPES =
+            java.util.EnumSet.allOf(RoomShape.class);
+
+
     /**
      * Only (2,2) touches three rooms; every other empty cell touches at most one. A one-neighbor
      * candidate can score at most 10+4−6=8 against the three-neighbor minimum of 10, so the choice
@@ -56,16 +61,16 @@ class SpecialRoomPlacerTest {
     @Test
     void miniBossChanceIsBoostedOnStageOneOnly() {
         GenConfig config = GenConfig.defaults();
-        assertEquals(0.4375, SpecialRoomPlacer.miniBossChance(config, 1), 1e-9);
-        assertEquals(0.25, SpecialRoomPlacer.miniBossChance(config, 2), 1e-9);
+        assertEquals(0.4375, SpecialRoomPlacer.miniBossChance(config, FloorDepth.of(config, 1)), 1e-9);
+        assertEquals(0.25, SpecialRoomPlacer.miniBossChance(config, FloorDepth.of(config, 2)), 1e-9);
     }
 
     @Test
     void placeAssignsBossFarthestAndRequiredRooms() {
         GenConfig config = GenConfig.defaults();
         SeededRng rng = new SeededRng(7);
-        RoomGrid grid = RoomCarver.carve(config, 22, 6, rng);
-        SpecialRoomPlacer.place(grid, config, 3, rng);
+        RoomGrid grid = RoomCarver.carve(config, 22, 6, ALL_SHAPES, rng);
+        SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 3), ALL_SHAPES, rng);
 
         assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.BOSS));
         assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SHOP)
@@ -128,8 +133,8 @@ class SpecialRoomPlacerTest {
         GenConfig config = GenConfig.defaults();
         for (int seed = 0; seed < 40; seed++) {
             SeededRng rng = new SeededRng(seed);
-            RoomGrid grid = RoomCarver.carve(config, 22, 7, rng);
-            SpecialRoomPlacer.place(grid, config, 3, rng);
+            RoomGrid grid = RoomCarver.carve(config, 22, 7, ALL_SHAPES, rng);
+            SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 3), ALL_SHAPES, rng);
 
             var distances = grid.distancesFromCenter();
             Room boss = grid.rooms().stream()
@@ -161,15 +166,15 @@ class SpecialRoomPlacerTest {
                 chance, chance, chance,
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
                 d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
-                d.finalStage(), d.finalStageRooms(), d.maxAttempts());
+                d.referenceLength(), d.finalStageRooms(), d.maxAttempts());
     }
 
     @Test
     void sideRoomsAppearWhenTheirChanceIsCertain() {
         GenConfig config = withSideRoomChances(1.0);
         SeededRng rng = new SeededRng(11);
-        RoomGrid grid = RoomCarver.carve(config, 30, 6, rng);
-        SpecialRoomPlacer.place(grid, config, 4, rng);
+        RoomGrid grid = RoomCarver.carve(config, 30, 6, ALL_SHAPES, rng);
+        SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 4), ALL_SHAPES, rng);
 
         assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SACRIFICE));
         assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.ARCADE));
@@ -181,8 +186,8 @@ class SpecialRoomPlacerTest {
     void sideRoomsAreAbsentAtZeroChanceAndTheRequiredOnesStillPlace() {
         GenConfig config = withSideRoomChances(0.0);
         SeededRng rng = new SeededRng(11);
-        RoomGrid grid = RoomCarver.carve(config, 30, 6, rng);
-        SpecialRoomPlacer.place(grid, config, 4, rng);
+        RoomGrid grid = RoomCarver.carve(config, 30, 6, ALL_SHAPES, rng);
+        SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 4), ALL_SHAPES, rng);
 
         assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.SACRIFICE));
         assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.ARCADE));
@@ -197,8 +202,8 @@ class SpecialRoomPlacerTest {
         GenConfig config = withSideRoomChances(1.0);
         for (int seed = 0; seed < 20; seed++) {
             SeededRng rng = new SeededRng(seed);
-            RoomGrid grid = RoomCarver.carve(config, 25, 1, rng);
-            SpecialRoomPlacer.place(grid, config, 1, rng);
+            RoomGrid grid = RoomCarver.carve(config, 25, 1, ALL_SHAPES, rng);
+            SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 1), ALL_SHAPES, rng);
 
             assertTrue(grid.rooms().stream().noneMatch(r -> r.type() == RoomType.ARCADE),
                     "seed " + seed + ": arcade placed on stage 1");
@@ -210,10 +215,10 @@ class SpecialRoomPlacerTest {
     @Test
     void placementStaysDeterministicForASeed() {
         GenConfig config = withSideRoomChances(0.5);
-        RoomGrid first = RoomCarver.carve(config, 28, 5, new SeededRng(99));
-        SpecialRoomPlacer.place(first, config, 5, new SeededRng(1234));
-        RoomGrid second = RoomCarver.carve(config, 28, 5, new SeededRng(99));
-        SpecialRoomPlacer.place(second, config, 5, new SeededRng(1234));
+        RoomGrid first = RoomCarver.carve(config, 28, 5, ALL_SHAPES, new SeededRng(99));
+        SpecialRoomPlacer.place(first, config, FloorDepth.of(config, 5), ALL_SHAPES, new SeededRng(1234));
+        RoomGrid second = RoomCarver.carve(config, 28, 5, ALL_SHAPES, new SeededRng(99));
+        SpecialRoomPlacer.place(second, config, FloorDepth.of(config, 5), ALL_SHAPES, new SeededRng(1234));
 
         assertEquals(LayoutAscii.render(first), LayoutAscii.render(second));
     }

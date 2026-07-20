@@ -12,7 +12,9 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
+import net.minecraft.world.entity.ai.goal.LeapAtTargetGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.RangedAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
@@ -39,7 +41,8 @@ import software.bernie.geckolib.util.GeckoLibUtil;
  * swap on someone else's — a CustomNPCs NPC has nowhere to put a model id that we control on both
  * sides, and replacing another mod's renderer breaks its NPCs when we get it wrong.</p>
  */
-public class DungeonGeoEnemy extends Monster implements GeoEntity {
+public class DungeonGeoEnemy extends Monster implements GeoEntity,
+        net.minecraft.world.entity.monster.RangedAttackMob {
 
     private static final EntityDataAccessor<String> VARIANT =
             SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.STRING);
@@ -75,15 +78,74 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity {
                 .add(Attributes.KNOCKBACK_RESISTANCE, 0.2);
     }
 
+    /**
+     * The goals every enemy has regardless of what it does. The ones that depend on the variant are
+     * added by {@link #rebuildGoals()} instead, because this runs in the {@code Mob} constructor —
+     * before {@code applyVariant} has supplied a behaviour list, and before the synched data has
+     * been read back on a reload.
+     */
     @Override
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
-        goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.0, true));
         goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.8));
         goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12f));
         goalSelector.addGoal(8, new RandomLookAroundGoal(this));
         targetSelector.addGoal(1, new HurtByTargetGoal(this));
         targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, true));
+        rebuildGoals();
+    }
+
+    /**
+     * Composes the variant's behaviours into goals, replacing whatever was there.
+     *
+     * <p>Called whenever the variant can have changed — on {@code applyVariant} and after NBT is
+     * read — because goal registration happens in the constructor, long before an entity knows what
+     * it is. Without this a spider loaded from disk would come back as the fallback's plain melee.
+     * </p>
+     */
+    private void rebuildGoals() {
+        goalSelector.removeAllGoals(goal -> BEHAVIOUR_GOALS.contains(goal.getClass()));
+        GeoEnemyVariant variant = variant();
+        if (variant.has(Behaviour.MELEE) || variant.behaviours().isEmpty()) {
+            // An empty list still melees: an enemy that does nothing at all is never what was meant.
+            goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.0, true));
+        }
+        if (variant.has(Behaviour.LEAP)) {
+            goalSelector.addGoal(3, new LeapAtTargetGoal(this, 0.4f));
+        }
+        if (variant.shoots()) {
+            // Priority above melee: a shooter that walks into melee range to swing stops being a
+            // shooter. RangedAttackGoal keeps its distance on its own.
+            goalSelector.addGoal(1, new RangedAttackGoal(this,
+                    1.0, Math.max(20, variant.rangedCooldown()), 16f));
+        }
+        // Navigation is built in the Mob constructor too, so a spider read back from NBT would
+        // path along the floor until this is redone.
+        this.navigation = createNavigation(level());
+    }
+
+    /** Goal classes {@link #rebuildGoals()} owns, so it never strips the constant ones. */
+    private static final java.util.Set<Class<?>> BEHAVIOUR_GOALS = java.util.Set.of(
+            MeleeAttackGoal.class, LeapAtTargetGoal.class, RangedAttackGoal.class);
+
+    /**
+     * Wall-climbing for the spiders. Chosen here rather than as a goal because navigation is the
+     * ground rules underneath goals, not a decision the enemy makes.
+     */
+    @Override
+    protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
+        return variant().movement() == Movement.CLIMBER
+                ? new net.minecraft.world.entity.ai.navigation.WallClimberNavigation(this, level)
+                : super.createNavigation(level);
+    }
+
+    @Override
+    public void performRangedAttack(net.minecraft.world.entity.LivingEntity target, float power) {
+        GeoEnemyVariant variant = variant();
+        DungeonBolt.Kind kind = variant.has(Behaviour.WEB_SHOT)
+                ? DungeonBolt.Kind.WEB : DungeonBolt.Kind.BOLT;
+        DungeonBolt.shoot(this, target, kind, variant.rangedDamage(), 1.2f);
+        entityData.set(ATTACK_TICKS, ATTACK_ANIMATION_TICKS);
     }
 
     @Override
@@ -105,6 +167,7 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity {
     public void applyVariant(String id) {
         GeoEnemyVariant variant = GeoEnemyVariant.of(id);
         entityData.set(VARIANT, variant.id());
+        rebuildGoals();
         setAttribute(Attributes.MAX_HEALTH, variant.health());
         setAttribute(Attributes.ATTACK_DAMAGE, variant.damage());
         setAttribute(Attributes.MOVEMENT_SPEED, variant.speed());

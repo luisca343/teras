@@ -25,4 +25,17 @@ public final class EntityInit {
                     .updateInterval(2)
                     .fireImmune()
                     .build("dungeon_enemy"));
+
+    /**
+     * What dungeon enemies throw. One type with a kind on it: an archer's bolt and a webber's shot
+     * differ in what they do on impact, not in how they fly.
+     */
+    public static final DeferredHolder<EntityType<?>, EntityType<es.boffmedia.teras.dungeon.entity.DungeonBolt>>
+            DUNGEON_BOLT = ENTITY_TYPES.register("dungeon_bolt", () -> EntityType.Builder
+                    .<es.boffmedia.teras.dungeon.entity.DungeonBolt>of(
+                            es.boffmedia.teras.dungeon.entity.DungeonBolt::new, MobCategory.MISC)
+                    .sized(0.3f, 0.3f)
+                    .clientTrackingRange(6)
+                    .updateInterval(2)
+                    .build("dungeon_bolt"));
 }

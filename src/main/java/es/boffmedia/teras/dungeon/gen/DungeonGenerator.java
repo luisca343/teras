@@ -9,9 +9,11 @@ import es.boffmedia.teras.dungeon.model.GridDir;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomGrid;
+import es.boffmedia.teras.dungeon.model.RoomShape;
 import es.boffmedia.teras.dungeon.model.SeededRng;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
@@ -34,10 +36,30 @@ public final class DungeonGenerator {
 
     private DungeonGenerator() {}
 
+    /**
+     * A floor of a dungeon exactly as long as the difficulty curve was authored for, generating
+     * every room shape. What every caller wanted while there was one twelve-floor dungeon.
+     */
     public static DungeonLayout generate(GenConfig config, int stage, Set<Curse> curses, String seedString) {
-        if (!config.isValidStage(stage)) {
-            throw new IllegalArgumentException("Invalid stage: " + stage);
+        return generate(config, FloorDepth.of(config, stage), curses,
+                EnumSet.allOf(RoomShape.class), seedString);
+    }
+
+    /**
+     * @param depth  where this floor sits in its own dungeon — see {@link FloorDepth}, which keeps
+     *               "the party's first floor", "this dungeon's last floor" and "how deep the
+     *               difficulty curve thinks we are" from collapsing into one number
+     * @param shapes the room shapes the piso declares. A shape absent here is never generated, so
+     *               the piso is never asked for a room it did not author — the one lever that cuts
+     *               authoring cost without a fallback between pisos
+     */
+    public static DungeonLayout generate(GenConfig config, FloorDepth depth, Set<Curse> curses,
+                                         Set<RoomShape> shapes, String seedString) {
+        if (!depth.isValid()) {
+            throw new IllegalArgumentException("Invalid stage: " + depth.stage()
+                    + " in a dungeon of " + depth.dungeonLength() + " floors");
         }
+        int stage = depth.stage();
         String seed = (seedString == null || seedString.isBlank())
                 ? Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), 36)
                 : seedString;
@@ -46,13 +68,14 @@ public final class DungeonGenerator {
         List<String> lastErrors = List.of("generation never ran");
         for (int attempt = 0; attempt < config.maxAttempts(); attempt++) {
             SeededRng rng = new SeededRng(DungeonSeeds.derive(baseSeed, attempt));
-            int targetCells = targetCells(config, stage, curses, rng);
-            int minDeadEnds = minDeadEnds(config, stage, curses);
+            int targetCells = targetCells(config, depth, curses, rng);
+            int minDeadEnds = minDeadEnds(config, depth, curses);
 
-            RoomGrid grid = RoomCarver.carve(config, targetCells, minDeadEnds + BOSS_GROWTH_RESERVE, rng);
-            SpecialRoomPlacer.place(grid, config, stage, rng);
+            RoomGrid grid = RoomCarver.carve(config, targetCells, minDeadEnds + BOSS_GROWTH_RESERVE,
+                    shapes, rng);
+            SpecialRoomPlacer.place(grid, config, depth, shapes, rng);
 
-            LayoutValidator.Result result = LayoutValidator.validate(grid, config, stage, targetCells, minDeadEnds);
+            LayoutValidator.Result result = LayoutValidator.validate(grid, config, depth, targetCells, minDeadEnds);
             if (result.valid()) {
                 return new DungeonLayout(stage, curses, seed, baseSeed, attempt,
                         grid, doorGraph(grid), result.warnings());
@@ -66,30 +89,30 @@ public final class DungeonGenerator {
      * Isaac's room-count formula plus the legacy pad: {@code min(20, coin + 5 + stage*10/3)},
      * curse-modified, then 2–3 more. The result counts grid cells, so a 2×2 room spends four.
      */
-    static int targetCells(GenConfig config, int stage, Set<Curse> curses, SeededRng rng) {
-        int base = Math.min(20, (rng.chance(0.5) ? 0 : 1) + 5 + (stage * 10) / 3);
+    static int targetCells(GenConfig config, FloorDepth depth, Set<Curse> curses, SeededRng rng) {
+        int base = Math.min(20, (rng.chance(0.5) ? 0 : 1) + 5 + (depth.curveStage() * 10) / 3);
         int rooms = base;
         if (curses.contains(Curse.LABYRINTH)) {
             rooms = Math.min(config.labyrinthRoomCap(), (int) (rooms * config.labyrinthMultiplier()));
         } else if (curses.contains(Curse.LOST)) {
             rooms += config.lostRoomBonus();
         }
-        if (stage == config.finalStage()) {
+        if (depth.isFinal()) {
             rooms = config.finalStageRooms();
         }
         return rooms + 2 + (rng.chance(0.5) ? 0 : 1);
     }
 
     /** Enough dead ends for the special rooms: 5, +1 past stage 1, +1 labyrinth, +2 final stage. */
-    static int minDeadEnds(GenConfig config, int stage, Set<Curse> curses) {
+    static int minDeadEnds(GenConfig config, FloorDepth depth, Set<Curse> curses) {
         int minDeadEnds = 5;
-        if (stage != 1) {
+        if (!depth.isFirst()) {
             minDeadEnds++;
         }
         if (curses.contains(Curse.LABYRINTH)) {
             minDeadEnds++;
         }
-        if (stage == config.finalStage()) {
+        if (depth.isFinal()) {
             minDeadEnds += 2;
         }
         return minDeadEnds;

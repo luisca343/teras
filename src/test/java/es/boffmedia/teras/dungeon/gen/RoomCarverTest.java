@@ -13,6 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RoomCarverTest {
 
+    /** Every shape: these predate the piso opt-out and must keep their old behaviour. */
+    private static final java.util.Set<RoomShape> ALL_SHAPES =
+            java.util.EnumSet.allOf(RoomShape.class);
+
+
     private static GenConfig withGridSize(int gridSize) {
         GenConfig d = GenConfig.defaults();
         return new GenConfig(gridSize,
@@ -22,7 +27,7 @@ class RoomCarverTest {
                 d.sacrificeRoomChance(), d.arcadeRoomChance(), d.devilDealChance(),
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
                 d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
-                d.finalStage(), d.finalStageRooms(), d.maxAttempts());
+                d.referenceLength(), d.finalStageRooms(), d.maxAttempts());
     }
 
     /**
@@ -33,7 +38,7 @@ class RoomCarverTest {
     void saturatingATinyGridNeverReadsOutOfBounds() {
         GenConfig config = withGridSize(5);
         for (long seed = 0; seed < 300; seed++) {
-            RoomGrid grid = RoomCarver.carve(config, 200, 3, new SeededRng(seed));
+            RoomGrid grid = RoomCarver.carve(config, 200, 3, ALL_SHAPES, new SeededRng(seed));
             assertTrue(grid.occupiedCellCount() <= 25);
         }
     }
@@ -41,7 +46,7 @@ class RoomCarverTest {
     @Test
     void overfullTargetStopsGracefullyWhenTheGridIsFull() {
         GenConfig config = withGridSize(7);
-        RoomGrid grid = RoomCarver.carve(config, 500, 3, new SeededRng(1));
+        RoomGrid grid = RoomCarver.carve(config, 500, 3, ALL_SHAPES, new SeededRng(1));
         assertTrue(grid.occupiedCellCount() <= 49);
         assertTrue(grid.rooms().size() > 1);
     }
@@ -50,7 +55,7 @@ class RoomCarverTest {
     void carvedFloorsMeetTheirDeadEndMinimum() {
         GenConfig config = GenConfig.defaults();
         for (long seed = 0; seed < 100; seed++) {
-            RoomGrid grid = RoomCarver.carve(config, 22, 6, new SeededRng(seed));
+            RoomGrid grid = RoomCarver.carve(config, 22, 6, ALL_SHAPES, new SeededRng(seed));
             assertTrue(grid.deadEndCells().size() >= 6,
                     "seed " + seed + " has " + grid.deadEndCells().size() + " dead ends");
         }

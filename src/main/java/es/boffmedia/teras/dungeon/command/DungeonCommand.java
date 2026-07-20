@@ -64,14 +64,20 @@ public final class DungeonCommand {
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     RoomTemplates.knownPoolKeys(), builder);
 
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> PISOS =
+            (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                    es.boffmedia.teras.dungeon.piso.PisoCatalog.declared().keySet(), builder);
+
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> GEAR_IDS =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     es.boffmedia.teras.dungeon.gear.GearDefs.all().keySet(), builder);
 
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> MARKER_KINDS =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                    java.util.List.of("spawn:default", "loot:default", "boss", "trapdoor",
-                            "shopslot:1", "door:n", "challenge", "sacrifice", "arcade", "deal"),
+                    java.util.List.of("spawn", "spawn:ranged", "loot", "boss", "trapdoor",
+                            "shopslot:1", "door:n", "challenge", "sacrifice", "arcade", "deal",
+                            "nido", "ambiente", "decoracion:techo", "decoracion:suelo",
+                            "decoracion:pared"),
                     builder);
 
     @SubscribeEvent
@@ -106,6 +112,23 @@ public final class DungeonCommand {
                                                 .suggests(GEO_VARIANTS)
                                                 .executes(DungeonCommand::summonGeo))))
                         .then(Commands.literal("entrada")
+                                .then(Commands.literal("listar")
+                                        .then(Commands.argument("tipo", StringArgumentType.word())
+                                                .suggests(ROOM_TYPES)
+                                                .executes(ctx -> listRooms(ctx, null))
+                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                        .suggests(PISOS)
+                                                        .executes(ctx -> listRooms(ctx,
+                                                                StringArgumentType.getString(ctx, "piso"))))))
+                                .then(Commands.literal("borrar")
+                                        .then(Commands.argument("tipo", StringArgumentType.word())
+                                                .suggests(ROOM_TYPES)
+                                                .then(Commands.argument("variante", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> deleteRoom(ctx, null))
+                                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                                .suggests(PISOS)
+                                                                .executes(ctx -> deleteRoom(ctx,
+                                                                        StringArgumentType.getString(ctx, "piso")))))))
                                 .then(Commands.literal("marcar")
                                         .executes(ctx -> markEntrance(ctx, true)))
                                 .then(Commands.literal("quitar")
@@ -119,14 +142,55 @@ public final class DungeonCommand {
                                                                         .executes(ctx -> entranceStart(ctx,
                                                                                 BoolArgumentType.getBool(ctx, "laberinto"),
                                                                                 BoolArgumentType.getBool(ctx, "perdido")))))))))
+                        .then(Commands.literal("piso")
+                                .then(Commands.literal("listar")
+                                        .executes(DungeonCommand::listPisos))
+                                .then(Commands.literal("info")
+                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                .suggests(PISOS)
+                                                .executes(DungeonCommand::pisoInfo)))
+                                .then(Commands.literal("limpiar")
+                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                .suggests(PISOS)
+                                                .executes(DungeonCommand::purgePiso)))
+                                .then(Commands.literal("crear")
+                                        .then(Commands.argument("nuevo", StringArgumentType.word())
+                                                .then(Commands.literal("desde")
+                                                        .then(Commands.argument("origen", StringArgumentType.word())
+                                                                .suggests(PISOS)
+                                                                .executes(ctx -> createPiso(ctx, false))
+                                                                .then(Commands.literal("rehacer")
+                                                                        .executes(ctx -> createPiso(ctx, true))))))))
                         .then(Commands.literal("sala")
                                 .then(Commands.literal("editar")
                                         .then(Commands.argument("tipo", StringArgumentType.word())
                                                 .suggests(ROOM_TYPES)
-                                                .executes(ctx -> editRoom(ctx, 0))
+                                                .executes(ctx -> editRoom(ctx, 0, null))
                                                 .then(Commands.argument("variante", IntegerArgumentType.integer(0))
                                                         .executes(ctx -> editRoom(ctx,
-                                                                IntegerArgumentType.getInteger(ctx, "variante"))))))
+                                                                IntegerArgumentType.getInteger(ctx, "variante"), null))
+                                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                                .suggests(PISOS)
+                                                                .executes(ctx -> editRoom(ctx,
+                                                                        IntegerArgumentType.getInteger(ctx, "variante"),
+                                                                        StringArgumentType.getString(ctx, "piso")))))))
+                                .then(Commands.literal("listar")
+                                        .then(Commands.argument("tipo", StringArgumentType.word())
+                                                .suggests(ROOM_TYPES)
+                                                .executes(ctx -> listRooms(ctx, null))
+                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                        .suggests(PISOS)
+                                                        .executes(ctx -> listRooms(ctx,
+                                                                StringArgumentType.getString(ctx, "piso"))))))
+                                .then(Commands.literal("borrar")
+                                        .then(Commands.argument("tipo", StringArgumentType.word())
+                                                .suggests(ROOM_TYPES)
+                                                .then(Commands.argument("variante", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> deleteRoom(ctx, null))
+                                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                                .suggests(PISOS)
+                                                                .executes(ctx -> deleteRoom(ctx,
+                                                                        StringArgumentType.getString(ctx, "piso")))))))
                                 .then(Commands.literal("marcar")
                                         // greedyString: a bare string() would refuse the ':' in
                                         // "spawn:default" unless the caller remembered to quote it.
@@ -245,7 +309,9 @@ public final class DungeonCommand {
         if (mode == Mode.INSTANCE) {
             ServerPlayer player = ctx.getSource().getPlayerOrException();
             DungeonRunManager.StartOutcome outcome =
-                    DungeonRunManager.start(player, java.util.List.of(player), stage, curses, seed);
+                    DungeonRunManager.start(player, java.util.List.of(player),
+                            es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultDungeonId(),
+                            stage, curses, seed);
             if (outcome.error() != null) {
                 ctx.getSource().sendFailure(Component.literal(outcome.error()));
                 return 0;
@@ -255,13 +321,48 @@ public final class DungeonCommand {
             return 1;
         }
 
+        es.boffmedia.teras.dungeon.piso.DungeonDef dungeon =
+                es.boffmedia.teras.dungeon.piso.PisoCatalog.dungeon(
+                        es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultDungeonId());
+        if (dungeon == null || !dungeon.isValidStage(stage)) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "No hay una mazmorra con un piso " + stage + " — revisa mazmorras.json."));
+            return 0;
+        }
+        String genSeed = (seed == null || seed.isBlank())
+                ? Long.toUnsignedString(java.util.concurrent.ThreadLocalRandom.current().nextLong(), 36)
+                : seed;
+        es.boffmedia.teras.dungeon.piso.FloorPlan plan =
+                es.boffmedia.teras.dungeon.piso.FloorSelector.select(dungeon,
+                        es.boffmedia.teras.dungeon.piso.PisoCatalog.pisos(), stage, genSeed,
+                        DungeonsConfig.curseChances());
+        if (plan == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "Ningún piso utilizable para el piso " + stage + " — revisa el log."));
+            return 0;
+        }
+        java.util.Set<Curse> floorCurses = java.util.EnumSet.noneOf(Curse.class);
+        floorCurses.addAll(plan.curses());
+        floorCurses.addAll(curses);
+
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults(), stage, curses, seed);
+            layout = DungeonGenerator.generate(GenConfig.defaults(),
+                    es.boffmedia.teras.dungeon.gen.FloorDepth.of(
+                            GenConfig.defaults(), stage, dungeon.length()),
+                    floorCurses, plan.piso().shapes(), genSeed);
         } catch (DungeonGenerationException e) {
             ctx.getSource().sendFailure(Component.literal("Generación fallida: " + e.getMessage()));
             return 0;
         }
+        ctx.getSource().sendSystemMessage(Component.literal(
+                "§7Piso: §f" + plan.title() + " §7(" + plan.piso().id() + ")"));
+        // 'generar' materialises a floor without starting a run, so nothing registers it with the
+        // run engine: no doors seal, no waves spawn, and nests never hatch. Worth saying, because
+        // "I built a floor and the mechanic did nothing" is otherwise a mystery.
+        ctx.getSource().sendSystemMessage(Component.literal(
+                "§8Esto solo construye el piso. Sin run no hay combate, ni puertas, ni nidos — "
+                        + "usa 'iniciar' para jugarlo."));
 
         for (String warning : layout.warnings()) {
             ctx.getSource().sendSystemMessage(Component.literal("§eAviso: " + warning));
@@ -274,7 +375,7 @@ public final class DungeonCommand {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ServerLevel level = player.serverLevel();
         BlockPos origin = player.blockPosition();
-        int id = DungeonMaterializer.enqueueBuild(level, layout, origin, built -> {
+        int id = DungeonMaterializer.enqueueBuild(level, layout, plan.piso(), origin, built -> {
             BlockPos start = built.roomCenter(built.layout().start());
             player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
@@ -479,10 +580,186 @@ public final class DungeonCommand {
 
     // --- the room editor: every handler is a thin shell over RoomEditor's error-or-null API ------
 
-    private static int editRoom(CommandContext<CommandSourceStack> ctx, int variant)
+    private static int editRoom(CommandContext<CommandSourceStack> ctx, int variant, String piso)
             throws CommandSyntaxException {
         return editorCall(ctx, RoomEditor.start(ctx.getSource().getPlayerOrException(),
-                StringArgumentType.getString(ctx, "tipo"), variant));
+                StringArgumentType.getString(ctx, "tipo"), variant, piso));
+    }
+
+    /** The variants of one room key, with the indices {@code sala editar} and {@code borrar} take. */
+    private static int listRooms(CommandContext<CommandSourceStack> ctx, String pisoArg) {
+        String type = StringArgumentType.getString(ctx, "tipo");
+        String pisoId = pisoArg == null || pisoArg.isBlank()
+                ? es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultPisoId() : pisoArg;
+        var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(pisoId);
+        if (piso == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el piso '" + pisoId + "'."));
+            return 0;
+        }
+        var pool = RoomTemplates.pool(piso, type);
+        ctx.getSource().sendSuccess(() -> Component.literal("§7" + pisoId + " · §e" + type
+                + " §7(" + pool.size() + ")"), false);
+        for (int i = 0; i < pool.size(); i++) {
+            var entry = pool.get(i);
+            String rotation = entry.rotation() == net.minecraft.world.level.block.Rotation.NONE
+                    ? "" : " §8rot " + entry.rotation();
+            String line = "  §7[" + i + "] §f" + entry.template()
+                    + " §7peso " + entry.weight() + rotation;
+            ctx.getSource().sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
+    private static int deleteRoom(CommandContext<CommandSourceStack> ctx, String pisoArg) {
+        String type = StringArgumentType.getString(ctx, "tipo");
+        int variant = IntegerArgumentType.getInteger(ctx, "variante");
+        String pisoId = pisoArg == null || pisoArg.isBlank()
+                ? es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultPisoId() : pisoArg;
+        String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.removeVariant(pisoId, type, variant);
+        if (error != null) {
+            ctx.getSource().sendFailure(Component.literal(error));
+            return 0;
+        }
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
+                ctx.getSource().getServer().getStructureManager());
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§aVariante " + variant + " de '" + type + "' borrada de " + pisoId + "."), false);
+        return 1;
+    }
+
+    /**
+     * Deletes a piso's generated overrides so the jar's shipped rooms take over. The only way out of
+     * "the mod updated but the rooms did not" — {@code generated} shadows the jar, invisibly.
+     */
+    private static int purgePiso(CommandContext<CommandSourceStack> ctx) {
+        String id = StringArgumentType.getString(ctx, "piso");
+        var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(id);
+        if (piso == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el piso '" + id + "'."));
+            return 0;
+        }
+        var result = es.boffmedia.teras.dungeon.build.PisoAuthoring.purgeGenerated(
+                ctx.getSource().getServer(), piso);
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
+                ctx.getSource().getServer().getStructureManager());
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + id + ": " + result.copied()
+                + " plantillas locales borradas; vuelven a usarse las del mod."), false);
+        if (!result.ok()) {
+            ctx.getSource().sendSystemMessage(Component.literal(
+                    "§cNo se pudieron borrar: " + String.join(", ", result.failed())));
+        }
+        return 1;
+    }
+
+    /** Every piso and whether it can actually build a floor. */
+    private static int listPisos(CommandContext<CommandSourceStack> ctx) {
+        var declared = es.boffmedia.teras.dungeon.piso.PisoCatalog.declared();
+        if (declared.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("No hay pisos definidos."));
+            return 0;
+        }
+        for (var piso : declared.values()) {
+            boolean usable = es.boffmedia.teras.dungeon.piso.PisoCatalog.isUsable(piso.id());
+            int owed = piso.requiredRooms().size();
+            int missing = es.boffmedia.teras.dungeon.piso.PisoCatalog.missingRooms(piso.id()).size();
+            String line = (usable ? "§a✔ " : "§c✘ ") + piso.id() + " §7— " + piso.nombre()
+                    + " · " + piso.formas().size() + " formas · " + (owed - missing) + "/" + owed
+                    + " salas" + (usable ? "" : " §c(no se puede seleccionar)");
+            ctx.getSource().sendSuccess(() -> Component.literal(line), false);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§8'piso info <id>' lista las salas que faltan."), false);
+        return 1;
+    }
+
+    /** What one piso is and, when it cannot build, exactly which rooms it still owes. */
+    private static int pisoInfo(CommandContext<CommandSourceStack> ctx) {
+        String id = StringArgumentType.getString(ctx, "piso");
+        var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(id);
+        if (piso == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el piso '" + id + "'."));
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§e" + piso.id() + " §7— " + piso.nombre()
+                + (piso.subtitulo().isBlank() ? "" : " · §o" + piso.subtitulo())), false);
+        ctx.getSource().sendSuccess(() -> Component.literal("§7formas: §f"
+                + piso.formas().stream().map(Enum::name).sorted().toList()), false);
+        ctx.getSource().sendSuccess(() -> Component.literal("§7maldiciones: §f"
+                + piso.maldiciones().stream().map(Enum::name).sorted().toList()
+                + " §7· luz §f" + piso.luz()
+                + (piso.mecanica().isBlank() ? "" : " §7· mecánica §f" + piso.mecanica())), false);
+        java.util.List<String> wrongSize =
+                es.boffmedia.teras.dungeon.piso.PisoCatalog.mismatchedRooms(id);
+        if (!wrongSize.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§c" + wrongSize.size()
+                    + " plantilla(s) con tamaño equivocado — config.yml desfasado o copias locales "
+                    + "viejas. 'piso limpiar " + id + "' borra las locales:"), false);
+            for (String line : wrongSize) {
+                ctx.getSource().sendSuccess(() -> Component.literal("  §7" + line), false);
+            }
+        }
+        java.util.List<String> missing =
+                es.boffmedia.teras.dungeon.piso.PisoCatalog.missingRooms(id);
+        if (missing.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§aTiene sus "
+                    + piso.requiredRooms().size() + " salas."), false);
+            return 1;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§cLe faltan " + missing.size()
+                + " de " + piso.requiredRooms().size() + " salas:"), false);
+        for (String room : missing) {
+            ctx.getSource().sendSuccess(() -> Component.literal("  §7" + room), false);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§8'piso crear " + id + " desde <otro>' las copia para empezar."), false);
+        return 1;
+    }
+
+    /**
+     * Stamps a piso out of another: writes its config if absent, then copies every room it owes as
+     * a real file. The copy is an authoring step, not a link — the two are unrelated afterwards.
+     */
+    private static int createPiso(CommandContext<CommandSourceStack> ctx, boolean overwrite) {
+        String newId = StringArgumentType.getString(ctx, "nuevo");
+        String sourceId = StringArgumentType.getString(ctx, "origen");
+        var source = es.boffmedia.teras.dungeon.piso.PisoCatalog.piso(sourceId);
+        if (source == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "El piso origen '" + sourceId + "' no existe o no tiene sus salas."));
+            return 0;
+        }
+        String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.createFrom(newId, source);
+        if (error != null) {
+            ctx.getSource().sendFailure(Component.literal(error));
+            return 0;
+        }
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.load();
+        var target = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(newId);
+        if (target == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "Se escribió el piso pero no se pudo releer — revisa el log."));
+            return 0;
+        }
+        var result = es.boffmedia.teras.dungeon.build.PisoAuthoring.copyRooms(
+                ctx.getSource().getServer(), source, target, overwrite);
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
+                ctx.getSource().getServer().getStructureManager());
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + newId + ": " + result.copied()
+                + " salas copiadas de " + sourceId + (overwrite ? " (rehechas)." : ".")), false);
+        if (!overwrite && result.copied() == 0) {
+            ctx.getSource().sendSystemMessage(Component.literal(
+                    "§7Ya tenía todas sus salas; nada que copiar. Usa '… desde " + sourceId
+                            + " rehacer' para reemplazarlas por las actuales."));
+        }
+        if (!result.ok()) {
+            ctx.getSource().sendSystemMessage(Component.literal(
+                    "§cNo se pudieron copiar: " + String.join(", ", result.failed())));
+        }
+        boolean usable = es.boffmedia.teras.dungeon.piso.PisoCatalog.isUsable(newId);
+        ctx.getSource().sendSuccess(() -> Component.literal(usable
+                ? "§7Ya es seleccionable. Edítalo con 'sala editar <tipo> 0 " + newId + "'."
+                : "§eAún le faltan salas — 'piso info " + newId + "'."), false);
+        return 1;
     }
 
     private static int markRoom(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -509,7 +786,9 @@ public final class DungeonCommand {
 
     private static int reload(CommandContext<CommandSourceStack> ctx) {
         DungeonsConfig.load();
-        RoomTemplates.load();
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.load();
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
+                ctx.getSource().getServer().getStructureManager());
         es.boffmedia.teras.dungeon.encounter.SpawnTables.load();
         es.boffmedia.teras.dungeon.gear.GearConfig.load();
         ctx.getSource().sendSuccess(() ->

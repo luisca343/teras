@@ -19,7 +19,7 @@ class RoomTargetsTest {
 
     private void assertTargetAlwaysIn(int stage, Set<Curse> curses, Set<Integer> expected) {
         for (long seed = 0; seed < 200; seed++) {
-            int target = DungeonGenerator.targetCells(config, stage, curses, new SeededRng(seed));
+            int target = DungeonGenerator.targetCells(config, FloorDepth.of(config, stage), curses, new SeededRng(seed));
             assertTrue(expected.contains(target),
                     "stage " + stage + " curses " + curses + " produced " + target);
         }
@@ -53,10 +53,10 @@ class RoomTargetsTest {
 
     @Test
     void deadEndMinimumsMatchLegacyRules() {
-        assertEquals(5, DungeonGenerator.minDeadEnds(config, 1, Set.of()));
-        assertEquals(6, DungeonGenerator.minDeadEnds(config, 3, Set.of()));
-        assertEquals(7, DungeonGenerator.minDeadEnds(config, 3, Set.of(Curse.LABYRINTH)));
-        assertEquals(8, DungeonGenerator.minDeadEnds(config, 12, Set.of()));
-        assertEquals(9, DungeonGenerator.minDeadEnds(config, 12, Set.of(Curse.LABYRINTH)));
+        assertEquals(5, DungeonGenerator.minDeadEnds(config, FloorDepth.of(config, 1), Set.of()));
+        assertEquals(6, DungeonGenerator.minDeadEnds(config, FloorDepth.of(config, 3), Set.of()));
+        assertEquals(7, DungeonGenerator.minDeadEnds(config, FloorDepth.of(config, 3), Set.of(Curse.LABYRINTH)));
+        assertEquals(8, DungeonGenerator.minDeadEnds(config, FloorDepth.of(config, 12), Set.of()));
+        assertEquals(9, DungeonGenerator.minDeadEnds(config, FloorDepth.of(config, 12), Set.of(Curse.LABYRINTH)));
     }
 }

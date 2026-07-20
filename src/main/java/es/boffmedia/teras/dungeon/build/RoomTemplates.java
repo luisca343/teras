@@ -1,265 +1,171 @@
 package es.boffmedia.teras.dungeon.build;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.dungeon.model.DungeonSeeds;
 import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomShape;
+import es.boffmedia.teras.dungeon.model.ShapeFamily;
 import es.boffmedia.teras.dungeon.model.SeededRng;
+import es.boffmedia.teras.dungeon.piso.FloorDef;
+import es.boffmedia.teras.dungeon.piso.RoomKeys;
+import es.boffmedia.teras.dungeon.piso.RoomVariant;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Rotation;
-import net.neoforged.fml.loading.FMLPaths;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.io.Reader;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /**
- * Weighted room-template pools per theme, from {@code config/teras/dungeons/rooms.json}. Every
- * pool key a theme does not define inherits the built-in {@code base} pool (which points at the
- * templates shipped in the mod jar), so selection always resolves — the legacy paster had exactly
- * one loose schematic file per type and crashed the build when one was missing on disk.
+ * Resolves a room to the template a <b>piso</b> supplies for it.
+ *
+ * <p>This replaced a theme-keyed pool map whose every lookup fell back to a {@code base} theme.
+ * That fallback was the whole problem: it meant a "theme" could declare nothing and still build a
+ * floor out of another theme's rooms, so every place was structurally identical by construction.
+ * <b>There is no fallback here.</b> A piso resolves its own rooms or it is not usable, which is
+ * caught at load by {@link #missingTemplates} rather than mid-build.</p>
  *
  * <p>Selection is derived from the layout's base seed and the room's placement index, never from
  * world randomness: the same seed rebuilds the same floor down to each room's variant.</p>
- *
- * <p>Server admins add or replace templates with datapacks or the world's {@code generated}
- * structure folder (where in-game structure blocks save), then point entries here at them.
- * An entry's {@code rotation} (0/90/180/270) reuses one template for several orientations.</p>
  */
 public final class RoomTemplates {
     private RoomTemplates() {}
 
     public record TemplateEntry(ResourceLocation template, int weight, Rotation rotation) {}
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static Map<String, Map<String, List<TemplateEntry>>> themes = new LinkedHashMap<>();
-
-    public static void load() {
-        themes = new LinkedHashMap<>();
-        themes.put("base", builtInBase());
-        Path path = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons").resolve("rooms.json");
-        try {
-            if (!Files.exists(path)) {
-                Files.createDirectories(path.getParent());
-                Files.writeString(path, GSON.toJson(render(builtInBase())));
-                Teras.LOGGER.info("Dungeons: created default {}", path);
-                return;
-            }
-            JsonObject root;
-            try (Reader reader = Files.newBufferedReader(path)) {
-                root = GSON.fromJson(reader, JsonObject.class);
-            }
-            for (String theme : root.keySet()) {
-                Map<String, List<TemplateEntry>> pools =
-                        themes.computeIfAbsent(theme, t -> new LinkedHashMap<>(builtInBase()));
-                JsonObject themeJson = root.getAsJsonObject(theme);
-                for (String key : themeJson.keySet()) {
-                    List<TemplateEntry> entries = readPool(themeJson.get(key));
-                    if (!entries.isEmpty()) {
-                        pools.put(key, entries);
-                    }
-                }
-            }
-            Teras.LOGGER.info("Dungeons: room pools loaded from {} ({} themes)", path, themes.size());
-        } catch (Exception e) {
-            Teras.LOGGER.warn("Dungeons: failed to load rooms.json, using built-ins: {}", e.toString());
-        }
+    /**
+     * The room key a room draws from — its type plus its shape <b>family</b>, never its orientation.
+     * A vertical 2×1 and a horizontal one resolve to the same {@code _large} template; the four L
+     * orientations resolve to the same {@code _l} one.
+     *
+     * <p>No chain of fallbacks: a 2×2 boss room asks for {@code boss_big} and gets it or nothing,
+     * because a piso declaring BIG is <i>required</i> to have authored it. Settling for a
+     * differently-furnished room of the right footprint was only ever needed because themes could
+     * be incomplete.</p>
+     */
+    public static String keyFor(Room room) {
+        String type = room.type().name().toLowerCase(Locale.ROOT);
+        return RoomKeys.keyFor(type, room.shape());
     }
 
-    /** Deterministic weighted pick for a room; {@code roomIndex} is its position in placement order. */
-    public static TemplateEntry select(String theme, Room room, long baseSeed, int roomIndex) {
-        Map<String, List<TemplateEntry>> pools = themes.getOrDefault(theme, themes.get("base"));
-        Map<String, List<TemplateEntry>> base = themes.get("base");
-        List<TemplateEntry> pool = null;
-        for (String key : poolKeys(room)) {
-            pool = firstNonEmpty(pools.get(key), base.get(key));
-            if (pool != null) {
+    /**
+     * Deterministic weighted pick for a room; {@code roomIndex} is its position in placement order.
+     *
+     * <p>Draws are independent per room, which is fine while a piso ships one template per key. Once
+     * pools carry several, this wants memory instead — independent weighted rolls put the same room
+     * down four times in a row often enough to read as no variety at all (see DUNGEONS.md §11).</p>
+     */
+    public static TemplateEntry select(FloorDef piso, Room room, long baseSeed, int roomIndex) {
+        List<RoomVariant> variants = piso.variants(keyFor(room));
+        SeededRng rng = new SeededRng(DungeonSeeds.derive(baseSeed, 0x726F6F6DL + roomIndex));
+        int total = variants.stream().mapToInt(RoomVariant::weight).sum();
+        int roll = rng.between(1, Math.max(1, total));
+        RoomVariant chosen = variants.get(variants.size() - 1);
+        for (RoomVariant variant : variants) {
+            roll -= variant.weight();
+            if (roll <= 0) {
+                chosen = variant;
                 break;
             }
         }
-        if (pool == null) {
-            // Never throw for a missing pool. The exception would be swallowed by the materializer's
-            // job loop, which drops the build — leaving the run waiting on a floor that never lands.
-            Teras.LOGGER.error("Dungeons: no template pool for {} — falling back to the plain room", room);
-            pool = base.get("normal");
-        }
-        SeededRng rng = new SeededRng(DungeonSeeds.derive(baseSeed, 0x726F6F6DL + roomIndex));
-        int total = pool.stream().mapToInt(TemplateEntry::weight).sum();
-        int roll = rng.between(1, Math.max(1, total));
-        for (TemplateEntry entry : pool) {
-            roll -= entry.weight();
-            if (roll <= 0) {
-                return entry;
-            }
-        }
-        return pool.get(pool.size() - 1);
-    }
-
-    /** Every pool key the built-in base theme defines — the room-type vocabulary, for the editor. */
-    public static List<String> knownPoolKeys() {
-        return List.copyOf(builtInBase().keySet());
+        // The shape's own turn, plus whatever the variant asked for on top. This is what lets one
+        // authored L serve all four orientations and one 2x1 serve both.
+        return entry(chosen, room.shape().baseRotation());
     }
 
     /**
-     * The resolved pool for one key: the theme's entries, else the base theme's, else empty.
-     * The room editor uses this to offer variants; {@link #select} keeps its own resolution
-     * because it also falls across {@link #poolKeys} shape fallbacks.
+     * Every variant of one key, unrotated — the editor pastes and saves templates in the orientation
+     * they are authored in, so showing them turned would bake a rotation into the next save.
      */
-    public static List<TemplateEntry> pool(String theme, String poolKey) {
-        Map<String, List<TemplateEntry>> pools = themes.getOrDefault(theme, themes.get("base"));
-        List<TemplateEntry> entries = pools.get(poolKey);
-        if (entries == null || entries.isEmpty()) {
-            entries = themes.get("base").get(poolKey);
-        }
-        return entries == null ? List.of() : List.copyOf(entries);
-    }
-
-    /**
-     * Appends a template to a pool in {@code rooms.json} and reloads. Used by the room editor's
-     * save-as-variant: the new room becomes one more weighted pick alongside what was there.
-     *
-     * <p>When the file's theme lacks the pool key entirely, the pool is seeded from the built-in
-     * base first — {@code load()} treats a present-but-partial theme as "inherit the rest from
-     * base", so writing a one-entry array would silently drop the shipped room from selection.</p>
-     */
-    public static boolean addTemplate(String theme, String poolKey, ResourceLocation template, int weight) {
-        Path path = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons").resolve("rooms.json");
-        try {
-            JsonObject root;
-            if (Files.exists(path)) {
-                try (Reader reader = Files.newBufferedReader(path)) {
-                    root = GSON.fromJson(reader, JsonObject.class);
-                }
-                if (root == null) {
-                    root = render(builtInBase());
-                }
-            } else {
-                root = render(builtInBase());
-            }
-            JsonObject themeJson = root.has(theme) ? root.getAsJsonObject(theme) : new JsonObject();
-            root.add(theme, themeJson);
-            JsonArray pool = themeJson.has(poolKey) ? themeJson.getAsJsonArray(poolKey) : null;
-            if (pool == null) {
-                pool = new JsonArray();
-                for (TemplateEntry builtin : builtInBase().getOrDefault(poolKey, List.of())) {
-                    JsonObject obj = new JsonObject();
-                    obj.addProperty("template", builtin.template().toString());
-                    obj.addProperty("weight", builtin.weight());
-                    pool.add(obj);
-                }
-                themeJson.add(poolKey, pool);
-            }
-            JsonObject entry = new JsonObject();
-            entry.addProperty("template", template.toString());
-            entry.addProperty("weight", Math.max(1, weight));
-            pool.add(entry);
-            Files.createDirectories(path.getParent());
-            Files.writeString(path, GSON.toJson(root));
-            load();
-            return true;
-        } catch (Exception e) {
-            Teras.LOGGER.error("Dungeons: could not register template {} in rooms.json: {}",
-                    template, e.toString());
-            return false;
-        }
-    }
-
-    /**
-     * Preferred pool first, then the fallbacks that still cover the room's footprint: a 2×2 boss
-     * asks for {@code boss_quad} and settles for {@code normal_quad}, which is the wrong furniture
-     * but the right shape. Singles pool by type alone.
-     *
-     * <p>For every room the carver produces on its own this is unchanged — large rooms are always
-     * NORMAL, so the preferred key is already {@code normal_<shape>}.</p>
-     */
-    static List<String> poolKeys(Room room) {
-        String type = room.type().name().toLowerCase(Locale.ROOT);
-        if (room.shape() == RoomShape.SINGLE) {
-            // "normal" last: a room type whose template has not been authored yet still gets a
-            // playable cell rather than a hole in the floor. Its fixtures fall back to the room
-            // centre and log, so the gap is loud without being fatal.
-            return List.of(type, "normal");
-        }
-        String shape = room.shape().name().toLowerCase(Locale.ROOT);
-        return List.of(type + "_" + shape, "normal_" + shape);
-    }
-
-    private static List<TemplateEntry> firstNonEmpty(List<TemplateEntry> preferred,
-                                                     List<TemplateEntry> fallback) {
-        if (preferred != null && !preferred.isEmpty()) {
-            return preferred;
-        }
-        return fallback != null && !fallback.isEmpty() ? fallback : null;
-    }
-
-    private static List<TemplateEntry> readPool(JsonElement pool) {
+    public static List<TemplateEntry> pool(FloorDef piso, String roomKey) {
         List<TemplateEntry> entries = new ArrayList<>();
-        if (!pool.isJsonArray()) {
-            return entries;
-        }
-        for (JsonElement element : pool.getAsJsonArray()) {
-            try {
-                JsonObject obj = element.getAsJsonObject();
-                ResourceLocation template = ResourceLocation.parse(obj.get("template").getAsString());
-                int weight = obj.has("weight") ? Math.max(1, obj.get("weight").getAsInt()) : 1;
-                Rotation rotation = parseRotation(obj.has("rotation") ? obj.get("rotation").getAsInt() : 0);
-                entries.add(new TemplateEntry(template, weight, rotation));
-            } catch (Exception e) {
-                Teras.LOGGER.warn("Dungeons: skipping bad rooms.json entry {}: {}", element, e.toString());
-            }
+        for (RoomVariant variant : piso.variants(roomKey)) {
+            entries.add(entry(variant, 0));
         }
         return entries;
     }
 
-    private static Rotation parseRotation(int degrees) {
+    /**
+     * The templates this piso names that do not exist, as {@code key -> template} strings. Empty
+     * means the piso can build every room it might be asked for.
+     *
+     * <p>Run once at server start, because it is the only check that needs the game: a piso passes
+     * its structural validation with ids that resolve to nothing on disk.</p>
+     */
+    public static List<String> missingTemplates(FloorDef piso, StructureTemplateManager manager) {
+        List<String> missing = new ArrayList<>();
+        for (String key : piso.requiredRooms()) {
+            for (RoomVariant variant : piso.variants(key)) {
+                ResourceLocation id = ResourceLocation.tryParse(variant.template());
+                if (id == null || manager.get(id).isEmpty()) {
+                    missing.add(key + " -> " + variant.template());
+                }
+            }
+        }
+        return missing;
+    }
+
+    /**
+     * Templates whose actual size disagrees with the configured cell, as human-readable lines.
+     *
+     * <p>The size a room was authored at is baked into its {@code .nbt}; the size a cell is comes
+     * from {@code config.yml}. Nothing ties them together, and both drift independently — a config
+     * file written before {@code alturaSala} changed keeps its old value forever (a default only
+     * applies to a file that does not exist yet), and a template copied into the world's
+     * {@code generated} folder keeps its old geometry and takes precedence over the jar.</p>
+     *
+     * <p>Either way the floor still builds, just wrongly: ceilings at the wrong height, and a
+     * discard that clears the configured height and leaves whatever stood above it. Loud, and not
+     * fatal — dropping the piso would take the whole dungeon offline over something an admin can
+     * fix in one line.</p>
+     */
+    public static List<String> mismatchedTemplates(FloorDef piso, StructureTemplateManager manager,
+                                                   int roomSize, int roomHeight) {
+        List<String> wrong = new ArrayList<>();
+        for (String key : piso.requiredRooms()) {
+            RoomShape shape = RoomKeys.shapeFor(key);
+            int wantX = shape.cellsWide() * roomSize;
+            int wantZ = shape.cellsDeep() * roomSize;
+            for (RoomVariant variant : piso.variants(key)) {
+                ResourceLocation id = ResourceLocation.tryParse(variant.template());
+                StructureTemplate template = id == null ? null : manager.get(id).orElse(null);
+                if (template == null) {
+                    continue;
+                }
+                var size = template.getSize();
+                if (size.getX() != wantX || size.getY() != roomHeight || size.getZ() != wantZ) {
+                    wrong.add(variant.template() + " is " + size.getX() + "x" + size.getY() + "x"
+                            + size.getZ() + " but the cell is " + wantX + "x" + roomHeight + "x"
+                            + wantZ);
+                }
+            }
+        }
+        return wrong;
+    }
+
+    /** Every room key in the vocabulary, for command completion. */
+    public static List<String> knownPoolKeys() {
+        return List.copyOf(RoomKeys.requiredFor(java.util.EnumSet.allOf(ShapeFamily.class)));
+    }
+
+    private static TemplateEntry entry(RoomVariant variant, int extraDegrees) {
+        ResourceLocation id = ResourceLocation.tryParse(variant.template());
+        if (id == null) {
+            Teras.LOGGER.error("Dungeons: '{}' is not a valid template id", variant.template());
+            id = ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon/missing");
+        }
+        return new TemplateEntry(id, variant.weight(),
+                rotation((variant.rotation() + extraDegrees) % 360));
+    }
+
+    private static Rotation rotation(int degrees) {
         return switch (degrees) {
             case 90 -> Rotation.CLOCKWISE_90;
             case 180 -> Rotation.CLOCKWISE_180;
             case 270 -> Rotation.COUNTERCLOCKWISE_90;
             default -> Rotation.NONE;
         };
-    }
-
-    private static JsonObject render(Map<String, List<TemplateEntry>> base) {
-        JsonObject root = new JsonObject();
-        JsonObject theme = new JsonObject();
-        for (Map.Entry<String, List<TemplateEntry>> pool : base.entrySet()) {
-            JsonArray entries = new JsonArray();
-            for (TemplateEntry entry : pool.getValue()) {
-                JsonObject obj = new JsonObject();
-                obj.addProperty("template", entry.template().toString());
-                obj.addProperty("weight", entry.weight());
-                entries.add(obj);
-            }
-            theme.add(pool.getKey(), entries);
-        }
-        root.add("base", theme);
-        return root;
-    }
-
-    private static Map<String, List<TemplateEntry>> builtInBase() {
-        Map<String, List<TemplateEntry>> pools = new LinkedHashMap<>();
-        for (String name : new String[] {
-                "start", "normal", "boss", "boss_quad", "mini_boss", "shop", "treasure",
-                "secret", "super_secret", "challenge", "curse",
-                "sacrifice", "arcade", "devil_deal",
-                "normal_horizontal", "normal_vertical", "normal_quad",
-                "normal_l_top_left", "normal_l_top_right",
-                "normal_l_bottom_left", "normal_l_bottom_right"}) {
-            pools.put(name, List.of(new TemplateEntry(
-                    ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon/base/" + name),
-                    1, Rotation.NONE)));
-        }
-        return pools;
     }
 }

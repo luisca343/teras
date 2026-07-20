@@ -5,6 +5,11 @@ package es.boffmedia.teras.dungeon.gen;
  * numbers are the legacy values (which are Isaac's), except {@code largeShapeDecay}: the legacy
  * "normalization" divided large-shape odds by an accidental {@code largeSum + 1.0} on top of
  * halving them; the decay factor is that intent made explicit.
+ *
+ * <p>{@code referenceLength} was {@code finalStage} while every run was twelve floors. It is no
+ * longer "the last floor" — a dungeon declares its own length from its tramos — but the length the
+ * room-count and difficulty curves are <i>authored against</i>. {@link FloorDepth} maps a floor of
+ * any dungeon onto it.</p>
  */
 public record GenConfig(
         int gridSize,
@@ -24,7 +29,7 @@ public record GenConfig(
         double labyrinthMultiplier,
         int labyrinthRoomCap,
         int lostRoomBonus,
-        int finalStage,
+        int referenceLength,
         int finalStageRooms,
         int maxAttempts) {
 
@@ -48,9 +53,5 @@ public record GenConfig(
                 1.8, 45, 4,
                 12, 50,
                 20);
-    }
-
-    public boolean isValidStage(int stage) {
-        return stage >= 1 && stage <= finalStage;
     }
 }

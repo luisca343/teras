@@ -105,7 +105,7 @@ class GenerationInvariantsTest {
         assertTrue(distanceTo(distances, boss) >= distanceTo(distances, treasure),
                 context + ": treasure farther than boss");
 
-        int minDeadEnds = DungeonGenerator.minDeadEnds(CONFIG, stage, curses);
+        int minDeadEnds = DungeonGenerator.minDeadEnds(CONFIG, FloorDepth.of(CONFIG, stage), curses);
         assertTrue(layout.grid().deadEndCells().size() >= minDeadEnds,
                 context + ": only " + layout.grid().deadEndCells().size() + " dead ends");
 

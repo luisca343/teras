@@ -33,7 +33,21 @@ public final class DungeonRun {
 
     private final int id;
     private final int slot;
-    private final Set<Curse> curses;
+    private final String dungeonId;
+    /**
+     * Curses are per floor now, not per run: a piso declares which it accepts, so a run that fixed
+     * them at the start could hand LABYRINTH to a piso whose two shapes would sprawl to the room cap
+     * in one repeated footprint. This is the <i>current</i> floor's set.
+     */
+    private Set<Curse> curses;
+    /**
+     * What the current floor <i>is</i>: its piso, its depth in the tramo, its difficulty. Held on
+     * the run so everything downstream — the title card, spawn tables, the mechanic — reads one
+     * decided answer instead of re-deriving it and risking a different one.
+     */
+    private es.boffmedia.teras.dungeon.piso.FloorPlan plan;
+    /** Every curse this run has met, for the end-of-run report, which is about the run not a floor. */
+    private final Set<Curse> cursesSeen = java.util.EnumSet.noneOf(Curse.class);
     private final Map<UUID, ReturnPoint> party = new LinkedHashMap<>();
     /**
      * The purse is the run's, not a player's: it outlives every floor (each stage rebuilds the
@@ -57,13 +71,32 @@ public final class DungeonRun {
     private int builtId = -1;
     private int padIndex;
 
-    public DungeonRun(int id, int slot, int stage, Set<Curse> curses, DungeonLayout layout) {
+    public DungeonRun(int id, int slot, String dungeonId, int stage,
+                      es.boffmedia.teras.dungeon.piso.FloorPlan plan, DungeonLayout layout) {
         this.id = id;
         this.slot = slot;
+        this.dungeonId = dungeonId;
         this.stage = stage;
         this.startStage = stage;
-        this.curses = curses;
+        this.plan = plan;
+        this.curses = plan.curses();
+        this.cursesSeen.addAll(plan.curses());
         this.layout = layout;
+    }
+
+    /** What the current floor is. */
+    public es.boffmedia.teras.dungeon.piso.FloorPlan plan() {
+        return plan;
+    }
+
+    /** Which mazmorra this run is descending — its length is what decides when the run is over. */
+    public String dungeonId() {
+        return dungeonId;
+    }
+
+    /** Everything this run has been cursed with, across every floor. */
+    public Set<Curse> cursesSeen() {
+        return cursesSeen;
     }
 
     public long startedAtMs() {
@@ -161,6 +194,13 @@ public final class DungeonRun {
     /** The next floor started building; the run is in transit until {@link #advanceFloor}. */
     public void beginAdvance() {
         this.state = State.BUILDING;
+    }
+
+    /** The floor now being entered; its curses fold into {@link #cursesSeen()} for the report. */
+    public void enterFloor(es.boffmedia.teras.dungeon.piso.FloorPlan next) {
+        this.plan = next;
+        this.curses = next.curses();
+        this.cursesSeen.addAll(next.curses());
     }
 
     public void advanceFloor(int stage, DungeonLayout layout, int builtId, int padIndex) {

@@ -28,5 +28,9 @@ public final class DungeonClientSetup {
     @SubscribeEvent
     public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(EntityInit.DUNGEON_ENEMY.get(), DungeonGeoEnemyRenderer::new);
+        // Bolts render as a thrown item — no model to author, and the two kinds read apart by the
+        // item they borrow.
+        event.registerEntityRenderer(EntityInit.DUNGEON_BOLT.get(),
+                ctx -> new net.minecraft.client.renderer.entity.ThrownItemRenderer<>(ctx, 1.0f, false));
     }
 }

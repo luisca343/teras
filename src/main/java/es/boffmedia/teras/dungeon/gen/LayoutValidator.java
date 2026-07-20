@@ -32,12 +32,12 @@ final class LayoutValidator {
         }
     }
 
-    static Result validate(RoomGrid grid, GenConfig config, int stage,
+    static Result validate(RoomGrid grid, GenConfig config, FloorDepth depth,
                            int targetCells, int minDeadEnds) {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
-        checkCounts(grid, errors, warnings, stage, config);
+        checkCounts(grid, errors, warnings, depth, config);
         checkShapes(grid, errors);
         checkBossEntrance(grid, errors);
         checkConnectivity(grid, errors);
@@ -53,7 +53,7 @@ final class LayoutValidator {
     }
 
     private static void checkCounts(RoomGrid grid, List<String> errors, List<String> warnings,
-                                    int stage, GenConfig config) {
+                                    FloorDepth depth, GenConfig config) {
         int starts = 0;
         int bosses = 0;
         int shops = 0;
@@ -89,7 +89,7 @@ final class LayoutValidator {
         if (!superSecret) {
             warnings.add("Missing SUPER_SECRET room");
         }
-        if (stage == config.finalStage() && !challenge) {
+        if (depth.isFinal() && !challenge) {
             warnings.add("Final stage without CHALLENGE room");
         }
     }
