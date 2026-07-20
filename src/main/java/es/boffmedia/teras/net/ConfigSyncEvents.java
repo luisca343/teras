@@ -11,7 +11,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  * (see {@link ServerConfigPayload}). Sending at login rather than on demand means the SmartRotom's
  * home is already known by the time the item can be held.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class ConfigSyncEvents {
     private ConfigSyncEvents() {}
 

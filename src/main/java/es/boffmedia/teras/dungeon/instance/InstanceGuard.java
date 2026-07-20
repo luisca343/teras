@@ -27,7 +27,7 @@ import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
  * to join the level, and none of them can join a floor. Only mobs are refused — item drops,
  * projectiles, XP orbs and players are untouched.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class InstanceGuard {
     private InstanceGuard() {}
 

@@ -31,7 +31,7 @@ import java.util.UUID;
  *
  * <p>On {@link ServerStartedEvent} everything still listed is culled.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RaceVehicleLedger {
     private RaceVehicleLedger() {}
 

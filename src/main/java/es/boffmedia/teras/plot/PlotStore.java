@@ -33,7 +33,7 @@ import java.util.UUID;
  * unenforced, and then loudly, because with no ownership data at all there is no way to tell a
  * plot from a town.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class PlotStore {
     private PlotStore() {}
 

@@ -15,7 +15,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
  * expensive parts — recomputing standings, refreshing the HUD — have their own counters inside
  * {@link RaceCore}, so the per-tick work is a position read and a segment test per racer.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RaceEngine {
     private RaceEngine() {}
 

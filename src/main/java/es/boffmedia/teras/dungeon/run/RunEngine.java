@@ -65,7 +65,7 @@ import java.util.UUID;
  * below floor level and advanced to the next stage. Player deaths respawn at the floor's start
  * room with the configured money penalty.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RunEngine {
     private RunEngine() {}
 

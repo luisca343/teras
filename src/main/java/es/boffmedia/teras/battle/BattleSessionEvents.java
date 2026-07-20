@@ -13,7 +13,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  * battle event rather than by time, so an entry left by a mid-battle disconnect would silently apply
  * to an unrelated later battle instead of surfacing as an error.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class BattleSessionEvents {
     private BattleSessionEvents() {}
 

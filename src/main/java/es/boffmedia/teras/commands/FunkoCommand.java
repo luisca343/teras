@@ -29,7 +29,7 @@ import java.util.Optional;
  * stored in data components &mdash; the same mechanism vanilla now uses for
  * {@code player_head[profile=...]}. Placing it transfers the skin to the block.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class FunkoCommand {
     private FunkoCommand() {}
 

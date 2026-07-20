@@ -46,7 +46,7 @@ import java.util.function.Consumer;
  * <p>Discards clear one cell box per tick from the recorded footprint. Neither build nor discard
  * state survives a restart in this stage; the instance journal is stage 3 (DUNGEONS.md §11).</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonMaterializer {
     private DungeonMaterializer() {}
 

@@ -13,7 +13,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * after each {@code /teras region} mutation. Always sent — an empty array is how a client learns
  * the last region was deleted.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RegionSyncEvents {
     private RegionSyncEvents() {}
 

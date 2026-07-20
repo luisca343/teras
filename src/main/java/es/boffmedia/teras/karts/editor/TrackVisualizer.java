@@ -28,7 +28,7 @@ import java.util.UUID;
  * <p>Ported from the 1.16.5 {@code TrackEditor}, whose visualisation was the one part of the editor
  * that worked well.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class TrackVisualizer {
     private TrackVisualizer() {}
 

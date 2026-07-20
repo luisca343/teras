@@ -19,7 +19,7 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
  * several map-bearing screens whose names are not API. The minimap side is guarded by
  * {@code ModList} so nothing here links without JourneyMap installed.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class DungeonMapLock {
     private DungeonMapLock() {}
 

@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * twice (once per slot) and a box sort notifies thirty times, all of which the page answers with the
  * same single refetch.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class StorageSync {
     private StorageSync() {}
 

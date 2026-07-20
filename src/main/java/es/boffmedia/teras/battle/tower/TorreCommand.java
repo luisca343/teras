@@ -13,7 +13,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 /** {@code /frentebatalla iniciar|continuar|pausar} — Battle Tower commands (player self-service). */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class TorreCommand {
     private TorreCommand() {}
 

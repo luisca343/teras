@@ -21,7 +21,7 @@ import es.boffmedia.teras.Teras;
  * {@code can_break} grant on any tool, no exception carved into the dungeon's no-mining rule, and
  * webbing stays the only thing in a floor a player may remove.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class WebPlacer {
     private WebPlacer() {}
 

@@ -29,7 +29,7 @@ import java.util.UUID;
  * does not hold denies implicitly, and a flag set to {@code denegar} denies explicitly. Ops
  * (permission level 2) bypass everything, matching the admin gate on the region commands.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RegionProtection {
     private RegionProtection() {}
 

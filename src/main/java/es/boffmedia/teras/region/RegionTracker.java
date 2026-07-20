@@ -25,7 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>Login seeds an <em>empty</em> set on purpose: a player who logs in inside a town gets its
  * enter (and cartel) on the first scan, matching the old WorldGuard greeting behavior.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RegionTracker {
     private RegionTracker() {}
 

@@ -54,7 +54,7 @@ import java.util.Objects;
  * A random id is generated and persisted on first run; real deployments set it to the value
  * registered with the SmartRotom backend.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class TerasConfig {
     private TerasConfig() {}
 

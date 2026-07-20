@@ -12,7 +12,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
  * Mod-bus client registrations for the region system (the {@link CameraSetup} split: layers register
  * on the mod bus, the renderer itself has no bus).
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class RegionClientSetup {
     private RegionClientSetup() {}
 

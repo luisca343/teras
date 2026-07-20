@@ -23,7 +23,7 @@ import java.util.UUID;
  * convention); messages to <i>other</i> players — the invitee, the abandoned members — are sent
  * from here, because the caller has no reason to know who else needs telling.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class PartyManager {
     private PartyManager() {}
 

@@ -7,7 +7,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 
 /** Mod-bus registration for the animated dungeon enemy's attributes. */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonEntityEvents {
     private DungeonEntityEvents() {}
 

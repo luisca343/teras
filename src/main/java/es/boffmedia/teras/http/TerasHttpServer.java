@@ -115,7 +115,7 @@ import java.util.function.Supplier;
  * Every read hops onto the server thread via {@link MinecraftServer#submit(Supplier)} and waits with a
  * timeout, so a stalled server yields 503 rather than pinning HTTP threads.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class TerasHttpServer {
     private TerasHttpServer() {}
 

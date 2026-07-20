@@ -13,7 +13,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  * <p>Pixelmon-free, and not guarded by {@link EconomyBridge#isAvailable()}: balances are tracked
  * regardless of whether Pixelmon is installed to spend them (see {@link EconomyBridge}).</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class EconomyEvents {
     private EconomyEvents() {}
 

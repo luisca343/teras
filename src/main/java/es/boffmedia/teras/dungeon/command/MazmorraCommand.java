@@ -29,7 +29,7 @@ import java.util.UUID;
  * ({@link DungeonEntrance}), and the rest is party small talk. The admin surface stays under
  * {@code /teras dungeon}.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class MazmorraCommand {
     private MazmorraCommand() {}
 

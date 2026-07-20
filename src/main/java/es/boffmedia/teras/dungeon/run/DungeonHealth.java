@@ -27,7 +27,7 @@ import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
  * <p>Scope is strictly run membership: a player outside a dungeon is untouched, and every exit
  * path restores what was changed (see {@code RunEngine.clearRunEffects}).</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonHealth {
     private DungeonHealth() {}
 

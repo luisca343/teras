@@ -13,7 +13,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
  * {@link es.boffmedia.teras.client.region.RegionClientSetup}: the layer registers on the mod bus,
  * the renderer itself has no bus.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class KartsClientSetup {
     private KartsClientSetup() {}
 

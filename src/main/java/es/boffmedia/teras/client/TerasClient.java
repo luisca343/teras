@@ -21,7 +21,7 @@ import java.util.UUID;
  * Referenced from {@link es.boffmedia.teras.items.SmartRotom} only behind a client-side guard,
  * so it is never classloaded on a dedicated server.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class TerasClient {
     private TerasClient() {}
 

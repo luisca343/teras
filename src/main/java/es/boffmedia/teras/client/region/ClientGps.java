@@ -20,7 +20,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * <p>JourneyMap types stay in {@code RouteDrawer}, named only behind the {@code ModList} guard, so
  * this class loads on clients without the map mod.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ClientGps {
     private ClientGps() {}
 

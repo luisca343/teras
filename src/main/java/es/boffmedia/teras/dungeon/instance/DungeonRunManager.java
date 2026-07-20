@@ -49,7 +49,7 @@ import java.util.UUID;
  *
  * <p>Everything here runs on the server thread (commands, tick jobs, login events) — no locks.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonRunManager {
     private DungeonRunManager() {}
 

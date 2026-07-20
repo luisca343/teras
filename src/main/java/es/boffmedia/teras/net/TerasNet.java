@@ -23,7 +23,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  * dedicated server. The single client-side handler is dispatched through a lambda to a client-only
  * class, so its client-only dependencies (MCEF/JCEF) are never classloaded server-side.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class TerasNet {
     private TerasNet() {}
 

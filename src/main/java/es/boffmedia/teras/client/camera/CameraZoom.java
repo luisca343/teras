@@ -24,7 +24,7 @@ import java.util.UUID;
  * a multiplier from inside the FOV event, so {@code zoomActive} stayed true after you put the camera
  * away.)</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class CameraZoom {
     private CameraZoom() {}
 

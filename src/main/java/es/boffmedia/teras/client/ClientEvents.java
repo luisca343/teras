@@ -35,7 +35,7 @@ import java.util.UUID;
  * kept alive while the item stays anywhere in your hotbar/offhand, then closed when it leaves — so
  * we never keep a live Chromium instance for every SmartRotom in a full inventory.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ClientEvents {
     private ClientEvents() {}
 

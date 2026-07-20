@@ -13,7 +13,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
  * <p>Pure display: nothing here feeds back into the race, and stale values only ever cost a frame
  * of accuracy on a lap counter.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ClientRaceHud {
     private ClientRaceHud() {}
 

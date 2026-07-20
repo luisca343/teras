@@ -13,7 +13,7 @@ import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtension
 import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 
 /** Hot springs are vanilla water textures under a blue tint. */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class AguasTermalesClient {
     private AguasTermalesClient() {}
 

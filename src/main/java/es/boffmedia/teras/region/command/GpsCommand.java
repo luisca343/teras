@@ -20,7 +20,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
  *
  * <p>Ported from the 1.16.5 {@code GpsCommand}, permission level and all.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class GpsCommand {
     private GpsCommand() {}
 

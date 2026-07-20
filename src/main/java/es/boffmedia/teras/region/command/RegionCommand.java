@@ -43,7 +43,7 @@ import java.util.Map;
  * names {@link es.boffmedia.teras.region.worldedit.WorldEditBridge}, so the class never links on
  * servers without it and the command explains what to install instead of crashing.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RegionCommand {
     private RegionCommand() {}
 

@@ -29,7 +29,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  * body checks {@link QuestBridge#isAvailable()} before reaching {@link NpcScanner}, so the mod's
  * absence is reported to the caller rather than crashing.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class NpcCommand {
     private NpcCommand() {}
 

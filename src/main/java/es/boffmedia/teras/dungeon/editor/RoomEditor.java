@@ -65,7 +65,7 @@ import java.util.UUID;
  * {@code guardar <nombre>} writes a new template and registers it as a weighted variant on
  * the piso being edited.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RoomEditor {
     private RoomEditor() {}
 

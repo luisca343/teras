@@ -11,7 +11,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
  * The client's copy of the party purse, as last sent by the server. Pure display, same contract as
  * {@link ClientDungeonMap}: nothing here feeds back into the run, and the server never trusts it.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ClientDungeonWallet {
     private ClientDungeonWallet() {}
 

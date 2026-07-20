@@ -41,7 +41,7 @@ import java.util.Set;
  * through {@link #all()}, the immutable snapshot republished after every mutation;
  * {@link #generation()} lets {@link RegionIndex} notice changes without a listener wiring.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RegionStore {
     private RegionStore() {}
 

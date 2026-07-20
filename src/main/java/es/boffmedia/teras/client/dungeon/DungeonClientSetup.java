@@ -14,7 +14,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
  * Mod-bus client registration for the dungeon minimap — the same setup/renderer split as
  * {@link es.boffmedia.teras.client.karts.KartsClientSetup}.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class DungeonClientSetup {
     private DungeonClientSetup() {}
 

@@ -27,7 +27,7 @@ import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
  * stack to drop, stash in a shulker or carry out of the dungeon — and it sidesteps pickup
  * mechanics entirely, which matters because the party plays in adventure mode.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class CoinDrops {
     private CoinDrops() {}
 

@@ -26,7 +26,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  * "TokiKarts" scripts already invoke {@code /karts carrera …}, and keeping the name lets them port
  * without edits.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class KartsCommand {
     private KartsCommand() {}
 

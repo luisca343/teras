@@ -23,7 +23,7 @@ import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsE
  * Client-only funko wiring: the block-entity renderer, the inventory/hand item renderer, and
  * skin-sampled break/hit particles.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class FunkoClientExtensions {
     private FunkoClientExtensions() {}
 

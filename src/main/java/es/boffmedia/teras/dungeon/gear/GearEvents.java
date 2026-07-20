@@ -34,7 +34,7 @@ import java.util.UUID;
  * purse and {@link GearAbility#FENIX_MENOR} writes run state, so both simply have nothing to do
  * outside a run.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class GearEvents {
     private GearEvents() {}
 

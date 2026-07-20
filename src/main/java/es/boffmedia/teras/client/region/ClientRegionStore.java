@@ -17,7 +17,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * it (the JourneyMap plugin) subscribe as listeners; no JourneyMap types appear here, so the store
  * loads with or without the map mod.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ClientRegionStore {
     private ClientRegionStore() {}
 

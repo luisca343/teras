@@ -21,7 +21,7 @@ import java.util.Map;
  * and door math all derive from it. The legacy paster mixed a ×21 grid pitch with
  * {@code roomSize−1} rotation offsets and was patched by trial (see DUNGEONS.md §1).</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonsConfig {
     private DungeonsConfig() {}
 

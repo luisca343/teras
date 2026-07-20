@@ -12,7 +12,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
  * contract as {@link es.boffmedia.teras.client.karts.ClientRaceHud}: nothing here feeds back
  * into the run.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ClientDungeonMap {
     private ClientDungeonMap() {}
 

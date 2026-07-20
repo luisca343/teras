@@ -50,7 +50,7 @@ import java.util.Set;
  * <p>The player-facing way into a dungeon run is deliberately not a command; it arrives with the
  * run stage (DUNGEONS.md §10).</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonCommand {
     private DungeonCommand() {}
 

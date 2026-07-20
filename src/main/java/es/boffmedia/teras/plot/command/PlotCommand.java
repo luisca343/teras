@@ -46,7 +46,7 @@ import java.util.UUID;
  * <p>Grants accept offline players via {@link GameProfileArgument}: an admin assigning a plot to
  * someone who is not connected is the normal case, not the exception.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class PlotCommand {
     private PlotCommand() {}
 

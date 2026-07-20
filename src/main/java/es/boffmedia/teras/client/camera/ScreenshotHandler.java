@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * {@code includeUI:false} has to hide the GUI and then let a frame draw without it. Tasks queued onto
  * the client run before that frame renders, so the very next {@code Post} is already UI-free.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class ScreenshotHandler {
     private ScreenshotHandler() {}
 

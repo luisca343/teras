@@ -31,7 +31,7 @@ import java.util.function.Supplier;
  * </ul>
  * The config/team load runs on {@link Teras#EXECUTOR}; the battle start is bounced back to the server thread.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class CombateCommand {
     private CombateCommand() {}
 

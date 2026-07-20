@@ -13,7 +13,7 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
  * The camera's mod-bus registrations: its viewfinder layer and its keybinds. Separate from the classes
  * that implement them because those subscribe to the game bus, and one class cannot do both.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = Teras.MOD_ID, value = Dist.CLIENT)
 public final class CameraSetup {
     private CameraSetup() {}
 

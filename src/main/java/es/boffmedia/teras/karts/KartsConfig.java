@@ -23,7 +23,7 @@ import java.util.Map;
  * {@link es.boffmedia.teras.util.TerasConfig}: defaults reset before every load, so a client's
  * integrated server never inherits the previous world's numbers, and each key is read defensively.
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class KartsConfig {
     private KartsConfig() {}
 

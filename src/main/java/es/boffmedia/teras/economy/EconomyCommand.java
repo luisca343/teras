@@ -29,7 +29,7 @@ import java.util.Collection;
  * <p>Admin-only (permission level 2, matching {@code /npcs}). Pixelmon-free: it operates on the cache,
  * which exists whether or not Pixelmon is installed.</p>
  */
-@EventBusSubscriber(modid = Teras.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Teras.MOD_ID)
 public final class EconomyCommand {
     private EconomyCommand() {}
 
