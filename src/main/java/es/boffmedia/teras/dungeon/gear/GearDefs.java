@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static es.boffmedia.teras.dungeon.gear.GearDef.Rarity.COMUN;
@@ -164,6 +165,20 @@ public final class GearDefs {
         if (json.has("magnitud")) {
             def = def.withMagnitude(json.get("magnitud").getAsDouble());
         }
+        // The ability, not just its magnitude. Without this a piece's effect is fixed in Java: an
+        // ability nothing in the catalog happens to use — QUEMAZON was one — is unreachable no
+        // matter what an admin writes, and retuning a piece stops at "how much" without ever
+        // reaching "of what". Both halves of a piece's behaviour belong to the same file.
+        if (json.has("habilidad")) {
+            String name = json.get("habilidad").getAsString().trim().toUpperCase(Locale.ROOT);
+            try {
+                def = def.withAbility(GearAbility.valueOf(name));
+            } catch (IllegalArgumentException e) {
+                warnings.add("gear '" + def.id() + "' names unknown habilidad '" + name
+                        + "' — keeping " + def.ability() + ". Valid: "
+                        + java.util.Arrays.toString(GearAbility.values()));
+            }
+        }
         if (json.has("skin")) {
             String skinId = normalizeSkinId(json.get("skin").getAsString(), base.id(), warnings);
             String skinType = canonicalSkinType(
@@ -253,6 +268,9 @@ public final class GearDefs {
         JsonObject root = new JsonObject();
         for (GearDef def : defaults().values()) {
             JsonObject entry = new JsonObject();
+            // Written out even though it is the built-in value: an override an admin cannot see is
+            // one they will never use, and the ability is the half of a piece worth discovering.
+            entry.addProperty("habilidad", def.ability().name());
             entry.addProperty("magnitud", def.magnitude());
             entry.addProperty("skin", def.skinId());
             entry.addProperty("skinType", def.effectiveSkinType());

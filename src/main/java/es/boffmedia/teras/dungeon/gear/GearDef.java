@@ -57,6 +57,10 @@ public record GearDef(
         return new GearDef(id, kind, rarity, stats, ability, value, skinId, skinType, baseItem);
     }
 
+    public GearDef withAbility(GearAbility value) {
+        return new GearDef(id, kind, rarity, stats, value, magnitude, skinId, skinType, baseItem);
+    }
+
     public GearDef withSkin(String skin, String type) {
         return new GearDef(id, kind, rarity, stats, ability, magnitude, skin, type, baseItem);
     }

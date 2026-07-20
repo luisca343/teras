@@ -791,8 +791,16 @@ public final class DungeonCommand {
                 ctx.getSource().getServer().getStructureManager());
         es.boffmedia.teras.dungeon.encounter.SpawnTables.load();
         es.boffmedia.teras.dungeon.gear.GearConfig.load();
-        ctx.getSource().sendSuccess(() ->
-                Component.literal("Configuración de mazmorras recargada."), false);
+        // config/teras/config.yml too, not just the dungeon files: a run's result is posted with
+        // apiURL, apiToken and id from there, so a reload that left them stale meant fixing the
+        // backend URL and watching the next run vanish anyway, with nothing saying why.
+        java.util.List<String> restartOnly = es.boffmedia.teras.util.TerasConfig.reload();
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "Configuración de mazmorras y config/teras/config.yml recargadas."), false);
+        if (!restartOnly.isEmpty()) {
+            ctx.getSource().sendSystemMessage(Component.literal("§eCambiaste " + String.join(", ",
+                    restartOnly) + " — eso solo se aplica al reiniciar el servidor."));
+        }
         return 1;
     }
 }

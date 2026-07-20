@@ -1,5 +1,8 @@
 package es.boffmedia.teras.dungeon.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * The volume in front of every doorway that must stay clear.
  *
@@ -49,6 +52,43 @@ public final class DoorwayZone {
             return true;
         }
         return inBandZ && lx >= far && !owns(shape, cell, 1, 0);
+    }
+
+    /**
+     * One reserved volume, in cell-local coordinates, both ends inclusive.
+     *
+     * <p>{@link #contains} answers "is this block reserved" and this answers "where are the reserved
+     * regions" — the editor needs the second to draw them. Deriving the outline separately from the
+     * test is how a hint ends up showing something other than what is enforced, so
+     * {@link #zonesOf} is held against {@code contains} by test.</p>
+     */
+    public record Zone(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {}
+
+    /**
+     * Every reserved volume of {@code cell}, bounded to the cell — one per exterior side, since a
+     * side facing another cell of the same room is a neck rather than a doorway.
+     */
+    public static List<Zone> zonesOf(GridPos cell, RoomShape shape, int roomSize,
+                                     int doorWidth, int doorHeight) {
+        int inset = (roomSize - doorWidth) / 2;
+        int bandLow = inset;
+        int bandHigh = inset + doorWidth - 1;
+        int far = roomSize - 1 - DEPTH;
+        int top = doorHeight + 1;
+        List<Zone> zones = new ArrayList<>(4);
+        if (!owns(shape, cell, 0, -1)) {
+            zones.add(new Zone(bandLow, 0, 0, bandHigh, top, DEPTH));
+        }
+        if (!owns(shape, cell, 0, 1)) {
+            zones.add(new Zone(bandLow, 0, far, bandHigh, top, roomSize - 1));
+        }
+        if (!owns(shape, cell, -1, 0)) {
+            zones.add(new Zone(0, 0, bandLow, DEPTH, top, bandHigh));
+        }
+        if (!owns(shape, cell, 1, 0)) {
+            zones.add(new Zone(far, 0, bandLow, roomSize - 1, top, bandHigh));
+        }
+        return zones;
     }
 
     private static boolean owns(RoomShape shape, GridPos cell, int dx, int dz) {

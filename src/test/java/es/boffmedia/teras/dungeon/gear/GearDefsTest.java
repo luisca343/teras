@@ -131,7 +131,73 @@ class GearDefsTest {
         assertEquals(99.0, statOf(merged, GearStat.ATTACK_DAMAGE), "stat comes from the file");
         assertEquals(statOf(base, GearStat.ATTACK_SPEED), statOf(merged, GearStat.ATTACK_SPEED),
                 "a stat the file omits keeps its built-in value");
-        assertEquals(base.ability(), merged.ability(), "the file cannot change the ability");
+        assertEquals(base.ability(), merged.ability(),
+                "an ability the file omits keeps its built-in value");
+    }
+
+    /**
+     * The ability is overridable, not just its magnitude.
+     *
+     * <p>While it was not, a piece's effect was fixed in Java and any ability the catalog did not
+     * happen to use was unreachable however the file was written — {@code QUEMAZON} was implemented,
+     * translated and tested, and could never fire on anything. Retuning also stopped at "how much"
+     * without ever reaching "of what".</p>
+     */
+    @Test
+    void theFileCanChangeAnAbility() {
+        JsonObject root = new JsonObject();
+        JsonObject entry = new JsonObject();
+        entry.addProperty("habilidad", "quemazon");
+        entry.addProperty("magnitud", 4.0);
+        root.add("espada_abisal", entry);
+
+        GearDef merged = GearDefs.merge(root).defs().get("espada_abisal");
+
+        assertEquals(GearAbility.QUEMAZON, merged.ability(), "the file names the ability");
+        assertEquals(4.0, merged.magnitude());
+        assertEquals(GearDefs.defaults().get("espada_abisal").stats(), merged.stats(),
+                "changing the ability leaves the stat line alone");
+    }
+
+    /** Every ability is reachable from the file — that is what makes the enum the whole vocabulary. */
+    @Test
+    void everyAbilityCanBeNamedInTheFile() {
+        for (GearAbility ability : GearAbility.values()) {
+            JsonObject root = new JsonObject();
+            JsonObject entry = new JsonObject();
+            entry.addProperty("habilidad", ability.name());
+            root.add("espada_abisal", entry);
+
+            GearDefs.Merge merge = GearDefs.merge(root);
+
+            assertTrue(merge.warnings().isEmpty(), ability + " warned: " + merge.warnings());
+            assertEquals(ability, merge.defs().get("espada_abisal").ability());
+        }
+    }
+
+    /** A typo keeps the built-in ability rather than silently disarming the piece. */
+    @Test
+    void anUnknownAbilityWarnsAndKeepsTheBuiltIn() {
+        JsonObject root = new JsonObject();
+        JsonObject entry = new JsonObject();
+        entry.addProperty("habilidad", "no_existe");
+        root.add("espada_abisal", entry);
+
+        GearDefs.Merge merge = GearDefs.merge(root);
+
+        assertEquals(1, merge.warnings().size(), merge.warnings().toString());
+        assertEquals(GearDefs.defaults().get("espada_abisal").ability(),
+                merge.defs().get("espada_abisal").ability());
+    }
+
+    /** The rendered file shows the ability, or nobody discovers they can change it. */
+    @Test
+    void theDefaultFileNamesEveryPiecesAbility() {
+        JsonObject rendered = GearDefs.renderDefaults();
+        for (GearDef def : GearDefs.defaults().values()) {
+            assertEquals(def.ability().name(),
+                    rendered.getAsJsonObject(def.id()).get("habilidad").getAsString(), def.id());
+        }
     }
 
     @Test

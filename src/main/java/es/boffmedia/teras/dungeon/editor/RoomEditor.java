@@ -6,11 +6,14 @@ import es.boffmedia.teras.dungeon.build.RoomTemplates;
 import es.boffmedia.teras.dungeon.build.TemplateMarkers;
 import es.boffmedia.teras.dungeon.instance.DungeonRun;
 import es.boffmedia.teras.dungeon.instance.DungeonRunManager;
+import es.boffmedia.teras.dungeon.model.DoorwayZone;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.RoomShape;
 import es.boffmedia.teras.dungeon.run.RunEngine;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -37,6 +40,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -50,9 +54,10 @@ import java.util.UUID;
  * The in-place room editor: {@code /teras dungeon sala editar <tipo>} teleports an admin to a
  * reserved pad in the dungeon dimension with the room's current template pasted there — markers
  * included, since unlike the materializer nothing airs them out — and a shell around it that shows
- * the limits: a bedrock apron underneath, orange glass marking where {@code DoorCarver} will cut
- * each doorway, and red glass filling any cell an L-shape does not own. Edits outside the room's
- * box are refused at the block events, so a saved room can never bleed into a neighboring cell.
+ * the limits: a bedrock apron underneath, a flame outline over every volume {@code DoorCarver}
+ * reserves for a doorway, and red glass filling any cell an L-shape does not own. Edits outside the
+ * room's box are refused at the block events, so a saved room can never bleed into a neighboring
+ * cell.
  *
  * <p>Saving goes through the world's {@code generated} structure folder — the same override path
  * DUNGEONS.md §5 already designates — so {@code guardar} with no name replaces the template the
@@ -72,10 +77,9 @@ public final class RoomEditor {
     private static final Map<UUID, Session> SESSIONS = new LinkedHashMap<>();
 
     /**
-     * How far past the editable box a pad is swept, so the previous session's ceiling ring and any
-     * template taller than this one's do not linger overhead. Anything above the box is only ever
-     * visual — {@code fillFromWorld} reads the box alone — but a floating slab of someone else's
-     * room reads as a bug.
+     * How far past the editable box a pad is swept, so a template taller than this one's does not
+     * linger overhead. Anything above the box is only ever visual — {@code fillFromWorld} reads the
+     * box alone — but a floating slab of someone else's room reads as a bug.
      */
     private static final int PAD_HEADROOM = 8;
 
@@ -86,6 +90,9 @@ public final class RoomEditor {
      * inside the next capture, since a room's box is the grid, not what was pasted into it.
      */
     private static final int PAD_CELLS = 2;
+
+    /** How often the hint outlines are redrawn. Flame particles outlive this, so it reads as steady. */
+    private static final int HINT_INTERVAL_TICKS = 20;
 
     private static final class Session {
         final String pisoId;
@@ -138,7 +145,7 @@ public final class RoomEditor {
         }
 
         /**
-         * Whether a position sits in a doorway volume — where the orange glass is. Nothing may be
+         * Whether a position sits in a doorway volume — inside the flame outline. Nothing may be
          * marked there: the layout decides which sides get doors, so all four are reserved.
          */
         boolean inDoorway(BlockPos pos) {
@@ -147,8 +154,7 @@ public final class RoomEditor {
             int ry = pos.getY() - origin.getY();
             int rz = pos.getZ() - origin.getZ();
             GridPos cell = new GridPos(rx / size, rz / size);
-            return es.boffmedia.teras.dungeon.model.DoorwayZone.contains(cell, shape,
-                    rx % size, ry, rz % size, size,
+            return DoorwayZone.contains(cell, shape, rx % size, ry, rz % size, size,
                     DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
         }
 
@@ -295,7 +301,8 @@ public final class RoomEditor {
                             + "plantilla base, sin rotar."));
         }
         player.sendSystemMessage(Component.literal(
-                "§7El cristal naranja marca dónde se abrirán las puertas. 'sala marcar' coloca "
+                "§7Las llamas marcan el espacio que debe quedar libre para las puertas. "
+                        + "'sala marcar' coloca "
                         + "marcadores, 'sala guardar [nombre]' guarda, 'sala salir' descarta."));
         return null;
     }
@@ -350,7 +357,8 @@ public final class RoomEditor {
             return "Estás fuera de los límites de la sala.";
         }
         if (session.inDoorway(pos)) {
-            return "Ahí se abrirá una puerta (el cristal naranja). Un marcador en una entrada la "
+            return "Ahí se abrirá una puerta (la zona marcada con llamas). Un marcador en una "
+                    + "entrada la "
                     + "bloquea o deja al enemigo dentro del muro — muévete unos bloques adentro.";
         }
         ServerLevel level = player.serverLevel();
@@ -505,14 +513,16 @@ public final class RoomEditor {
                 level.getRandom(), 2);
     }
 
+    /**
+     * The parts of the shell that are blocks. The doorway zones and the ceiling limit are not —
+     * they are drawn as particles by {@link #onServerTick}, so nothing that is only a hint can be
+     * broken, built over, or captured into a template.
+     */
     private static void buildShell(ServerLevel level, Session session) {
         BlockPos origin = session.origin;
         int spanX = session.spanX();
         int spanZ = session.spanZ();
         int size = DungeonsConfig.roomSize();
-        int doorWidth = DungeonsConfig.doorWidth();
-        int doorHeight = DungeonsConfig.doorHeight();
-        int inset = (size - doorWidth) / 2;
 
         // Bedrock apron one below the floor, one block proud on every side: breaking through the
         // room's own floor must never drop the editor into the void.
@@ -522,48 +532,11 @@ public final class RoomEditor {
             }
         }
 
-        // The ceiling limit, as a ring of glass one layer above the top editable row. Without it the
-        // vertical bound is invisible: the box simply stops accepting blocks at some height with
-        // nothing on screen to say where, which reads as the editor being broken rather than as a
-        // limit. Outside the capture box (y == height), so it is never saved.
-        int top = session.height();
-        for (int x = -1; x <= spanX; x++) {
-            level.setBlock(origin.offset(x, top, -1), Blocks.LIGHT_BLUE_STAINED_GLASS
-                    .defaultBlockState(), 2);
-            level.setBlock(origin.offset(x, top, spanZ), Blocks.LIGHT_BLUE_STAINED_GLASS
-                    .defaultBlockState(), 2);
-        }
-        for (int z = -1; z <= spanZ; z++) {
-            level.setBlock(origin.offset(-1, top, z), Blocks.LIGHT_BLUE_STAINED_GLASS
-                    .defaultBlockState(), 2);
-            level.setBlock(origin.offset(spanX, top, z), Blocks.LIGHT_BLUE_STAINED_GLASS
-                    .defaultBlockState(), 2);
-        }
-
-        for (GridPos cell : session.shape.offsets()) {
-            int baseX = cell.x() * size;
-            int baseZ = cell.y() * size;
-            // Doorway hints on every exterior side of every owned cell, one block outside the wall.
-            // On an L two of them land in the quadrant the room does not own — inside the capture
-            // box, and correctly so, because a neighbouring room can sit there and a door can be cut
-            // to it. stripUnownedCells is what keeps them out of the save.
-            if (!session.shape.offsets().contains(new GridPos(cell.x(), cell.y() - 1))) {
-                hintColumns(level, origin, baseX + inset, baseZ - 1, doorWidth, doorHeight, true);
-            }
-            if (!session.shape.offsets().contains(new GridPos(cell.x(), cell.y() + 1))) {
-                hintColumns(level, origin, baseX + inset, baseZ + size, doorWidth, doorHeight, true);
-            }
-            if (!session.shape.offsets().contains(new GridPos(cell.x() - 1, cell.y()))) {
-                hintColumns(level, origin, baseX - 1, baseZ + inset, doorWidth, doorHeight, false);
-            }
-            if (!session.shape.offsets().contains(new GridPos(cell.x() + 1, cell.y()))) {
-                hintColumns(level, origin, baseX + size, baseZ + inset, doorWidth, doorHeight, false);
-            }
-        }
-
-        // L-shapes: the quadrant the room does not own gets a red glass floor. It sits inside the
-        // capture box but stripUnownedCells drops it from every save, and the bounds guard refuses
-        // edits there — the color is the explanation.
+        // L-shapes: the quadrant the room does not own gets a red glass floor. Unlike the doorway
+        // zones this one stays a block — it marks a region that genuinely is not part of the room,
+        // and a floor you cannot stand on reads better than an outline you can walk through. It sits
+        // inside the capture box, but stripUnownedCells drops it from every save and the bounds
+        // guard refuses edits there.
         for (int cx = 0; cx <= (spanX / size) - 1; cx++) {
             for (int cz = 0; cz <= (spanZ / size) - 1; cz++) {
                 if (session.shape.offsets().contains(new GridPos(cx, cz))) {
@@ -579,17 +552,102 @@ public final class RoomEditor {
         }
     }
 
-    /** A doorway-sized panel of orange glass, {@code alongX} choosing which axis the width runs. */
-    private static void hintColumns(ServerLevel level, BlockPos origin, int x, int z,
-                                    int doorWidth, int doorHeight, boolean alongX) {
-        for (int w = 0; w < doorWidth; w++) {
-            for (int h = 1; h <= doorHeight; h++) {
-                BlockPos pos = alongX
-                        ? origin.offset(x + w, h, z)
-                        : origin.offset(x, h, z + w);
-                level.setBlock(pos, Blocks.ORANGE_STAINED_GLASS.defaultBlockState(), 2);
+    // --- hints ----------------------------------------------------------------------------------
+
+    /**
+     * Redraws every open session's hints, once a second, for the admin editing it.
+     *
+     * <p>These used to be glass. Glass is a block: it stood in the room being authored, had to be
+     * placed and swept, could be broken or built over, and on an L two of the panels landed inside
+     * the capture box — kept out of saves only because {@code stripUnownedCells} happened to cover
+     * them. It also showed the three-block opening rather than the volume that must stay clear,
+     * which is the part that actually matters: {@link DoorwayZone#DEPTH} blocks inward, not one.</p>
+     *
+     * <p>Particles are nothing at all — no block state, no cleanup, and no way for a hint to reach a
+     * template. Drawn only for the session's own player, so two admins on neighbouring pads do not
+     * see each other's outlines.</p>
+     */
+    @SubscribeEvent
+    public static void onServerTick(ServerTickEvent.Post event) {
+        if (SESSIONS.isEmpty() || event.getServer().getTickCount() % HINT_INTERVAL_TICKS != 0) {
+            return;
+        }
+        for (Map.Entry<UUID, Session> entry : SESSIONS.entrySet()) {
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player != null && inDungeonDimension(player.serverLevel())) {
+                drawHints(player, entry.getValue());
             }
         }
+    }
+
+    private static void drawHints(ServerPlayer player, Session session) {
+        int size = DungeonsConfig.roomSize();
+        BlockPos origin = session.origin;
+        // The reserved doorway volumes, straight from the geometry the bounds guard and the
+        // materializer both use — so what is drawn is exactly what is refused.
+        for (GridPos cell : session.shape.offsets()) {
+            for (DoorwayZone.Zone zone : DoorwayZone.zonesOf(cell, session.shape, size,
+                    DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight())) {
+                outline(player, ParticleTypes.FLAME,
+                        origin.getX() + cell.x() * size + zone.minX(),
+                        origin.getY() + zone.minY(),
+                        origin.getZ() + cell.y() * size + zone.minZ(),
+                        origin.getX() + cell.x() * size + zone.maxX() + 1,
+                        origin.getY() + zone.maxY() + 1,
+                        origin.getZ() + cell.y() * size + zone.maxZ() + 1);
+            }
+        }
+        // The ceiling limit. Without it the vertical bound is invisible — the box simply stops
+        // accepting blocks at some height with nothing on screen to say where, which reads as the
+        // editor being broken rather than as a limit.
+        outline(player, ParticleTypes.SOUL_FIRE_FLAME,
+                origin.getX(), origin.getY() + session.height(), origin.getZ(),
+                origin.getX() + session.spanX(), origin.getY() + session.height(),
+                origin.getZ() + session.spanZ());
+    }
+
+    /**
+     * The twelve edges of a box, a particle per block along each. A box that is flat on an axis
+     * collapses to its four remaining edges rather than drawing each of them twice.
+     */
+    private static void outline(ServerPlayer player, ParticleOptions type,
+                                int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        int[] xs = ends(minX, maxX);
+        int[] ys = ends(minY, maxY);
+        int[] zs = ends(minZ, maxZ);
+        for (int y : ys) {
+            for (int z : zs) {
+                for (int x = minX; x <= maxX; x++) {
+                    particle(player, type, x, y, z);
+                }
+            }
+        }
+        for (int x : xs) {
+            for (int z : zs) {
+                for (int y = minY; y <= maxY; y++) {
+                    particle(player, type, x, y, z);
+                }
+            }
+        }
+        for (int x : xs) {
+            for (int y : ys) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    particle(player, type, x, y, z);
+                }
+            }
+        }
+    }
+
+    private static int[] ends(int min, int max) {
+        return min == max ? new int[] {min} : new int[] {min, max};
+    }
+
+    private static void particle(ServerPlayer player, ParticleOptions type,
+                                 double x, double y, double z) {
+        // Count zero is the precise form: the offsets become a velocity rather than a scatter, so
+        // all-zero puts exactly one stationary particle on the corner. An outline that drifts is not
+        // an outline.
+        player.serverLevel().sendParticles(player, type, true, x, y, z, 0, 0, 0, 0, 0);
     }
 
     /**
@@ -628,8 +686,8 @@ public final class RoomEditor {
      * later paste that air into whatever room legitimately occupies the cell — the shipped L
      * templates omit those entries for exactly this reason, and saved ones must too.
      *
-     * <p>The doorway hints the shell draws along an L's concave corner sit in that quadrant too, so
-     * this is also what keeps a save from baking orange glass into the room.</p>
+     * <p>The red glass floor over that quadrant sits inside the capture box, so this is also what
+     * keeps a save from baking it into the room.</p>
      */
     private static void stripUnownedCells(ServerLevel level, StructureTemplate template,
                                           Session session) {

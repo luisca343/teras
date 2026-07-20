@@ -15,6 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Port of the 1.16.5 {@code TerasConfig} + {@code FileHelper.getConfig()}. Reads
@@ -161,6 +164,54 @@ public final class TerasConfig {
     @SubscribeEvent
     public static void onServerAboutToStart(ServerAboutToStartEvent event) {
         load();
+    }
+
+    /**
+     * Re-reads the file on a running server, returning the keys whose new values will <b>not</b>
+     * apply until a restart — empty when the reload took full effect.
+     *
+     * <p>Not every setting can be hot-swapped, and the difference is invisible from the outside.
+     * {@code apiURL}, {@code apiToken} and {@code id} are read per call, so they change the very
+     * next outbound request; {@code httpBind}, {@code httpPort} and {@code httpEnabled} were
+     * consumed once when the socket was bound, {@code sql} when the databases opened, and
+     * {@code home}/{@code requireHttps} are handed to clients as they join. Reloading silently
+     * would leave an admin who fixed a port convinced it had taken, which is worse than not
+     * offering a reload at all — so the caller is handed the list and tells them.</p>
+     */
+    public static List<String> reload() {
+        boolean wasHttpEnabled = httpEnabled;
+        String wasHttpBind = httpBind;
+        int wasHttpPort = httpPort;
+        String wasHttpToken = httpToken;
+        String wasHome = home;
+        boolean wasRequireHttps = requireHttps;
+        SqlSettings wasSql = sql;
+
+        load();
+
+        List<String> restartOnly = new ArrayList<>();
+        if (httpEnabled != wasHttpEnabled) {
+            restartOnly.add("httpEnabled");
+        }
+        if (!Objects.equals(httpBind, wasHttpBind)) {
+            restartOnly.add("httpBind");
+        }
+        if (httpPort != wasHttpPort) {
+            restartOnly.add("httpPort");
+        }
+        if (!Objects.equals(httpToken, wasHttpToken)) {
+            restartOnly.add("httpToken");
+        }
+        if (!Objects.equals(home, wasHome)) {
+            restartOnly.add("home");
+        }
+        if (requireHttps != wasRequireHttps) {
+            restartOnly.add("requireHttps");
+        }
+        if (!Objects.equals(sql, wasSql)) {
+            restartOnly.add("sql");
+        }
+        return restartOnly;
     }
 
     public static void load() {

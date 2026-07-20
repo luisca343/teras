@@ -2,6 +2,7 @@ package es.boffmedia.teras.dungeon.model;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -82,6 +83,41 @@ class DoorwayZoneTest {
         // Its west side faces outward and is still reserved.
         assertTrue(DoorwayZone.contains(left, RoomShape.HORIZONTAL,
                 1, 1, 10, SIZE, WIDTH, HEIGHT), "the outward wall");
+    }
+
+    /**
+     * The volumes the editor draws are exactly the volumes the editor enforces.
+     *
+     * <p>{@code contains} answers per block and {@code zonesOf} hands back regions; the editor tests
+     * with the first and outlines with the second. Two derivations of one shape drift, and a hint
+     * that shows something other than what is refused is worse than no hint — so they are held
+     * against each other over every shape, every cell and every block of it.</p>
+     */
+    @Test
+    void theDrawnZonesAreTheEnforcedOnes() {
+        for (RoomShape shape : RoomShape.values()) {
+            for (GridPos cell : shape.offsets()) {
+                var zones = DoorwayZone.zonesOf(cell, shape, SIZE, WIDTH, HEIGHT);
+                for (int x = 0; x < SIZE; x++) {
+                    for (int z = 0; z < SIZE; z++) {
+                        for (int y = 0; y <= HEIGHT + 2; y++) {
+                            boolean drawn = false;
+                            for (var zone : zones) {
+                                if (x >= zone.minX() && x <= zone.maxX()
+                                        && y >= zone.minY() && y <= zone.maxY()
+                                        && z >= zone.minZ() && z <= zone.maxZ()) {
+                                    drawn = true;
+                                    break;
+                                }
+                            }
+                            assertEquals(DoorwayZone.contains(cell, shape, x, y, z,
+                                            SIZE, WIDTH, HEIGHT), drawn,
+                                    shape + " cell " + cell + " at " + x + "," + y + "," + z);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** An L's missing quadrant is outside the room, so the side facing it is a real exterior wall. */

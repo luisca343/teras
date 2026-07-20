@@ -128,6 +128,12 @@ dependencies {
     // enemy instead (DUNGEONS.md §Enemies) — same shape as the Frames decision: build on the
     // upstream library, don't fork the missing addon.
     compileOnly("software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.2") { transitive = false }
+    // …and on the dev runtime, unlike every other integration here. GeckoLib is declared *required*
+    // in neoforge.mods.toml (teras:dungeon_enemy is a GeoEntity and its type registers
+    // unconditionally), so a dev server without it does not degrade — the loader refuses to start
+    // Teras at all. This is what kept `runServer` from booting; the version floor it forces is in
+    // gradle.properties.
+    runtimeOnly("software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.2") { transitive = false }
 
     // Armourer's Workshop 3.4.0-beta.3 for 1.21.1 NeoForge (server runtime pin: CurseForge file
     // 8438936) — skin visuals for the dungeon-exclusive gear; the stats/effects/abilities layer is
@@ -149,14 +155,28 @@ dependencies {
     // rest of karts — tracks, engine, garage, rewards — compiles and runs without IV installed.
     compileOnly("curse.maven:minecraft-transport-simulator-286703:7926606") { transitive = false }
 
-    // IV content packs for the dev runtime only — IV ships no vehicles of its own, so a dev client
-    // with none has nothing to race. Official Automobile Pack (1387229:7933542) and Official Content
-    // Pack (292217:7933734). runtimeOnly: no Teras code names a pack item type; tracks and presets
+    // IV on the dev runtime, plus its content packs — IV ships no vehicles of its own, so a dev
+    // client with none has nothing to race. Official Automobile Pack (1387229:7933542) and Official
+    // Content Pack (292217:7933734). No Teras code names a pack item type; tracks and presets
     // reference packs by string id through PackParser. NOTE: IV discovers packs by scanning loaded
-    // mod jars — if these are not picked up from the Gradle runtime classpath, drop the two jars in
+    // mod jars — if these are not picked up from the Gradle runtime classpath, drop the jars in
     // run/mods/ instead; nothing in the build depends on them resolving.
-    runtimeOnly("curse.maven:mts-iv-official-automobile-pack-1387229:7933542") { transitive = false }
-    runtimeOnly("curse.maven:transport-simulator-official-vehicle-set-292217:7933734") { transitive = false }
+    //
+    // All three together or none, and off unless -Pdev_iv=true. The packs used to be here
+    // unconditionally while IV itself was compileOnly, so `oamp` and `mtsofficialpack` failed their
+    // mandatory dependency on 'mts' and the dev server refused to start at all — one of the reasons
+    // runServer never booted, independent of the GeckoLib ones above.
+    //
+    // Off by default because IV is only needed for karts, and with it the packs log ~150
+    // recipe-parse errors on every boot (they ship JSON recipes for items IV registers through its
+    // own PackParser, which the vanilla RecipeManager cannot resolve). Harmless, but it buries the
+    // log for everyone working on anything else. Turn it on for kart work:
+    //     ./gradlew runServer -Pdev_iv=true
+    if (Boolean.parseBoolean((project.findProperty('dev_iv') ?: 'false') as String)) {
+        runtimeOnly("curse.maven:minecraft-transport-simulator-286703:7926606") { transitive = false }
+        runtimeOnly("curse.maven:mts-iv-official-automobile-pack-1387229:7933542") { transitive = false }
+        runtimeOnly("curse.maven:transport-simulator-official-vehicle-set-292217:7933734") { transitive = false }
+    }
 
     // Backpacks — deliberately NOT dependencies. Traveler's and Sophisticated both register the
     // standard NeoForge Capabilities.ItemHandler.ITEM on their backpack items, so the Pixelmon
