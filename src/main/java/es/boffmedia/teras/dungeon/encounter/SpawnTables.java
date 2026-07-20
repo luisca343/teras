@@ -50,14 +50,18 @@ public final class SpawnTables {
     public static void load() {
         resetToDefaults();
         // Seeded before the file is read so a parse failure below still leaves the built-in
-        // abilities standing, the same way the spawn tables keep their defaults.
-        Abilities.load(DungeonEnemyPacks.abilities(), null);
+        // abilities standing, the same way the spawn tables keep their defaults. Silent: the load
+        // worth reporting is the one that consulted the file.
+        Abilities.seed(DungeonEnemyPacks.abilities());
         Path path = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons").resolve("enemies.json");
         try {
             if (!Files.exists(path)) {
                 Files.createDirectories(path.getParent());
                 Files.writeString(path, GSON.toJson(renderDefaults()));
                 Teras.LOGGER.info("Dungeons: created default {}", path);
+                // The built-ins are the final table on a fresh install, so this is where that run's
+                // one ability line belongs.
+                Abilities.load(DungeonEnemyPacks.abilities(), null);
                 return;
             }
             JsonObject root;

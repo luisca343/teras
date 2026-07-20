@@ -85,14 +85,26 @@ dependencies {
     // compile against org.watermedia.api.* and it is present at runtime. transitive=false — cursemaven
     // synthesises the POM from CurseForge relations and would otherwise drag in arbitrary versions.
     compileOnly("curse.maven:watermedia-869524:8342332") { transitive = false }
+    // Deliberately NOT on the dev runtime. WaterMedia's CodecsAPI/PlatformAPI/MediaAPI all fail to
+    // start under runServer — it wants native FFMPEG binaries unpacked beside a real installation —
+    // and the failures abort server startup. Frames have to be tested on a real server.
 
     // --- Battle engines: both compileOnly. Exactly one is present at runtime; the mod detects
     //     which via ModList and selects the matching BattleProvider (see pixelmon/battle/api). ---
 
-    // Pixelmon 9.3.16 for 1.21.1 NeoForge (CurseForge file 8042508). NOTE: recent Pixelmon builds
-    // want NeoForge >= 21.1.200 at runtime (we compile against 21.1.77) — bump the runtime NeoForge
-    // on the server accordingly.
+    // Pixelmon 9.3.16 for 1.21.1 NeoForge (CurseForge file 8042508). Recent Pixelmon builds want
+    // NeoForge >= 21.1.200 at runtime, which the build now compiles against and requires anyway
+    // (gradle.properties) — so this is no longer a constraint to remember when provisioning.
     compileOnly "curse.maven:pixelmon-389487:8042508"
+    // On the dev runtime behind -Pdev_pixelmon=true, off by default. It boots and the battle
+    // provider selects correctly, but Pixelmon logs a missing-tag error every time
+    // (pixelmon:spawning/drowned wants pixelmon:drowned_crimson/_dark/_warm, which live in its TCG
+    // sibling) and it roughly doubles boot time. Not worth paying on every dungeon build; turn it on
+    // for battle, starbank, hunt-quest or dex work:
+    //     ./gradlew runServer -Pdev_pixelmon=true
+    if (Boolean.parseBoolean((project.findProperty('dev_pixelmon') ?: 'false') as String)) {
+        runtimeOnly "curse.maven:pixelmon-389487:8042508"
+    }
 
     // Cobblemon 1.7.3+1.21.1 (CurseForge file 7553231). transitive=false: the fat jar carries the
     // API classes we compile against; its runtime deps (architectury, KotlinForForge) are provided
@@ -104,6 +116,11 @@ dependencies {
     // CustomNPCs (project 221826) never left 1.16. Provides the quest/dialog/NPC API the Misiones
     // system builds on. compileOnly: the server supplies it, and Teras degrades without it.
     compileOnly "curse.maven:customnpcs-unofficial-1052708:7411561"
+    // On the dev runtime too: the dungeon's bosses, mini-bosses and the entrance NPC are all
+    // CustomNPCs clones, so without it runServer comes up with "CustomNPCs absent" and none of that
+    // is exercisable. transitive=false for the reason given below — cursemaven synthesises POMs from
+    // CurseForge's dependency relations and would drag in arbitrary file versions of other mods.
+    runtimeOnly("curse.maven:customnpcs-unofficial-1052708:7411561") { transitive = false }
 
     // --- Optional integrations. All compileOnly + transitive=false: the server supplies them, each is
     //     declared optional in neoforge.mods.toml, and every touch point is behind a ModList guard so
@@ -121,6 +138,7 @@ dependencies {
     // Simple Voice Chat 2.6.20 (voicechat-neoforge-1.21.1-2.6.20.jar, file 8293091) — setCall/leaveCall
     // and the Tocadiscos audio path.
     compileOnly("curse.maven:voicechat-416089:8293091") { transitive = false }
+    runtimeOnly("curse.maven:voicechat-416089:8293091") { transitive = false }
 
     // GeckoLib 4.9.2 for 1.21.1 NeoForge — animated models for dungeon enemies (server runtime
     // pin: CurseForge file 8350073, the same 4.9.2). CustomNPCs' GeckoLib compat layer (the "CNPC
@@ -139,6 +157,7 @@ dependencies {
     // 8438936) — skin visuals for the dungeon-exclusive gear; the stats/effects/abilities layer is
     // Teras' own (dungeon/gear).
     compileOnly("maven.modrinth:armourers-workshop:3.4.0-beta.3+1.21.1-neoforge") { transitive = false }
+    runtimeOnly("maven.modrinth:armourers-workshop:3.4.0-beta.3+1.21.1-neoforge") { transitive = false }
 
     // WorldEdit 7.3.8 (CurseForge file 5830452, single NeoForge/Fabric jar for MC 1.21–1.21.1) —
     // /teras region create|redefine read the admin's WE selection (//wand cuboid or //sel poly).
@@ -146,6 +165,7 @@ dependencies {
     // select, and tracking/protection/sync work regardless. On 1.16.5 WorldEdit was a hard dep but
     // only for schematics/biome tools; region membership was never WorldEdit's job.
     compileOnly("curse.maven:worldedit-225608:5830452") { transitive = false }
+    runtimeOnly("curse.maven:worldedit-225608:5830452") { transitive = false }
 
     // Immersive Vehicles (MTS) 24.0.0 for 1.21.1 NeoForge (CurseForge file 7926606) — the kart base.
     // Replaces MrCrayfish's Vehicle Mod, which never left 1.16 and whose PoweredVehicleEntity the

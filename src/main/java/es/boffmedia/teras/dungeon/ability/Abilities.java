@@ -48,8 +48,23 @@ public final class Abilities {
         return id == null ? List.of() : byEnemy.getOrDefault(id, List.of());
     }
 
+    /**
+     * Seeds the built-in table without announcing it. {@code SpawnTables.load} calls this before
+     * reading {@code enemies.json} so a parse failure still leaves the built-ins standing; it is not
+     * the load anyone is waiting to see reported, and logging it made a correct startup read as
+     * though the table had been loaded twice over.
+     */
+    public static void seed(Map<String, List<AbilityDef>> defaults) {
+        load(defaults, null, false);
+    }
+
     /** Replaces the table wholesale; called from {@code SpawnTables.load}. */
     public static void load(Map<String, List<AbilityDef>> defaults, JsonObject json) {
+        load(defaults, json, true);
+    }
+
+    private static void load(Map<String, List<AbilityDef>> defaults, JsonObject json,
+                             boolean announce) {
         Map<String, List<AbilityDef>> loaded = new LinkedHashMap<>(defaults);
         if (json != null) {
             for (String enemy : json.keySet()) {
@@ -64,7 +79,9 @@ public final class Abilities {
             }
         }
         byEnemy = Map.copyOf(loaded);
-        Teras.LOGGER.info("Dungeons: abilities loaded for {} enemies", byEnemy.size());
+        if (announce) {
+            Teras.LOGGER.info("Dungeons: abilities loaded for {} enemies", byEnemy.size());
+        }
     }
 
     private static List<AbilityDef> readList(JsonElement element, String enemy) {
