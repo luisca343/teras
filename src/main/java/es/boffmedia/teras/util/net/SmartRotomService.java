@@ -136,8 +136,10 @@ public final class SmartRotomService {
      * top-level {@code server}, and fire-and-forget for the same reason as {@link #saveRace}: a
      * lost report costs a leaderboard row, and the party is already home either way.
      *
-     * <p>Gated by {@code enviarResultados} in the dungeon config, off by default until the backend
-     * route exists — see {@code docs/SMARTROTOM_ENDPOINTS_HANDOFF.md} for the contract.</p>
+     * <p>Gated by {@code enviarResultados} in the dungeon config. The route is behind
+     * {@code GameServerAuthGuard}, so it 401s unless {@code apiToken} is set, and behind the
+     * {@code server}-field tripwire, so it 403s unless {@code id} matches the backend's
+     * {@code MC_WORLD} — see {@code docs/SMARTROTOM_ENDPOINTS_HANDOFF.md} for the contract.</p>
      */
     public static void saveDungeonRun(es.boffmedia.teras.dungeon.instance.DungeonRunResult result) {
         if (result == null) {

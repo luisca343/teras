@@ -22,7 +22,7 @@ import java.security.SecureRandom;
  * <pre>
  * id: "..."
  * home: "..."
- * API_URL: "..."
+ * apiURL: "..."
  * requireHttps: false
  * sql:
  *   use: false
@@ -64,8 +64,15 @@ public final class TerasConfig {
      * it must be an absolute URL. Switch to {@code https://} in config once the endpoint serves TLS.
      */
     private static final String DEFAULT_HOME = "http://teras.es/smartrotom";
-    /** Base URL of the SmartRotom HTTP API (used by the deferred server-side integrations). */
-    private static final String DEFAULT_API_URL = "http://api.boffmedia.es/smartrotom";
+    /**
+     * Base URL of the SmartRotom HTTP API — the <b>host only</b>, with no path.
+     *
+     * <p>Every call site in {@code net.SmartRotomService} appends the full route including its
+     * {@code /smartrotom} prefix ({@code getApiUrl() + "/smartrotom/dungeons/run"}), so a base that
+     * already ends in {@code /smartrotom} produces {@code /smartrotom/smartrotom/…} and every
+     * outbound call 404s. {@link #normalizeApiUrl} exists to catch exactly that.</p>
+     */
+    private static final String DEFAULT_API_URL = "https://api.ficuslab.es";
 
     /** Loopback — the fail-safe default bind for the inbound HTTP API. */
     private static final String DEFAULT_HTTP_BIND = "127.0.0.1";
@@ -182,7 +189,9 @@ public final class TerasConfig {
             YamlConfig yaml = YamlConfig.read(path);
 
             home = yaml.string("home", home);
-            apiUrl = yaml.string("API_URL", apiUrl);
+            // API_URL was the pre-rename spelling; files written before it still say that, and a
+            // miss here would silently point the server at the default backend.
+            apiUrl = normalizeApiUrl(yaml.string("apiURL", yaml.string("API_URL", apiUrl)));
             apiToken = yaml.string("apiToken", apiToken);
             requireHttps = yaml.bool("requireHttps", requireHttps);
             httpEnabled = yaml.bool("httpEnabled", httpEnabled);
@@ -273,7 +282,8 @@ public final class TerasConfig {
 
         if (has(json, "id")) id = json.get("id").getAsString();
         if (has(json, "home")) home = json.get("home").getAsString();
-        if (has(json, "API_URL")) apiUrl = json.get("API_URL").getAsString();
+        if (has(json, "API_URL")) apiUrl = normalizeApiUrl(json.get("API_URL").getAsString());
+        if (has(json, "apiURL")) apiUrl = normalizeApiUrl(json.get("apiURL").getAsString());
         if (has(json, "apiToken")) apiToken = json.get("apiToken").getAsString();
         if (has(json, "requireHttps")) requireHttps = json.get("requireHttps").getAsBoolean();
         if (has(json, "httpEnabled")) httpEnabled = json.get("httpEnabled").getAsBoolean();
@@ -316,17 +326,22 @@ public final class TerasConfig {
                 # Only the server reads this file; a client uses whatever the server it joined sends.
 
                 # Identifies this server/world to the SmartRotom backend. Generated on first run —
-                # set it to the value registered with the backend, and keep it stable.
+                # set it to the value registered with the backend, and keep it stable. It is sent as
+                # the top-level "server" field and must equal the backend's MC_WORLD, or its
+                # MinecraftMiddleware tripwire 403s every POST before the route is even reached.
                 id: "%s"
 
                 # The SmartRotom site. Must be an absolute URL: its host is the ONLY origin the
                 # in-game browser is allowed to navigate to.
                 home: "%s"
 
-                # Base URL of the SmartRotom HTTP API, for outbound calls.
-                API_URL: "%s"
+                # Base URL of the SmartRotom HTTP API, for outbound calls. HOST ONLY — do not add a
+                # path. Each route appends its own "/smartrotom/..." prefix, so a value ending in
+                # /smartrotom sends /smartrotom/smartrotom/... and every call 404s.
+                apiURL: "%s"
 
-                # Bearer token sent WITH outbound requests to the API above. Leave blank if unused.
+                # Bearer token sent WITH outbound requests to the API above. Must match the backend's
+                # TERAS_API_TOKEN; routes behind GameServerAuthGuard (dungeons, caja) 401 without it.
                 apiToken: "%s"
 
                 # Refuse to load the site over plain http.
@@ -390,6 +405,36 @@ public final class TerasConfig {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) sb.append(chars.charAt(RANDOM.nextInt(chars.length())));
         return sb.toString();
+    }
+
+    /**
+     * Trims a configured {@code apiURL} down to the bare base every call site expects: no trailing
+     * slash, and no trailing {@code /smartrotom}.
+     *
+     * <p>The prefix strip is a migration, not a convenience. Versions up to and including the 1.21.1
+     * port shipped {@code DEFAULT_API_URL = "http://api.boffmedia.es/smartrotom"} while every route in
+     * {@code SmartRotomService} appended its own {@code /smartrotom}, so every config.yml written by
+     * those builds carries the doubled form — and config files are never rewritten in place. Fixing
+     * only the default would leave those servers still POSTing to
+     * {@code /smartrotom/smartrotom/dungeons/run} and still silently 404ing. The warning is loud
+     * because the file on disk stays wrong until an admin edits it.</p>
+     */
+    public static String normalizeApiUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return DEFAULT_API_URL;
+        }
+        String trimmed = url.strip();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        if (trimmed.endsWith("/smartrotom")) {
+            String fixed = trimmed.substring(0, trimmed.length() - "/smartrotom".length());
+            Teras.LOGGER.warn("config/teras/config.yml apiURL ends in '/smartrotom' ('{}'). Every route "
+                    + "already adds that prefix, so this would send /smartrotom/smartrotom/... and 404. "
+                    + "Using '{}' instead — please drop the suffix from the file.", trimmed, fixed);
+            return fixed;
+        }
+        return trimmed;
     }
 
     /** The server/world identifier (config {@code id}); authoritative on the server. */

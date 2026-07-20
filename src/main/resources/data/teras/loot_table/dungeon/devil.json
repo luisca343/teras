@@ -6,8 +6,29 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "minecraft:totem_of_undying",
-          "weight": 4
+          "name": "minecraft:golden_chestplate",
+          "weight": 2,
+          "functions": [
+            {
+              "function": "minecraft:set_components",
+              "components": {
+                "teras:gear_id": "alas_fenix"
+              }
+            }
+          ]
+        },
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:heart_of_the_sea",
+          "weight": 2,
+          "functions": [
+            {
+              "function": "minecraft:set_components",
+              "components": {
+                "teras:gear_id": "talisman_sangre"
+              }
+            }
+          ]
         },
         {
           "type": "minecraft:item",
@@ -16,14 +37,26 @@
           "functions": [
             {
               "function": "minecraft:set_count",
-              "count": { "type": "minecraft:uniform", "min": 1, "max": 2 }
+              "count": {
+                "type": "minecraft:uniform",
+                "min": 1,
+                "max": 2
+              }
             }
           ]
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:netherite_ingot",
-          "weight": 3
+          "name": "minecraft:netherite_sword",
+          "weight": 3,
+          "functions": [
+            {
+              "function": "minecraft:set_components",
+              "components": {
+                "teras:gear_id": "colmillo_diablo"
+              }
+            }
+          ]
         },
         {
           "type": "minecraft:item",
@@ -48,7 +81,11 @@
           "functions": [
             {
               "function": "minecraft:set_count",
-              "count": { "type": "minecraft:uniform", "min": 1, "max": 2 }
+              "count": {
+                "type": "minecraft:uniform",
+                "min": 1,
+                "max": 2
+              }
             }
           ]
         }

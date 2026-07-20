@@ -41,6 +41,7 @@ public final class DungeonsConfig {
     private static String treasureLootTable;
     private static String curseLootTable;
     private static String devilLootTable;
+    private static String bossLootTable;
     private static String crackBlock;
     private static int maxParty;
     private static int entranceRadius;
@@ -157,6 +158,7 @@ public final class DungeonsConfig {
         load();
         RoomTemplates.load();
         es.boffmedia.teras.dungeon.encounter.SpawnTables.load();
+        es.boffmedia.teras.dungeon.gear.GearConfig.load();
         es.boffmedia.teras.world.VoidZones.logZoneMap();
     }
 
@@ -187,6 +189,7 @@ public final class DungeonsConfig {
             treasureLootTable = yaml.string("lootTesoro", treasureLootTable);
             curseLootTable = yaml.string("lootMaldicion", curseLootTable);
             devilLootTable = yaml.string("lootTrato", devilLootTable);
+            bossLootTable = yaml.string("lootJefe", bossLootTable);
             crackBlock = yaml.string("bloqueGrieta", crackBlock);
             maxParty = Math.max(1, yaml.integer("maxGrupo", maxParty));
             entranceRadius = Math.max(1, yaml.integer("radioEntrada", entranceRadius));
@@ -265,10 +268,11 @@ public final class DungeonsConfig {
         treasureLootTable = "teras:dungeon/treasure";
         curseLootTable = "teras:dungeon/curse";
         devilLootTable = "teras:dungeon/devil";
+        bossLootTable = "teras:dungeon/boss";
         crackBlock = "teras:muro_agrietado";
         maxParty = 4;
         entranceRadius = 16;
-        backendPostEnabled = false;
+        backendPostEnabled = true;
 
         coinsNormalMin = 1;
         coinsNormalMax = 3;
@@ -339,13 +343,14 @@ public final class DungeonsConfig {
                 lootTesoro: teras:dungeon/treasure
                 lootMaldicion: teras:dungeon/curse
                 lootTrato: teras:dungeon/devil
+                lootJefe: teras:dungeon/boss
                 # Party play: group size cap, and how close to a marked entrance NPC a player must
                 # stand for 'entrar' to work (also the gather radius for their party members).
                 maxGrupo: 4
                 radioEntrada: 16
-                # POST completed/abandoned runs to SmartRotom (leaderboards). Off until the backend
-                # route exists — see docs/SMARTROTOM_ENDPOINTS_HANDOFF.md.
-                enviarResultados: false
+                # POST completed/abandoned runs to SmartRotom (leaderboards). Needs config.yml's
+                # apiToken set, or the route 401s — see docs/SMARTROTOM_ENDPOINTS_HANDOFF.md.
+                enviarResultados: true
                 # --- Coins ------------------------------------------------------------------
                 # The in-run currency. Enemies drop it and drop nothing else (their vanilla loot and
                 # XP are cancelled); the shop, the arcade, devil deals and the curse toll all price
@@ -511,6 +516,10 @@ public final class DungeonsConfig {
 
     public static String curseLootTable() {
         return curseLootTable;
+    }
+
+    public static String bossLootTable() {
+        return bossLootTable;
     }
 
     public static String devilLootTable() {

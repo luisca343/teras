@@ -41,4 +41,37 @@ public final class ComponentInit {
                     .persistent(Codec.STRING)
                     .networkSynchronized(ByteBufCodecs.STRING_UTF8)
                     .build());
+
+    /**
+     * Which dungeon-gear definition a stack embodies, for gear built on a <b>vanilla</b> base item
+     * (a diamond sword, not a registered {@code teras:} item). Registered gear carries its id in
+     * the item class; vanilla-based gear can only carry it here. Written by loot tables via
+     * {@code minecraft:set_components} and read by {@code GearHolder.defOf}, which makes it the
+     * one component an admin ever sets by hand — everything else is derived from it by the stamp.
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<String>> GEAR_ID =
+            COMPONENTS.register("gear_id", () -> DataComponentType.<String>builder()
+                    .persistent(Codec.STRING)
+                    .networkSynchronized(ByteBufCodecs.STRING_UTF8)
+                    .build());
+
+    /**
+     * Which revision of the gear catalog a piece was last stamped against. The catalog is config
+     * owned and only ever loaded on the server, so a piece has to carry its own numbers: without
+     * this the client would render whatever the built-in defaults said and quietly disagree with
+     * the damage the server was actually applying. Bumped by every load, so
+     * {@code GearRefresh} can spot a stale stack and re-stamp it.
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> GEAR_GENERATION =
+            COMPONENTS.register("gear_generation", () -> DataComponentType.<Integer>builder()
+                    .persistent(Codec.INT)
+                    .networkSynchronized(ByteBufCodecs.VAR_INT)
+                    .build());
+
+    /** The stamped ability magnitude, so the tooltip reads the server's number, not the client's. */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Double>> GEAR_MAGNITUDE =
+            COMPONENTS.register("gear_magnitude", () -> DataComponentType.<Double>builder()
+                    .persistent(Codec.DOUBLE)
+                    .networkSynchronized(ByteBufCodecs.DOUBLE)
+                    .build());
 }

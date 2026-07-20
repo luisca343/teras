@@ -609,6 +609,7 @@ public final class RunEngine {
                 // kill, wrong for a reward pedestal: items scattered around the room, sometimes
                 // out of sight, and read as the loot not having spawned at all. Zero motion: the
                 // reward stands exactly on its marker.
+                es.boffmedia.teras.dungeon.gear.GearStamp.decorate(stack);
                 ItemEntity item = new ItemEntity(floor.level,
                         pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack, 0, 0, 0);
                 item.setDefaultPickUpDelay();
@@ -1136,6 +1137,10 @@ public final class RunEngine {
                 }
             }
             sound(DungeonSound.TRAPDOOR_OPEN, bossRoom);
+            // The boss' own drop, beside the hole rather than in it — gear that fell down the
+            // trapdoor would be gear the party never saw.
+            rollLootAt(floor, floor.built.clampInside(bossRoom, hole.offset(3, 0, 0), 3),
+                    DungeonsConfig.bossLootTable());
             for (UUID member : floor.run.party().keySet()) {
                 ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
                 if (player != null) {

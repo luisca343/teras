@@ -64,6 +64,10 @@ public final class DungeonCommand {
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     RoomTemplates.knownPoolKeys(), builder);
 
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> GEAR_IDS =
+            (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
+                    es.boffmedia.teras.dungeon.gear.GearDefs.all().keySet(), builder);
+
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> MARKER_KINDS =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     java.util.List.of("spawn:default", "loot:default", "boss", "trapdoor",
@@ -139,8 +143,74 @@ public final class DungeonCommand {
                         .then(Commands.literal("descartar")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(1))
                                         .executes(DungeonCommand::discard)))
+                        .then(Commands.literal("gear")
+                                .executes(DungeonCommand::gearInfo)
+                                .then(Commands.literal("dar")
+                                        .then(Commands.argument("pieza", StringArgumentType.word())
+                                                .suggests(GEAR_IDS)
+                                                .executes(DungeonCommand::gearGive))))
                         .then(Commands.literal("reload")
                                 .executes(DungeonCommand::reload))));
+    }
+
+    /**
+     * Hands over a fully stamped piece by catalog id. For vanilla-based gear this is the only
+     * sane give path — the {@code /give} spelling is
+     * {@code minecraft:diamond_sword[teras:gear_id="espada_abisal"]}, which nobody types twice.
+     */
+    private static int gearGive(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        String id = StringArgumentType.getString(ctx, "pieza");
+        es.boffmedia.teras.dungeon.gear.GearDef def = es.boffmedia.teras.dungeon.gear.GearDefs.get(id);
+        if (def == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el equipo '" + id + "'."));
+            return 0;
+        }
+        net.minecraft.world.item.ItemStack stack =
+                new net.minecraft.world.item.ItemStack(es.boffmedia.teras.dungeon.gear.GearVanilla.itemFor(def));
+        if (stack.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "El item base '" + def.baseItem() + "' no existe."));
+            return 0;
+        }
+        stack.set(es.boffmedia.teras.init.ComponentInit.GEAR_ID.get(), def.id());
+        es.boffmedia.teras.dungeon.gear.GearStamp.decorate(stack);
+        if (!player.getInventory().add(stack)) {
+            player.drop(stack, false);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§aEntregado: §f" + id), false);
+        return 1;
+    }
+
+    /**
+     * What the held piece is actually stamped with, read back off the stack rather than the
+     * catalog. The skin authoring loop runs against a remote server whose only other signal is a
+     * render that silently does not happen; this splits "the component is wrong" from "the
+     * component is right and AW could not load the skin".
+     */
+    private static int gearInfo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        net.minecraft.world.item.ItemStack held = player.getMainHandItem();
+        es.boffmedia.teras.dungeon.gear.GearDef def =
+                es.boffmedia.teras.dungeon.gear.GearHolder.defOf(held);
+        if (def == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "Sostén una pieza de equipo de mazmorra en la mano principal."));
+            return 0;
+        }
+        Integer stamped = held.get(es.boffmedia.teras.init.ComponentInit.GEAR_GENERATION.get());
+        String skinOnStack = es.boffmedia.teras.dungeon.gear.GearSkins.describe(held);
+        ctx.getSource().sendSuccess(() -> Component.literal(String.join("\n",
+                "§6Equipo: §f" + def.id(),
+                "§7Generación: §f" + stamped + " §7(catálogo: "
+                        + es.boffmedia.teras.dungeon.gear.GearDefs.generation() + ")",
+                "§7Skin en config: §f" + (def.hasSkin()
+                        ? def.skinId() + " §7(tipo " + def.effectiveSkinType() + ")" : "(sin skin)"),
+                "§7Skin en el item: §f" + (skinOnStack != null ? skinOnStack : "(ninguna)"),
+                "§7Armourer's Workshop: §f"
+                        + (es.boffmedia.teras.dungeon.gear.GearSkins.available()
+                                ? "cargado" : "NO cargado"))), false);
+        return 1;
     }
 
     private enum Mode { PREVIEW, BUILD_HERE, INSTANCE }
@@ -441,6 +511,7 @@ public final class DungeonCommand {
         DungeonsConfig.load();
         RoomTemplates.load();
         es.boffmedia.teras.dungeon.encounter.SpawnTables.load();
+        es.boffmedia.teras.dungeon.gear.GearConfig.load();
         ctx.getSource().sendSuccess(() ->
                 Component.literal("Configuración de mazmorras recargada."), false);
         return 1;

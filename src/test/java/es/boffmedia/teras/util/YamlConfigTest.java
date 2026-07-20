@@ -35,10 +35,10 @@ class YamlConfigTest {
     @Test
     void missingKeysKeepTheirDefaults() {
         YamlConfig yaml = parse("home: \"x\"\n");
-        assertEquals("fallback", yaml.string("API_URL", "fallback"));
+        assertEquals("fallback", yaml.string("apiURL", "fallback"));
         assertEquals(99, yaml.integer("httpPort", 99));
         assertTrue(yaml.bool("httpEnabled", true));
-        assertFalse(yaml.has("API_URL"));
+        assertFalse(yaml.has("apiURL"));
     }
 
     /** An explicit null is "not set", not a value — otherwise it would blank a real default. */
