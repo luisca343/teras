@@ -41,6 +41,14 @@ public final class CnpcBridge {
     /** {@code INPCAi.setMovingType}: stand and shoot rather than close to melee range. */
     private static final int MOVING_TYPE_STANDING = 0;
     /**
+     * {@code INPCAi.setStandingType}: wander near the spawn when idle rather than stand still — the
+     * value {@code EntityAIWander} gates on. Only applied to ambient atmosphere, which has no target
+     * to chase and would otherwise freeze in place.
+     */
+    private static final int AI_WANDER = 1;
+    /** How far ambient atmosphere drifts from where it spawned, in blocks. */
+    private static final int AMBIENT_WANDER = 6;
+    /**
      * {@code INPCStats.setRespawnType}: 0 always respawns, 1 respawns by day, 2 by night, 3 dies
      * like a vanilla mob — read off {@code EntityNPCInterface.tickDeath}, which only takes the
      * vanilla death path for 3/4 and otherwise parks a hidden corpse that {@code reset()}s itself
@@ -120,7 +128,15 @@ public final class CnpcBridge {
         display.setName(preset.displayName());
         display.setSkinTexture(preset.skinTexture());
         display.setSize(preset.size());
-        display.setShowName(1);
+        // Ambience wears no nameplate: a floating "Murciélago" label would give the game away that
+        // the bat is anything other than scenery.
+        display.setShowName(preset.isAmbient() ? 0 : 1);
+        if (!preset.entityModel().isEmpty()) {
+            // Render as a vanilla mob. CustomNPCs' ModelData resolves the id to an EntityType and
+            // draws that entity, so the clone looks like a silverfish/slime/bat while staying a
+            // CustomNPCs entity that Pixelmon's monster-replacement never touches.
+            display.setModel(preset.entityModel());
+        }
         if (!preset.geoModel().isEmpty()) {
             // The CNPC Gecko addon renders this when installed; without it the NPC keeps the skin
             // above and nothing is lost but the animation.
@@ -175,6 +191,14 @@ public final class CnpcBridge {
         npc.getAi().setReturnsHome(false);
         npc.getAi().setCanSwim(true);
         npc.getAi().setLeapAtTarget(preset.leaps());
+        if (preset.isAmbient()) {
+            // Atmosphere has no target (aggroRange 0), so without a wander range it stands frozen
+            // where it spawned. A range lets it drift around the room. True flight is beyond a
+            // CustomNPCs NPC — a bat clone walks — but a wandering bat reads far better than a
+            // statue with a nameplate.
+            npc.getAi().setWanderingRange(AMBIENT_WANDER);
+            npc.getAi().setStandingType(AI_WANDER);
+        }
 
         INPCInventory inventory = npc.getInventory();
         if (!preset.mainHand().isEmpty()) {
@@ -188,7 +212,10 @@ public final class CnpcBridge {
         }
         inventory.setExp(preset.expMin(), preset.expMax());
 
-        if (factionId >= 0) {
+        // Ambient atmosphere stays factionless so it is nobody's enemy and nothing's target; its
+        // aggroRange of 0 already keeps it from noticing players. A combat enemy joins the dungeon
+        // faction so the party starts hostile to it.
+        if (factionId >= 0 && !preset.isAmbient()) {
             npc.setFaction(factionId);
         }
     }

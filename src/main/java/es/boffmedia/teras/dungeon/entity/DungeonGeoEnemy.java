@@ -12,7 +12,6 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
-import net.minecraft.world.entity.ai.goal.LeapAtTargetGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RangedAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
@@ -47,19 +46,31 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     private static final EntityDataAccessor<String> VARIANT =
             SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.STRING);
     /**
-     * Ticks left on the attack animation. Synched, and it has to be: the animation controller's
-     * predicate runs on the <b>client</b>, while {@link #doHurtTarget} only ever runs on the
-     * server. As a plain field the client's copy stayed at zero forever and the attack animation
-     * never played for anyone — including the player being hit.
+     * Ticks left on the current action animation. Synched, and it has to be: the animation
+     * controller's predicate runs on the <b>client</b>, while the goals that drive it only ever run
+     * on the server. As a plain field the client's copy stayed at zero forever and the attack
+     * animation never played for anyone — including the player being hit.
      */
     private static final EntityDataAccessor<Integer> ATTACK_TICKS =
             SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.INT);
+    /** Which action clip {@link #ATTACK_TICKS} is counting down — bite, shoot or pounce. */
+    private static final EntityDataAccessor<Integer> ACTION =
+            SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.INT);
+    /** Whether a climber is against a wall right now, so the client can play the climb loop. */
+    private static final EntityDataAccessor<Boolean> CLIMBING =
+            SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.BOOLEAN);
+
+    /** What the client is being told to animate. Ordinals ride the wire — append only. */
+    public enum Action { BITE, SHOOT, POUNCE }
 
     private static final int ATTACK_ANIMATION_TICKS = 10;
 
     private static final RawAnimation IDLE = RawAnimation.begin().thenLoop("idle");
     private static final RawAnimation WALK = RawAnimation.begin().thenLoop("walk");
+    private static final RawAnimation CLIMB = RawAnimation.begin().thenLoop("climb");
     private static final RawAnimation ATTACK = RawAnimation.begin().thenPlay("attack");
+    private static final RawAnimation SHOOT = RawAnimation.begin().thenPlay("shoot");
+    private static final RawAnimation JUMP = RawAnimation.begin().thenPlay("jump");
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -106,18 +117,25 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     private void rebuildGoals() {
         goalSelector.removeAllGoals(goal -> BEHAVIOUR_GOALS.contains(goal.getClass()));
         GeoEnemyVariant variant = variant();
-        if (variant.has(Behaviour.MELEE) || variant.behaviours().isEmpty()) {
-            // An empty list still melees: an enemy that does nothing at all is never what was meant.
-            goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.0, true));
-        }
-        if (variant.has(Behaviour.LEAP)) {
-            goalSelector.addGoal(3, new LeapAtTargetGoal(this, 0.4f));
+        // The queen's ceiling web owns the highest priority: it is a set-piece on a long cooldown,
+        // and while it runs she should not also be trying to walk up and bite.
+        if (variant.has(Behaviour.CEILING_WEB)) {
+            goalSelector.addGoal(1, new es.boffmedia.teras.dungeon.entity.goal
+                    .SpiderCeilingWebGoal(this));
         }
         if (variant.shoots()) {
-            // Priority above melee: a shooter that walks into melee range to swing stops being a
-            // shooter. RangedAttackGoal keeps its distance on its own.
-            goalSelector.addGoal(1, new RangedAttackGoal(this,
+            // A ground shooter that walks into melee range stops being a shooter, so this sits above
+            // melee and RangedAttackGoal keeps its own distance. The queen is deliberately not here:
+            // CEILING_WEB is not isRanged, so she closes and bites instead of parking at range.
+            goalSelector.addGoal(2, new RangedAttackGoal(this,
                     1.0, Math.max(20, variant.rangedCooldown()), 16f));
+        }
+        if (variant.has(Behaviour.LEAP)) {
+            goalSelector.addGoal(3, new es.boffmedia.teras.dungeon.entity.goal.SpiderPounceGoal(this));
+        }
+        if (variant.has(Behaviour.MELEE) || variant.behaviours().isEmpty()) {
+            // An empty list still melees: an enemy that does nothing at all is never what was meant.
+            goalSelector.addGoal(4, new MeleeAttackGoal(this, 1.0, true));
         }
         // Navigation is built in the Mob constructor too, so a spider read back from NBT would
         // path along the floor until this is redone.
@@ -126,7 +144,9 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
 
     /** Goal classes {@link #rebuildGoals()} owns, so it never strips the constant ones. */
     private static final java.util.Set<Class<?>> BEHAVIOUR_GOALS = java.util.Set.of(
-            MeleeAttackGoal.class, LeapAtTargetGoal.class, RangedAttackGoal.class);
+            MeleeAttackGoal.class, RangedAttackGoal.class,
+            es.boffmedia.teras.dungeon.entity.goal.SpiderPounceGoal.class,
+            es.boffmedia.teras.dungeon.entity.goal.SpiderCeilingWebGoal.class);
 
     /**
      * Wall-climbing for the spiders. Chosen here rather than as a goal because navigation is the
@@ -145,7 +165,13 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         DungeonBolt.Kind kind = variant.has(Behaviour.WEB_SHOT)
                 ? DungeonBolt.Kind.WEB : DungeonBolt.Kind.BOLT;
         DungeonBolt.shoot(this, target, kind, variant.rangedDamage(), 1.2f);
-        entityData.set(ATTACK_TICKS, ATTACK_ANIMATION_TICKS);
+        triggerAction(Action.SHOOT, ATTACK_ANIMATION_TICKS);
+    }
+
+    /** Tells the client which clip to play, for the ticks given. Server-side; the fields are synched. */
+    public void triggerAction(Action action, int ticks) {
+        entityData.set(ACTION, action.ordinal());
+        entityData.set(ATTACK_TICKS, ticks);
     }
 
     @Override
@@ -153,6 +179,8 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         super.defineSynchedData(builder);
         builder.define(VARIANT, GeoEnemyVariant.FALLBACK);
         builder.define(ATTACK_TICKS, 0);
+        builder.define(ACTION, Action.BITE.ordinal());
+        builder.define(CLIMBING, false);
     }
 
     public String variantId() {
@@ -200,7 +228,7 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
 
     @Override
     public boolean doHurtTarget(net.minecraft.world.entity.Entity target) {
-        entityData.set(ATTACK_TICKS, ATTACK_ANIMATION_TICKS);
+        triggerAction(Action.BITE, ATTACK_ANIMATION_TICKS);
         boolean hit = super.doHurtTarget(target);
         if (hit && target instanceof LivingEntity victim) {
             AbilityEngine.onMeleeHit(this, victim,
@@ -226,6 +254,12 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
             entityData.set(ATTACK_TICKS, ticks - 1);
         }
         if (!level().isClientSide) {
+            // A climber pressed against a wall is climbing it; the flag drives the climb loop and,
+            // synched, reaches the client that draws it. Cheap enough to test every tick.
+            boolean climbing = variant().movement() == Movement.CLIMBER && horizontalCollision;
+            if (entityData.get(CLIMBING) != climbing) {
+                entityData.set(CLIMBING, climbing);
+            }
             // The same ability set CustomNPCs enemies run, so a server without that mod still
             // fights something with phases rather than a health bar that walks at you.
             AbilityEngine.tick(this);
@@ -242,10 +276,24 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         controllers.add(new AnimationController<>(this, "main", 4, state -> {
             if (entityData.get(ATTACK_TICKS) > 0) {
-                return state.setAndContinue(ATTACK);
+                // The action decides the clip. SHOOT and JUMP exist on both rigs (guardian's are
+                // placeholders it never triggers), so a variant only ever plays a clip it has.
+                return switch (actionOrdinal()) {
+                    case 1 -> state.setAndContinue(SHOOT);   // Action.SHOOT
+                    case 2 -> state.setAndContinue(JUMP);    // Action.POUNCE
+                    default -> state.setAndContinue(ATTACK); // Action.BITE
+                };
+            }
+            if (entityData.get(CLIMBING)) {
+                return state.setAndContinue(CLIMB);
             }
             return state.setAndContinue(state.isMoving() ? WALK : IDLE);
         }));
+    }
+
+    private int actionOrdinal() {
+        int a = entityData.get(ACTION);
+        return a >= 0 && a < Action.values().length ? a : Action.BITE.ordinal();
     }
 
     @Override

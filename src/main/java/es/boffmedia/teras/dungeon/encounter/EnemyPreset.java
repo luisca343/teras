@@ -45,6 +45,13 @@ package es.boffmedia.teras.dungeon.encounter;
  * @param meleeResist   0–1 share of melee damage ignored
  * @param leaps         whether it leaps at its target
  * @param bossBar       0 none, 1–5 CustomNPCs' boss-bar styles; bosses earn one
+ * @param entityModel   a vanilla entity id ({@code minecraft:silverfish}) to render the clone as,
+ *                      or "" for the humanoid model. CustomNPCs draws whatever entity the id
+ *                      resolves to — which is how the dungeon fields silverfish, slimes and bats
+ *                      that <b>Pixelmon would otherwise delete</b>: a clone is never a vanilla
+ *                      monster, so the replacement listener never fires on it. An {@code aggroRange}
+ *                      of 0 marks it passive atmosphere (a bat), which {@link CnpcBridge} leaves
+ *                      factionless so it never fights
  */
 public record EnemyPreset(
         String id,
@@ -76,11 +83,27 @@ public record EnemyPreset(
         float arrowResist,
         float meleeResist,
         boolean leaps,
-        int bossBar) {
+        int bossBar,
+        String entityModel) {
 
     /** True when this enemy should be given a ranged attack at all. */
     public boolean isRanged() {
         return rangedStrength > 0;
+    }
+
+    /** Atmosphere: notices no one, so it never fights. Marked by an aggro range of zero. */
+    public boolean isAmbient() {
+        return aggroRange <= 0;
+    }
+
+    /** Copy of this preset rendered as a vanilla mob rather than the humanoid rig. */
+    public EnemyPreset renderedAs(String entityId) {
+        return new EnemyPreset(id, displayName, skinTexture, health, strength, delay, range,
+                knockback, aggroRange, speed, size, mainHand, helmet, dropItem, dropChance,
+                expMin, expMax, geoModel,
+                rangedStrength, rangedSpeed, rangedBurst, rangedDelay, rangedEffect,
+                rangedEffectTime, meleeEffect, meleeEffectTime, arrowResist, meleeResist, leaps,
+                bossBar, entityId);
     }
 
     /**
@@ -95,7 +118,7 @@ public record EnemyPreset(
         return new EnemyPreset(id, displayName, skinTexture, health, strength, delay, range,
                 knockback, aggroRange, speed, size, mainHand, helmet, dropItem, dropChance,
                 expMin, expMax, geoModel,
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, false, 0);
+                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, false, 0, "");
     }
 
     /** Copy of this preset with its ranged attack configured. */
@@ -105,7 +128,7 @@ public record EnemyPreset(
                 knockback, aggroRange, speed, size, mainHand, helmet, dropItem, dropChance,
                 expMin, expMax, geoModel,
                 strengthValue, speedValue, burst, rangedDelayValue, effect, effectTime,
-                meleeEffect, meleeEffectTime, arrowResist, meleeResist, leaps, bossBar);
+                meleeEffect, meleeEffectTime, arrowResist, meleeResist, leaps, bossBar, entityModel);
     }
 
     /** Copy of this preset with defensive and movement traits set. */
@@ -116,7 +139,7 @@ public record EnemyPreset(
                 expMin, expMax, geoModel,
                 rangedStrength, rangedSpeed, rangedBurst, rangedDelay, rangedEffect,
                 rangedEffectTime, meleeEffect, meleeEffectTime,
-                arrowResistValue, meleeResistValue, leapsValue, bossBarValue);
+                arrowResistValue, meleeResistValue, leapsValue, bossBarValue, entityModel);
     }
 
     /** Copy of this preset whose melee applies a potion effect. */
@@ -125,6 +148,7 @@ public record EnemyPreset(
                 knockback, aggroRange, speed, size, mainHand, helmet, dropItem, dropChance,
                 expMin, expMax, geoModel,
                 rangedStrength, rangedSpeed, rangedBurst, rangedDelay, rangedEffect,
-                rangedEffectTime, effect, effectTime, arrowResist, meleeResist, leaps, bossBar);
+                rangedEffectTime, effect, effectTime, arrowResist, meleeResist, leaps, bossBar,
+                entityModel);
     }
 }

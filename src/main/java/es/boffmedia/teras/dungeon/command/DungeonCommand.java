@@ -56,9 +56,16 @@ public final class DungeonCommand {
 
     private static final int PERMISSION_LEVEL = 2;
 
-    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> GEO_VARIANTS =
+    /**
+     * Everything {@code invocar} can drop: the first-party animated variants and the installed CNPC
+     * clones. Both are offered because a clone (the slime, the swarm) is exactly the thing you cannot
+     * see without a run otherwise, and {@code listar} only says whether it is installed.
+     */
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> SUMMONABLE =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                    GeoEnemyVariant.all().stream().map(GeoEnemyVariant::id), builder);
+                    java.util.stream.Stream.concat(
+                            GeoEnemyVariant.all().stream().map(GeoEnemyVariant::id),
+                            DungeonEnemyPacks.all().stream().map(EnemyPreset::id)), builder);
 
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> ROOM_TYPES =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
@@ -109,7 +116,7 @@ public final class DungeonCommand {
                                         .executes(DungeonCommand::listEnemies))
                                 .then(Commands.literal("invocar")
                                         .then(Commands.argument("variante", StringArgumentType.word())
-                                                .suggests(GEO_VARIANTS)
+                                                .suggests(SUMMONABLE)
                                                 .executes(DungeonCommand::summonGeo))))
                         .then(Commands.literal("entrada")
                                 .then(Commands.literal("listar")
@@ -157,6 +164,10 @@ public final class DungeonCommand {
                                         .then(Commands.argument("piso", StringArgumentType.word())
                                                 .suggests(PISOS)
                                                 .executes(DungeonCommand::purgePiso)))
+                                .then(Commands.literal("resync")
+                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                .suggests(PISOS)
+                                                .executes(DungeonCommand::resyncPiso)))
                                 .then(Commands.literal("crear")
                                         .then(Commands.argument("nuevo", StringArgumentType.word())
                                                 .then(Commands.literal("desde")
@@ -379,7 +390,7 @@ public final class DungeonCommand {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ServerLevel level = player.serverLevel();
         BlockPos origin = player.blockPosition();
-        int id = DungeonMaterializer.enqueueBuild(level, layout, plan.piso(), origin, built -> {
+        int id = DungeonMaterializer.enqueueBuild(level, layout, plan, origin, built -> {
             BlockPos start = built.roomCenter(built.layout().start());
             player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
@@ -443,16 +454,43 @@ public final class DungeonCommand {
         return installed;
     }
 
-    /** Drops one animated enemy in front of the caller — the way to look at a model without a run. */
+    /**
+     * Drops one enemy in front of the caller — the way to look at a model without a run. Handles
+     * both kinds: a first-party {@link GeoEnemyVariant} spawns as the animated entity, and anything
+     * else is looked up as an installed CNPC clone in the bestiary tab. That second path is the
+     * point of the change — a slime or a swarm clone is exactly what you cannot see otherwise, and
+     * {@code listar} only tells you whether it is installed, not what it looks like.
+     */
     private static int summonGeo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         String variantId = StringArgumentType.getString(ctx, "variante");
         ServerPlayer player = ctx.getSource().getPlayerOrException();
+        var spot = player.position().add(player.getLookAngle().scale(3).multiply(1, 0, 1));
+
+        if (!GeoEnemyVariant.exists(variantId)) {
+            // Not one of ours — try it as a CNPC clone so `invocar limo_cueva` works.
+            if (!CnpcBridge.available()) {
+                ctx.getSource().sendFailure(Component.literal(
+                        "'" + variantId + "' no es un enemigo propio y CustomNPCs no está instalado."));
+                return 0;
+            }
+            var clone = CnpcBridge.spawnClone(player.serverLevel(), spot.x, player.getY(), spot.z,
+                    DungeonEnemyPacks.TAB, variantId);
+            if (clone == null) {
+                ctx.getSource().sendFailure(Component.literal(
+                        "No hay un clon '" + variantId + "' en la pestaña " + DungeonEnemyPacks.TAB
+                                + ". ¿Has ejecutado 'enemigos instalar'? Míralo con 'enemigos listar'."));
+                return 0;
+            }
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "Invocado el clon " + variantId + "."), false);
+            return 1;
+        }
+
         DungeonGeoEnemy enemy = EntityInit.DUNGEON_ENEMY.get().create(player.serverLevel());
         if (enemy == null) {
             ctx.getSource().sendFailure(Component.literal("No se pudo crear la entidad."));
             return 0;
         }
-        var spot = player.position().add(player.getLookAngle().scale(3).multiply(1, 0, 1));
         enemy.moveTo(spot.x, player.getY(), spot.z, player.getYRot() + 180f, 0);
         enemy.applyVariant(variantId);
         player.serverLevel().addFreshEntity(enemy);
@@ -703,6 +741,29 @@ public final class DungeonCommand {
             ctx.getSource().sendSystemMessage(Component.literal(
                     "§cNo se pudieron borrar: " + String.join(", ", result.failed())));
         }
+        return 1;
+    }
+
+    /**
+     * Rewrites a piso's config back to the mod's factory content, then reloads. The escape hatch for
+     * "I changed shipped content but the config file on disk still has the old version" — the
+     * defaults only seed an absent file, so an existing one keeps its old content until this rewrites
+     * it. Authored room variants survive; everything else resets.
+     */
+    private static int resyncPiso(CommandContext<CommandSourceStack> ctx) {
+        String id = StringArgumentType.getString(ctx, "piso");
+        String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.resyncPiso(id);
+        if (error != null) {
+            ctx.getSource().sendFailure(Component.literal(error));
+            return 0;
+        }
+        // Re-read from disk so the rewrite is live now, the same passes '/teras dungeon reload' runs.
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.load();
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
+                ctx.getSource().getServer().getStructureManager());
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + id + " restablecido a los valores "
+                + "de fábrica (enemigos, decoración, formas, luz, maldiciones…). Las variantes de "
+                + "sala se conservan."), false);
         return 1;
     }
 

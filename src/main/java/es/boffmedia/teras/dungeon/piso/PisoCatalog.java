@@ -49,6 +49,12 @@ public final class PisoCatalog {
     private static Map<String, FloorDef> declared = new LinkedHashMap<>();
     /** The subset whose templates all resolve. What a floor may actually be built from. */
     private static Map<String, FloorDef> pisos = new LinkedHashMap<>();
+    /**
+     * The factory defaults, kept apart from {@code pisos}/{@code declared} because those are
+     * overwritten by whatever is on disk. This is what {@link #resyncPiso} rewrites a config back
+     * to — the answer to "a shipped content change never reaches a file that already exists".
+     */
+    private static Map<String, FloorDef> shipped = new LinkedHashMap<>();
     private static Map<String, List<String>> missingRooms = new LinkedHashMap<>();
     private static Map<String, List<String>> mismatched = new LinkedHashMap<>();
     private static Map<String, DungeonDef> dungeons = new LinkedHashMap<>();
@@ -358,7 +364,9 @@ public final class PisoCatalog {
                     curses(json.get("maldiciones")),
                     strings(json.get("jefes")),
                     strings(json.get("minijefes")),
-                    salas(json.get("salas")));
+                    salas(json.get("salas")),
+                    enemyTable(json.get("enemigos")),
+                    decorTables(json.get("decoracion")));
         } catch (Exception e) {
             Teras.LOGGER.error("Dungeons: could not read piso '{}': {}", id, e.toString());
             return null;
@@ -437,6 +445,92 @@ public final class PisoCatalog {
             }
         }
         return values;
+    }
+
+    /**
+     * Reads {@code enemigos}. A bad line is skipped with its reason rather than failing the piso:
+     * one mistyped id should cost that enemy, not the place.
+     */
+    private static EnemyTable enemyTable(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            return EnemyTable.EMPTY;
+        }
+        JsonObject json = element.getAsJsonObject();
+        int min = json.has("countMin") ? json.get("countMin").getAsInt() : 0;
+        int max = json.has("countMax") ? json.get("countMax").getAsInt() : min;
+        List<SpawnRef> oleada = new ArrayList<>();
+        if (json.has("oleada") && json.get("oleada").isJsonArray()) {
+            for (JsonElement item : json.getAsJsonArray("oleada")) {
+                SpawnRef ref = spawnRef(item);
+                if (ref != null) {
+                    oleada.add(ref);
+                }
+            }
+        }
+        List<EnemyTable.AmbientRef> ambientales = new ArrayList<>();
+        if (json.has("ambientales") && json.get("ambientales").isJsonArray()) {
+            for (JsonElement item : json.getAsJsonArray("ambientales")) {
+                try {
+                    JsonObject obj = item.getAsJsonObject();
+                    ambientales.add(new EnemyTable.AmbientRef(
+                            obj.has("kind") ? obj.get("kind").getAsString() : null,
+                            obj.get("id").getAsString(),
+                            obj.has("tab") ? obj.get("tab").getAsInt() : 0,
+                            obj.has("cantidad") ? obj.get("cantidad").getAsInt() : 1));
+                } catch (Exception e) {
+                    Teras.LOGGER.warn("Dungeons: skipping bad ambiental entry {}: {}",
+                            item, e.toString());
+                }
+            }
+        }
+        return new EnemyTable(min, max, oleada, ambientales);
+    }
+
+    private static SpawnRef spawnRef(JsonElement element) {
+        try {
+            JsonObject obj = element.getAsJsonObject();
+            return new SpawnRef(
+                    obj.has("kind") ? obj.get("kind").getAsString() : null,
+                    obj.get("id").getAsString(),
+                    obj.has("tab") ? obj.get("tab").getAsInt() : 0,
+                    obj.has("peso") ? obj.get("peso").getAsInt() : 1,
+                    obj.has("elite") && obj.get("elite").getAsBoolean(),
+                    obj.has("vida") ? obj.get("vida").getAsDouble() : 1.0,
+                    obj.has("dano") ? obj.get("dano").getAsDouble() : 1.0,
+                    obj.has("escala") ? obj.get("escala").getAsDouble() : 1.0);
+        } catch (Exception e) {
+            Teras.LOGGER.warn("Dungeons: skipping bad enemy entry {}: {}", element, e.toString());
+            return null;
+        }
+    }
+
+    /** Reads {@code decoracion}: one weighted table per surface. */
+    private static DecorTables decorTables(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            return DecorTables.EMPTY;
+        }
+        Map<String, List<DecorTables.DecorRef>> bySurface = new LinkedHashMap<>();
+        JsonObject json = element.getAsJsonObject();
+        for (String surface : json.keySet()) {
+            if (!json.get(surface).isJsonArray()) {
+                continue;
+            }
+            List<DecorTables.DecorRef> refs = new ArrayList<>();
+            for (JsonElement item : json.getAsJsonArray(surface)) {
+                try {
+                    JsonObject obj = item.getAsJsonObject();
+                    refs.add(new DecorTables.DecorRef(
+                            obj.has("bloque") ? obj.get("bloque").getAsString() : null,
+                            obj.has("estructura") ? obj.get("estructura").getAsString() : null,
+                            obj.has("peso") ? obj.get("peso").getAsInt() : 1));
+                } catch (Exception e) {
+                    Teras.LOGGER.warn("Dungeons: skipping bad decoracion entry {}: {}",
+                            item, e.toString());
+                }
+            }
+            bySurface.put(surface.trim().toLowerCase(Locale.ROOT), refs);
+        }
+        return new DecorTables(bySurface);
     }
 
     /**
@@ -533,7 +627,8 @@ public final class PisoCatalog {
         pisos.put("cuevas", new FloorDef("cuevas", "Cuevas", "el aire huele a piedra húmeda",
                 EnumSet.allOf(ShapeFamily.class), 7,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "",
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of(), List.of(), Map.of()));
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of(), List.of(), Map.of(),
+                cuevasEnemies(), cuevasDecor()));
         // Two shapes only: tight and choked is the identity, and it excuses six of the 21 rooms.
         // LABYRINTH is refused for the same reason — at two shapes it would sprawl to the room cap
         // in one repeated footprint.
@@ -541,15 +636,133 @@ public final class PisoCatalog {
                 "algo se mueve en la oscuridad",
                 EnumSet.of(ShapeFamily.SINGLE, ShapeFamily.LARGE), 4,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "infestacion",
-                EnumSet.of(Curse.LOST), List.of("reina_cria"), List.of(), Map.of()));
+                EnumSet.of(Curse.LOST), List.of("reina_cria"), List.of(), Map.of(),
+                infestadasEnemies(), infestadasDecor()));
 
         declared = pisos;
+        // A snapshot taken before loadPisos overwrites pisos/declared with the disk versions, so it
+        // holds the factory content even after a server has its own files. FloorDef is immutable, so
+        // sharing the instances is safe.
+        shipped = new LinkedHashMap<>(pisos);
         dungeons = new LinkedHashMap<>();
         dungeons.put("cripta", new DungeonDef("cripta", "La Cripta", List.of(
                 new TierDef(2, 1.0,
                         List.of(new WeightedRef("cuevas", 3),
                                 new WeightedRef("cuevas_infestadas", 1)),
                         List.of("coloso_guardian"), List.of("centinela_hueso")))));
+    }
+
+    /**
+     * Rewrites {@code pisos/<id>.json} back to the mod's factory content — enemy table, decoration,
+     * shapes, light, everything. This exists because a shipped-default change never reaches a config
+     * file that already exists on disk: the defaults only seed a file that is absent, so a server
+     * created before a content change keeps the old content until someone rewrites it. This is the
+     * one-command rewrite.
+     *
+     * <p><b>Authored room variants are preserved.</b> A piso's {@code salas} are managed by
+     * {@code sala guardar} and represent real building work; only the shipped content fields reset.
+     * A piso with no factory default (one made with {@code piso crear}) is refused — there is
+     * nothing to resync it to.</p>
+     *
+     * @return an error to show, or null on success
+     */
+    public static String resyncPiso(String pisoId) {
+        FloorDef def = shipped.get(pisoId);
+        if (def == null) {
+            return "'" + pisoId + "' no es un piso de fábrica — resync solo aplica a los que trae el "
+                    + "mod (" + String.join(", ", shipped.keySet()) + ").";
+        }
+        // Keep the on-disk salas if it has any, so a content resync never discards authored rooms.
+        FloorDef current = declared.get(pisoId);
+        Map<String, List<RoomVariant>> keepSalas =
+                current != null && current.salas() != null && !current.salas().isEmpty()
+                        ? current.salas() : def.salas();
+        FloorDef merged = new FloorDef(def.id(), def.nombre(), def.subtitulo(), def.formas(),
+                def.luz(), def.musica(), def.ambiente(), def.mecanica(), def.maldiciones(),
+                def.jefes(), def.minijefes(), keepSalas, def.enemigos(), def.decoracion());
+        Path file = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
+                .resolve("pisos").resolve(pisoId + ".json");
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, GSON.toJson(render(merged)));
+            return null;
+        } catch (Exception e) {
+            Teras.LOGGER.error("Dungeons: could not resync piso '{}': {}", pisoId, e.toString());
+            return "No se pudo escribir el piso: " + e;
+        }
+    }
+
+    /** The tab {@code enemigos instalar} writes the CNPC bestiary into ({@code DungeonEnemyPacks.TAB}). */
+    private static final int CNPC_TAB = 7;
+
+    /**
+     * Cuevas' roster: cave-specific humanoids on the shared rig, the two geo guardians as elites,
+     * and the vanilla-flavoured mobs for what a humanoid rig cannot be — a swarm and bouncy chaff.
+     * Those last are <b>CustomNPCs clones</b> ({@code lepisma_cueva}, {@code limo_cueva}), not
+     * {@code minecraft:} ids: on a Pixelmon server the real mobs are deleted the instant they spawn,
+     * so the clones wear the mob's model while staying something Pixelmon leaves alone. Weights are
+     * relative composition only; the tramo's dificultad supplies the depth.
+     *
+     * <p>No ambient entry: a CustomNPCs clone uses NPC navigation, so a bat clone walks the floor
+     * rather than flying, which read worse than no bat at all. The {@code ambientales} mechanism
+     * stays for a mob that a ground path actually suits.</p>
+     */
+    private static EnemyTable cuevasEnemies() {
+        return new EnemyTable(3, 5,
+                List.of(SpawnRef.of("saqueador_cuevas", 4),
+                        // The one shooter, deliberately scarce: perches should be a threat to
+                        // answer, not the shape of every fight.
+                        SpawnRef.of("arquero_gruta", 2),
+                        SpawnRef.of("husk_guardian", 2).asElite(),
+                        SpawnRef.of("bone_sentinel", 1).asElite(),
+                        SpawnRef.cnpc("lepisma_cueva", CNPC_TAB, 3),
+                        SpawnRef.cnpc("limo_cueva", CNPC_TAB, 1)),
+                List.of());
+    }
+
+    /**
+     * Infestadas fights the same floor plan with a different bestiary — which is the whole point of
+     * a variant piso. No archer: its shooters climb instead, so height is contested rather than
+     * held.
+     */
+    private static EnemyTable infestadasEnemies() {
+        return new EnemyTable(4, 6,
+                List.of(SpawnRef.of("cria", 5),
+                        SpawnRef.of("tejedora", 2).asElite(),
+                        SpawnRef.cnpc("lepisma_cueva", CNPC_TAB, 2)),
+                List.of());
+    }
+
+    /** Carved natural cavern: dripstone above, mushrooms and rubble below, moss and lichen across. */
+    private static DecorTables cuevasDecor() {
+        return new DecorTables(Map.of(
+                DecorTables.TECHO, List.of(
+                        DecorTables.DecorRef.block("minecraft:pointed_dripstone[vertical_direction=down]", 3),
+                        DecorTables.DecorRef.block("minecraft:hanging_roots", 2),
+                        DecorTables.DecorRef.block("minecraft:cave_vines", 1)),
+                DecorTables.SUELO, List.of(
+                        DecorTables.DecorRef.block("minecraft:brown_mushroom", 2),
+                        DecorTables.DecorRef.block("minecraft:cobblestone", 2),
+                        DecorTables.DecorRef.block("minecraft:pointed_dripstone[vertical_direction=up]", 1)),
+                DecorTables.PARED, List.of(
+                        DecorTables.DecorRef.block("minecraft:moss_carpet", 2),
+                        DecorTables.DecorRef.block("minecraft:glow_lichen", 2),
+                        DecorTables.DecorRef.block("minecraft:coal_ore", 1))));
+    }
+
+    /** The same surfaces, dressed: webbing above, sculk below, a damper palette throughout. */
+    private static DecorTables infestadasDecor() {
+        return new DecorTables(Map.of(
+                DecorTables.TECHO, List.of(
+                        DecorTables.DecorRef.block("minecraft:cobweb", 4),
+                        DecorTables.DecorRef.block("minecraft:hanging_roots", 1)),
+                DecorTables.SUELO, List.of(
+                        DecorTables.DecorRef.block("minecraft:sculk", 3),
+                        DecorTables.DecorRef.block("minecraft:cobweb", 2),
+                        DecorTables.DecorRef.block("minecraft:bone_block", 1)),
+                DecorTables.PARED, List.of(
+                        DecorTables.DecorRef.block("minecraft:sculk_vein", 3),
+                        DecorTables.DecorRef.block("minecraft:cobweb", 2))));
     }
 
     private static JsonObject render(FloorDef piso) {
@@ -573,6 +786,76 @@ public final class PisoCatalog {
             salas.add(entry.getKey(), list);
         }
         json.add("salas", salas);
+        json.add("enemigos", renderEnemies(piso.enemigos()));
+        json.add("decoracion", renderDecor(piso.decoracion()));
+        return json;
+    }
+
+    private static JsonObject renderEnemies(EnemyTable table) {
+        JsonObject json = new JsonObject();
+        json.addProperty("countMin", table.countMin());
+        json.addProperty("countMax", table.countMax());
+        JsonArray oleada = new JsonArray();
+        for (SpawnRef ref : table.oleada()) {
+            JsonObject obj = new JsonObject();
+            if (ref.kind() != null) {
+                obj.addProperty("kind", ref.kind());
+            }
+            obj.addProperty("id", ref.id());
+            if (ref.tab() != 0) {
+                obj.addProperty("tab", ref.tab());
+            }
+            obj.addProperty("peso", ref.peso());
+            if (ref.elite()) {
+                obj.addProperty("elite", true);
+            }
+            // Only written when they say something: a table full of "vida": 1.0 reads as tuning
+            // that was done, and invites editing the wrong number.
+            if (ref.vida() != 1.0) {
+                obj.addProperty("vida", ref.vida());
+            }
+            if (ref.dano() != 1.0) {
+                obj.addProperty("dano", ref.dano());
+            }
+            if (ref.escala() != 1.0) {
+                obj.addProperty("escala", ref.escala());
+            }
+            oleada.add(obj);
+        }
+        json.add("oleada", oleada);
+        JsonArray ambientales = new JsonArray();
+        for (EnemyTable.AmbientRef ref : table.ambientales()) {
+            JsonObject obj = new JsonObject();
+            if (ref.kind() != null) {
+                obj.addProperty("kind", ref.kind());
+            }
+            obj.addProperty("id", ref.id());
+            if (ref.tab() != 0) {
+                obj.addProperty("tab", ref.tab());
+            }
+            obj.addProperty("cantidad", ref.cantidad());
+            ambientales.add(obj);
+        }
+        json.add("ambientales", ambientales);
+        return json;
+    }
+
+    private static JsonObject renderDecor(DecorTables tables) {
+        JsonObject json = new JsonObject();
+        for (Map.Entry<String, List<DecorTables.DecorRef>> entry : tables.bySurface().entrySet()) {
+            JsonArray list = new JsonArray();
+            for (DecorTables.DecorRef ref : entry.getValue()) {
+                JsonObject obj = new JsonObject();
+                if (ref.isStructure()) {
+                    obj.addProperty("estructura", ref.estructura());
+                } else {
+                    obj.addProperty("bloque", ref.bloque());
+                }
+                obj.addProperty("peso", ref.peso());
+                list.add(obj);
+            }
+            json.add(entry.getKey(), list);
+        }
         return json;
     }
 

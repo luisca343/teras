@@ -24,7 +24,15 @@ public enum Behaviour {
     /** Short teleport away when something reaches it — what stops a caster being a free target. */
     BLINK,
     /** Pounces at the target. The spider's signature. */
-    LEAP;
+    LEAP,
+    /**
+     * Climbs above the target and rains webbing down — the queen's signature. Distinct from
+     * {@link #WEB_SHOT}: a webber sprays thin webbing from where it stands, while this ascends first
+     * and drops dense strands from overhead, which is what makes height its move rather than a perch
+     * the party can answer. Deliberately not {@link #isRanged}: the queen is a boss placed at the
+     * boss marker, and adding a {@code RangedAttackGoal} would only make her park at range instead.
+     */
+    CEILING_WEB;
 
     public boolean isRanged() {
         return this == RANGED || this == VOLLEY || this == WEB_SHOT;

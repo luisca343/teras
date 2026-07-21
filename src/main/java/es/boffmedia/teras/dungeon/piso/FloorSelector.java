@@ -58,7 +58,21 @@ public final class FloorSelector {
         FloorDef piso = pick(options, position.tier(), catalog, dungeon.id(), stage, seedString);
         Set<Curse> curses = rollCurses(piso, dungeon.id(), stage, seedString, curseChances);
         return new FloorPlan(stage, dungeon.id(), position.tierIndex(), position.indexInTier(),
-                piso, position.tier().dificultad(), curses);
+                piso, position.tier().dificultad(), curses,
+                pool(piso.jefes(), position.tier().jefes()),
+                pool(piso.minijefes(), position.tier().minijefes()));
+    }
+
+    /**
+     * The piso's pool when it declares one, the tramo's otherwise. Resolved here so a boss can be
+     * declared once for a whole tramo and still be overridden by the one piso that needs its own —
+     * which is the only thing keeping the spider queen out of plain Cuevas.
+     */
+    private static List<String> pool(List<String> override, List<String> tierPool) {
+        if (override != null && !override.isEmpty()) {
+            return override;
+        }
+        return tierPool == null ? List.of() : tierPool;
     }
 
     /**

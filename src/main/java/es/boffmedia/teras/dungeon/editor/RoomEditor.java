@@ -419,7 +419,7 @@ public final class RoomEditor {
         player.sendSystemMessage(Component.literal("§aSala guardada como " + id
                 + (name == null ? " (reemplaza a la original)."
                         : " y registrada como variante de " + session.poolKey + ".")));
-        reportMarkers(player, session, template);
+        reportSave(player, session, template);
         return null;
     }
 
@@ -727,9 +727,16 @@ public final class RoomEditor {
         template.load(level.registryAccess().lookupOrThrow(Registries.BLOCK), tag);
     }
 
-    /** What a finished room of this type is expected to declare, checked on save as a warning. */
-    private static void reportMarkers(ServerPlayer player, Session session,
-                                      StructureTemplate template) {
+    /**
+     * What was captured, and everything the room now breaks.
+     *
+     * <p>The audit runs here rather than only in {@code piso auditar} because of who is standing
+     * where: an author told at save has the room open in front of them and the mistake is one block
+     * away, and an author told later has to reopen the room and hunt for it. The same check, at the
+     * only moment it is cheap to act on.</p>
+     */
+    private static void reportSave(ServerPlayer player, Session session,
+                                   StructureTemplate template) {
         List<TemplateMarkers.Marker> markers = TemplateMarkers.extract(template,
                 new StructurePlaceSettings(), BlockPos.ZERO);
         Map<String, Integer> byKind = new LinkedHashMap<>();
@@ -738,14 +745,28 @@ public final class RoomEditor {
         }
         player.sendSystemMessage(Component.literal("§7Marcadores guardados: "
                 + (byKind.isEmpty() ? "ninguno" : byKind.toString())));
-        for (String required : es.boffmedia.teras.dungeon.piso.RoomKeys
-                .requiredMarkers(session.poolKey)) {
-            if (!byKind.containsKey(required)) {
-                player.sendSystemMessage(Component.literal(
-                        "§eAviso: una sala '" + session.poolKey + "' debería tener un marcador '"
-                                + required + "' — sin él se usa una posición calculada."));
-            }
+
+        int waveMax = es.boffmedia.teras.dungeon.build.RoomAuditor.waveMax(
+                es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(session.pisoId));
+        List<es.boffmedia.teras.dungeon.piso.RoomAudit.Finding> findings =
+                es.boffmedia.teras.dungeon.build.RoomAuditor.audit(template, session.shape,
+                        session.poolKey, DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(),
+                        DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight(), waveMax);
+        if (findings.isEmpty()) {
+            player.sendSystemMessage(Component.literal("§aLa sala cumple todas las reglas."));
+            return;
         }
+        for (var finding : findings) {
+            boolean error = finding.level()
+                    == es.boffmedia.teras.dungeon.piso.RoomAudit.Level.ERROR;
+            player.sendSystemMessage(Component.literal(
+                    (error ? "§c✖ " : "§6! ") + finding.message()));
+        }
+        // Saved regardless. Refusing would strand work an author cannot always fix in one sitting —
+        // a room short of spawn markers is worth keeping — and the room is on disk either way, so
+        // the honest thing is to say what is wrong rather than to pretend it did not happen.
+        player.sendSystemMessage(Component.literal("§7La sala se guardó igualmente. Los §c✖§7 la "
+                + "rompen en partida; los §6!§7 solo la empeoran."));
     }
 
 

@@ -53,20 +53,40 @@ public final class RoomAuditor {
                     // report every rule as passing.
                     continue;
                 }
-                RoomAudit.Room room = read(template, shape);
-                results.add(new Result(key, id, RoomAudit.audit(room, key, roomSize, roomHeight,
-                        doorWidth, doorHeight, waveMax())));
+                results.add(new Result(key, id, audit(template, shape, key,
+                        roomSize, roomHeight, doorWidth, doorHeight, waveMax(piso))));
             }
         }
         return results;
     }
 
     /**
-     * The largest wave any floor can ask for, across every stage table — the bar a room's spawn
-     * marker count is held to. Taking the maximum rather than a per-stage number is deliberate: a
-     * room is not authored per floor, and the same template turns up at stage 1 and stage 12.
+     * One template's findings, held to {@code waveMax} spawn markers. Split out so the editor can
+     * run the same check the moment a room is saved: an author who is told at save has the room open
+     * and the mistake in front of them, and one who is told by a later {@code piso auditar} has to
+     * go back and find it again. {@link #waveMax(FloorDef)} is what a caller passes.
      */
-    private static int waveMax() {
+    public static List<RoomAudit.Finding> audit(StructureTemplate template, RoomShape shape,
+                                                String roomKey, int roomSize, int roomHeight,
+                                                int doorWidth, int doorHeight, int waveMax) {
+        return RoomAudit.audit(read(template, shape), roomKey, roomSize, roomHeight,
+                doorWidth, doorHeight, waveMax);
+    }
+
+    /**
+     * The largest wave a room of {@code piso} may be asked to hold — the bar its floor spawn marker
+     * count is held to, because the spawner cycles positions and a wave larger than the markers
+     * stacks enemies on one block.
+     *
+     * <p>It is the piso's own {@code countMax}, since a wave now comes from the piso's table rather
+     * than the global stage curve. A piso that declares no table of its own falls back to the widest
+     * {@code enemies.json} stage, so an unmigrated server audits against the number it actually
+     * spawns.</p>
+     */
+    public static int waveMax(FloorDef piso) {
+        if (piso != null && !piso.enemigos().isEmpty()) {
+            return piso.enemigos().countMax();
+        }
         int max = 0;
         for (int stage = 1; stage <= 12; stage++) {
             SpawnTables.StageTable table = SpawnTables.stageTable(stage);

@@ -6,6 +6,7 @@ import es.boffmedia.teras.dungeon.model.DungeonLayout;
 import es.boffmedia.teras.dungeon.model.GridDir;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
+import es.boffmedia.teras.dungeon.piso.DecorTables;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -59,12 +60,16 @@ public final class DungeonMaterializer {
         boolean step();
     }
 
-    /** @param piso the place this floor is; it supplies every template the build pastes. */
+    /**
+     * @param plan what this floor is: the piso supplying every template the build pastes, and the
+     *             depth its enemies and decoration are scaled by. Carried through to the
+     *             {@link BuiltDungeon} so the run stage reads one decided answer.
+     */
     public static int enqueueBuild(ServerLevel level, DungeonLayout layout,
-                                   es.boffmedia.teras.dungeon.piso.FloorDef piso, BlockPos origin,
+                                   es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
                                    Consumer<BuiltDungeon> onComplete) {
         int id = nextId++;
-        JOBS.add(new BuildJob(id, level, layout, piso, origin, onComplete));
+        JOBS.add(new BuildJob(id, level, layout, plan, origin, onComplete));
         return id;
     }
 
@@ -132,19 +137,19 @@ public final class DungeonMaterializer {
         private final BlockPos origin;
         private final Consumer<BuiltDungeon> onComplete;
         private final List<Room> rooms;
-        private final es.boffmedia.teras.dungeon.piso.FloorDef piso;
+        private final es.boffmedia.teras.dungeon.piso.FloorPlan plan;
         private final Map<Room, List<TemplateMarkers.Marker>> markers = new HashMap<>();
         private final int roomSize = DungeonsConfig.roomSize();
         private final int roomHeight = DungeonsConfig.roomHeight();
         private int index;
 
         BuildJob(int id, ServerLevel level, DungeonLayout layout,
-                 es.boffmedia.teras.dungeon.piso.FloorDef piso, BlockPos origin,
+                 es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
                  Consumer<BuiltDungeon> onComplete) {
             this.id = id;
             this.level = level;
             this.layout = layout;
-            this.piso = piso;
+            this.plan = plan;
             this.origin = origin;
             this.onComplete = onComplete;
             this.rooms = layout.rooms();
@@ -165,7 +170,7 @@ public final class DungeonMaterializer {
                 return false;
             }
             carveDoors();
-            BuiltDungeon built = new BuiltDungeon(id, level.dimension(), origin, layout,
+            BuiltDungeon built = new BuiltDungeon(id, level.dimension(), origin, layout, plan,
                     roomSize, roomHeight, Map.copyOf(markers));
             BUILT.put(id, built);
             onComplete.accept(built);
@@ -174,7 +179,7 @@ public final class DungeonMaterializer {
 
         private void placeRoom(Room room, int roomIndex) {
             RoomTemplates.TemplateEntry entry =
-                    RoomTemplates.select(piso, room, layout.baseSeed(), roomIndex);
+                    RoomTemplates.select(plan.piso(), room, layout.baseSeed(), roomIndex);
             StructureTemplate template = level.getStructureManager().get(entry.template()).orElse(null);
             if (template == null) {
                 Teras.LOGGER.error("Dungeons: missing template {} for {} — leaving the cell empty",
@@ -205,9 +210,43 @@ public final class DungeonMaterializer {
             List<TemplateMarkers.Marker> roomMarkers =
                     TemplateMarkers.extract(template, settings, corrected);
             for (TemplateMarkers.Marker marker : roomMarkers) {
+                if (Decorator.isDecorMarker(marker.kind())) {
+                    decorate(room, marker.pos(), marker.kind());
+                    continue;
+                }
                 level.setBlock(marker.pos(), markerFloor(room, marker.kind(), marker.pos()), 2);
             }
             markers.put(room, roomMarkers);
+        }
+
+        /**
+         * Fills a decoration marker from the piso's surface table — the {@code decoracion:*} markers
+         * authored into a room become dripstone, moss, webbing, whatever the piso declares, and a
+         * different roll each run. Silent for a piso with no decoration table: the marker clears the
+         * same as any unhandled one, so a room may carry the markers before the piso has the tables.
+         */
+        private void decorate(Room room, BlockPos pos, String kind) {
+            DecorTables tables = plan == null || plan.piso() == null
+                    ? DecorTables.EMPTY : plan.piso().decoracion();
+            String structure = Decorator.structureFor(tables, kind, pos, layout.baseSeed());
+            if (structure != null) {
+                placeDecorStructure(pos, structure);
+                return;
+            }
+            level.setBlock(pos, Decorator.blockFor(level, tables, kind, pos, layout.baseSeed()), 2);
+        }
+
+        /** A decoration that is a small structure rather than a block, pasted at the marker. */
+        private void placeDecorStructure(BlockPos pos, String structureId) {
+            StructureTemplate structure = level.getStructureManager()
+                    .get(net.minecraft.resources.ResourceLocation.parse(structureId)).orElse(null);
+            if (structure == null) {
+                Teras.LOGGER.warn("Dungeons: decoracion structure '{}' is missing — cleared", structureId);
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+                return;
+            }
+            structure.placeInWorld(level, pos, pos, new StructurePlaceSettings(),
+                    level.getRandom(), 2);
         }
 
         /**

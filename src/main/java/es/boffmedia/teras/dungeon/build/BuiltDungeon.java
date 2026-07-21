@@ -21,9 +21,24 @@ public record BuiltDungeon(
         ResourceKey<Level> dimension,
         BlockPos origin,
         DungeonLayout layout,
+        es.boffmedia.teras.dungeon.piso.FloorPlan plan,
         int roomSize,
         int roomHeight,
         Map<Room, List<TemplateMarkers.Marker>> markers) {
+
+    /**
+     * The place this floor is. Carried on the built floor rather than looked up again at each
+     * consumer: the piso is drawn from a weighted list, so a second lookup is a second draw and two
+     * consumers can disagree about what floor the party is standing on.
+     */
+    public es.boffmedia.teras.dungeon.piso.FloorDef piso() {
+        return plan.piso();
+    }
+
+    /** The tramo's multiplier for this floor, or the baseline when the floor was built bare. */
+    public double dificultad() {
+        return plan == null ? 1.0 : plan.dificultad();
+    }
 
     /** World position of a grid cell's minimum corner. */
     public BlockPos cellOrigin(GridPos cell) {

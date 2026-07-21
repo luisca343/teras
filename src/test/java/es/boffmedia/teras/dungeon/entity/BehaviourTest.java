@@ -28,6 +28,9 @@ class BehaviourTest {
         assertFalse(Behaviour.MELEE.isRanged());
         assertFalse(Behaviour.LEAP.isRanged());
         assertFalse(Behaviour.BLINK.isRanged());
+        // CEILING_WEB throws webbing but ascends first — deliberately not "ranged", so the queen is
+        // never handed a RangedAttackGoal that would park her at distance instead of closing.
+        assertFalse(Behaviour.CEILING_WEB.isRanged());
     }
 
     @Test
@@ -75,8 +78,10 @@ class BehaviourTest {
         GeoEnemyVariant queen = GeoEnemyVariant.of("reina_cria");
         assertTrue(queen.has(Behaviour.MELEE));
         assertTrue(queen.has(Behaviour.LEAP));
-        assertTrue(queen.has(Behaviour.WEB_SHOT));
-        assertTrue(queen.shoots());
+        // She webs from overhead (CEILING_WEB), not from range (WEB_SHOT) — which is why she closes
+        // to bite and pounce rather than parking, and why she is not "ranged".
+        assertTrue(queen.has(Behaviour.CEILING_WEB));
+        assertFalse(queen.shoots());
     }
 
     /** Anything that shoots needs numbers to shoot with, or its goal fires blanks. */
@@ -120,5 +125,32 @@ class BehaviourTest {
     @Test
     void unknownVariantFallsBack() {
         assertEquals(GeoEnemyVariant.FALLBACK, GeoEnemyVariant.of("no_such_enemy").id());
+    }
+
+    /**
+     * Every clip the animation controller can request must exist in the file it plays it from. The
+     * controller picks a clip by action ({@code shoot}, {@code jump}) or state ({@code climb}), and a
+     * clip named there but absent from the {@code .animation.json} T-poses the model at spawn — the
+     * same class of two-places-drift bug as {@link #everyVariantsAssetsExist()}, but for clips.
+     */
+    @Test
+    void animationFilesCarryEveryClipTheControllerPlays() throws Exception {
+        // Guardians only ever bite or shoot; spiders climb and pounce as well.
+        assertClips("animations/dungeon_guardian.animation.json", "idle", "walk", "attack", "shoot");
+        assertClips("animations/dungeon_spider.animation.json",
+                "idle", "walk", "attack", "shoot", "climb", "jump");
+    }
+
+    private static void assertClips(String path, String... clips) throws Exception {
+        String json;
+        try (java.io.InputStream in = BehaviourTest.class.getClassLoader()
+                .getResourceAsStream("assets/teras/" + path)) {
+            assertTrue(in != null, "missing animation file " + path);
+            json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        for (String clip : clips) {
+            assertTrue(json.contains("\"" + clip + "\""),
+                    path + " is missing the '" + clip + "' clip the controller can play");
+        }
     }
 }

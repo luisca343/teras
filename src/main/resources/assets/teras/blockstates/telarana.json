@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "densa=false,venenosa=false": { "model": "teras:block/telarana" },
+    "densa=true,venenosa=false":  { "model": "teras:block/telarana_densa" },
+    "densa=false,venenosa=true":  { "model": "teras:block/telarana_venenosa" },
+    "densa=true,venenosa=true":   { "model": "teras:block/telarana_densa_venenosa" }
+  }
+}

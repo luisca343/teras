@@ -144,7 +144,7 @@ public final class DungeonRunManager {
                 cellOrigins(layout, origin), run.party());
 
         MinecraftServer server = leader.getServer();
-        DungeonMaterializer.enqueueBuild(level, layout, plan.piso(), origin, built -> {
+        DungeonMaterializer.enqueueBuild(level, layout, plan, origin, built -> {
             run.activate(built.id());
             // The whole party can quit or log out during the second or two the floor takes to
             // build; a run with nobody in it must fold instead of standing registered forever.
@@ -172,7 +172,7 @@ public final class DungeonRunManager {
         combined.addAll(plan.curses());
         combined.addAll(forced);
         return new FloorPlan(plan.stage(), plan.dungeonId(), plan.tierIndex(), plan.indexInTier(),
-                plan.piso(), plan.dificultad(), combined);
+                plan.piso(), plan.dificultad(), combined, plan.jefes(), plan.minijefes());
     }
 
     /**
@@ -264,7 +264,7 @@ public final class DungeonRunManager {
         message(server, run, "§7Descendiendo al piso " + next + "…");
 
         FloorPlan floorPlan = plan;
-        DungeonMaterializer.enqueueBuild(level, newLayout, floorPlan.piso(), newOrigin, built -> {
+        DungeonMaterializer.enqueueBuild(level, newLayout, floorPlan, newOrigin, built -> {
             run.enterFloor(floorPlan);
             run.advanceFloor(next, newLayout, built.id(), newPad);
             if (run.party().isEmpty()) {
@@ -573,11 +573,12 @@ public final class DungeonRunManager {
                 // The hearts a devil deal took are a run-long debt, so they follow the party down.
                 es.boffmedia.teras.dungeon.run.DungeonHealth.applyHpDebt(player,
                         run.stateOf(member).hpDebt());
+                // Seed and stage to chat only. This used to also send a title, which fired after
+                // announceFloor and overwrote "Cuevas I" with "Piso 1 / semilla" — the floor's own
+                // name is the title, the seed is a chat aside.
                 player.sendSystemMessage(Component.literal(
-                        "§aMazmorra lista — etapa " + run.stage()
+                        "§7Mazmorra lista — etapa " + run.stage()
                                 + ", semilla " + run.layout().seedString()));
-                es.boffmedia.teras.dungeon.run.DungeonTitles.send(player,
-                        "§ePiso " + run.stage(), "§7semilla " + run.layout().seedString());
             }
         }
     }

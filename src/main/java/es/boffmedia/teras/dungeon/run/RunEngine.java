@@ -250,6 +250,48 @@ public final class RunEngine {
     }
 
     /**
+     * A splitting enemy's children join the ledger their parent was in.
+     *
+     * <p>{@code EnemySpawner} returns the entities it spawned <i>as</i> the kill ledger, so a slime
+     * that dies and spawns children breaks it two ways at once: the children are not in the ledger,
+     * so the room either clears with them still bouncing or — because {@code InstanceGuard} refuses
+     * a mob it does not recognise — never spawn at all. Both are the same fix: tag each child as
+     * ours before it joins the level, and add it to the parent's room.</p>
+     *
+     * <p>The room is found from the parent's position, not from {@code enemyRooms}: the parent left
+     * the ledger when it died, a good second before {@code Slime.remove} fires this event. Reading
+     * the position sidesteps that gap and, better, makes the last-enemy case correct for free —
+     * {@link RunCore#enemyAdded} refuses a room that has already cleared, so the children are
+     * dropped rather than spawned behind a party that has already been let out.</p>
+     */
+    @SubscribeEvent
+    public static void onMobSplit(net.neoforged.neoforge.event.entity.living.MobSplitEvent event) {
+        if (!event.getParent().getTags().contains(EnemySpawner.DUNGEON_TAG)) {
+            return;
+        }
+        for (ActiveFloor floor : FLOORS.values()) {
+            if (floor.level != event.getParent().level()) {
+                continue;
+            }
+            Room room = roomAt(floor, event.getParent().blockPosition());
+            if (room == null) {
+                return;
+            }
+            var children = event.getChildren();
+            for (int i = children.size() - 1; i >= 0; i--) {
+                var child = children.get(i);
+                child.addTag(EnemySpawner.DUNGEON_TAG);
+                if (floor.core.enemyAdded(room)) {
+                    floor.enemyRooms.put(child.getUUID(), room);
+                } else {
+                    children.remove(i);
+                }
+            }
+            return;
+        }
+    }
+
+    /**
      * Adds a nest hatchling to a room's kill ledger. Takes the room outright rather than deriving
      * it the way {@link #registerSummon} does from its summoner — a nest is a block, and the caller
      * already knows which room it sealed.
@@ -929,11 +971,7 @@ public final class RunEngine {
             if (player == null || !player.isAlive() || player.serverLevel() != floor.level) {
                 continue;
             }
-            int cellX = Math.floorDiv(player.blockPosition().getX() - floor.built.origin().getX(),
-                    floor.built.roomSize());
-            int cellY = Math.floorDiv(player.blockPosition().getZ() - floor.built.origin().getZ(),
-                    floor.built.roomSize());
-            if (floor.built.layout().grid().roomAt(new GridPos(cellX, cellY)) == room) {
+            if (roomAt(floor, player.blockPosition()) == room) {
                 return true;
             }
         }
@@ -964,6 +1002,18 @@ public final class RunEngine {
             }
         }
         floor.enemyRooms.clear();
+        // The ledger only ever held the fighting wave; atmosphere (bats and the like) is spawned
+        // into the floor volume but never tracked, so a tag sweep over the whole footprint is what
+        // takes it with everything else — the slot's next build would eventually, but not before
+        // the pad is discarded a moment later.
+        int span = floor.built.layout().grid().size() * floor.built.roomSize();
+        BlockPos o = floor.built.origin();
+        AABB box = new AABB(o.getX(), o.getY(), o.getZ(),
+                o.getX() + span, o.getY() + floor.built.roomHeight(), o.getZ() + span);
+        for (Entity tagged : floor.level.getEntities((Entity) null, box,
+                e -> e.getTags().contains(EnemySpawner.DUNGEON_TAG))) {
+            tagged.discard();
+        }
     }
 
     private static BlockState sealState() {

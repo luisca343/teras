@@ -172,6 +172,38 @@ public final class DungeonEnemyPacks {
         return table;
     }
 
+    /**
+     * The vanilla-flavoured mobs, as clones rendered with the real mob's model.
+     *
+     * <p>These fight (or, for the bat, drift) exactly like the vanilla mobs they resemble, but a
+     * clone is never a vanilla monster — so Pixelmon's spawn-replacement, which swaps joining
+     * monsters for Pokémon, leaves them alone. That is the whole reason they are here rather than as
+     * plain {@code entity:} ids: on a Pixelmon server the vanilla ones are deleted the instant they
+     * spawn. What is lost with the model is the entity's own logic — this slime does <b>not</b>
+     * split — which the tables account for by treating them as ordinary chaff.</p>
+     */
+    public static List<EnemyPreset> vanillaLike() {
+        return List.of(
+                // Swarm chaff: small, fast, cheap. The skin is the vanilla mob's own texture: with
+                // an entity model set, CustomNPCs still binds the NPC's skin, so an empty one renders
+                // untextured (white). Pointing it at the real texture is what makes it look right.
+                EnemyPreset.melee("lepisma_cueva", "Lepisma de Cueva",
+                        "minecraft:textures/entity/silverfish.png",
+                        // size 4 (was 2): a real silverfish is tiny, and the clone shrank it further
+                        // — a bit bigger reads as a threat in a dark room without stopping being chaff.
+                        8, 2, 12, 1, 0, 16, 6, 4, "", "", "", 0, 1, 2, "")
+                        .renderedAs("minecraft:silverfish"),
+                // Bouncy filler. It does not split — a clone is not a real Slime — so it is tuned as
+                // plain chaff rather than as a splitter.
+                EnemyPreset.melee("limo_cueva", "Limo de Cueva",
+                        "minecraft:textures/entity/slime/slime.png",
+                        16, 3, 16, 1, 1, 16, 4, 4, "", "", "", 0, 1, 3, "")
+                        .renderedAs("minecraft:slime"));
+        // No ambient bat: a CustomNPCs clone walks (NPC navigation), so a bat clone drifts along the
+        // floor instead of flying — worse than none. The ambient path (aggroRange 0, wandering,
+        // isAmbient in the bridge) stays for a ground mob it actually suits.
+    }
+
     /** Every preset, in install order. */
     public static List<EnemyPreset> all() {
         List<EnemyPreset> all = new java.util.ArrayList<>();
@@ -179,6 +211,7 @@ public final class DungeonEnemyPacks {
         all.addAll(elites());
         all.addAll(miniBosses());
         all.addAll(bosses());
+        all.addAll(vanillaLike());
         return List.copyOf(all);
     }
 }

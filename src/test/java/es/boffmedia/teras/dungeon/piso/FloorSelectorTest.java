@@ -253,4 +253,33 @@ class FloorSelectorTest {
         assertEquals("Cuevas II", second.title());
         assertEquals("algo se mueve en la oscuridad", second.subtitle());
     }
+
+    /**
+     * The plan resolves the boss pool: a piso without its own inherits the tramo's, a piso with one
+     * overrides it. This is the property that was config nothing consumed — every floor drew from
+     * the global stage pool — so the spider queen could appear in plain Cuevas or not at all.
+     */
+    @Test
+    void bossPoolInheritsFromTheTramo() {
+        FloorDef plain = piso("cuevas", ALL, Set.of());
+        FloorPlan plan = FloorSelector.select(
+                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("cuevas", 1)))),
+                catalog(plain), 1, "s", Map.of());
+        assertEquals(List.of("jefe"), plan.jefes());
+        assertEquals(List.of("minijefe"), plan.minijefes());
+    }
+
+    @Test
+    void pisoOverridesTheTramoBossPool() {
+        FloorDef queenPiso = new FloorDef("infestadas", "Cuevas Infestadas", "", TIGHT, 4,
+                "", "", "infestacion", EnumSet.of(Curse.LOST),
+                List.of("reina_cria"), List.of(), Map.of());
+        FloorPlan plan = FloorSelector.select(
+                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
+                catalog(queenPiso), 1, "s", Map.of());
+        assertEquals(List.of("reina_cria"), plan.jefes(),
+                "the queen's piso must override, or she never appears");
+        assertEquals(List.of("minijefe"), plan.minijefes(),
+                "an unset mini-boss pool still inherits the tramo's");
+    }
 }

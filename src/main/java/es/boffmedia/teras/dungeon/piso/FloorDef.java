@@ -39,6 +39,8 @@ import java.util.Set;
  * @param salas       authored variants per room key. A key absent here resolves to the single
  *                    conventional template {@code teras:dungeon/<id>/<key>}, so a piso needs no
  *                    entry at all until it has more than one room for a key
+ * @param enemigos    what fights here, relative — the tramo supplies the depth
+ * @param decoracion  what its {@code decoracion:*} markers become, per surface
  */
 public record FloorDef(String id,
                        String nombre,
@@ -51,7 +53,27 @@ public record FloorDef(String id,
                        Set<Curse> maldiciones,
                        List<String> jefes,
                        List<String> minijefes,
-                       Map<String, List<RoomVariant>> salas) {
+                       Map<String, List<RoomVariant>> salas,
+                       EnemyTable enemigos,
+                       DecorTables decoracion) {
+
+    /**
+     * A piso with no tables of its own. Kept as a constructor rather than pushed onto every caller
+     * because a piso is legitimately definable without them — the tables arrived after the model
+     * did, and a piso that declares none simply never fights and never decorates.
+     */
+    public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
+                    String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
+                    List<String> jefes, List<String> minijefes,
+                    Map<String, List<RoomVariant>> salas) {
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
+                minijefes, salas, EnemyTable.EMPTY, DecorTables.EMPTY);
+    }
+
+    public FloorDef {
+        enemigos = enemigos == null ? EnemyTable.EMPTY : enemigos;
+        decoracion = decoracion == null ? DecorTables.EMPTY : decoracion;
+    }
 
     /** The concrete shapes the generator may produce for this piso. */
     public Set<es.boffmedia.teras.dungeon.model.RoomShape> shapes() {
@@ -122,6 +144,8 @@ public record FloorDef(String id,
         if (luz < 0 || luz > 15) {
             problems.add("piso '" + id + "' has luz " + luz + ", outside 0..15");
         }
+        problems.addAll(enemigos.problems(id));
+        problems.addAll(decoracion.problems(id));
         return problems;
     }
 }
