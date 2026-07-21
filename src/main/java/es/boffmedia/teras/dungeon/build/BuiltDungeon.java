@@ -102,4 +102,24 @@ public record BuiltDungeon(
                 origin.getY() + 1,
                 origin.getZ() + minY * roomSize + ((maxY - minY + 1) * roomSize) / 2);
     }
+
+    /**
+     * Where the party lands: the room's {@code inicio} marker, or its center when none was
+     * authored.
+     *
+     * <p>The center is only correct while the middle of a room happens to be empty floor, which is
+     * an accident of the placeholder boxes rather than a property of a room. A start chamber built
+     * around a central feature — a plinth, an outcrop, a pillar — teleports the party <i>inside</i>
+     * it, and a player standing in a block is pushed out in whichever direction the collision
+     * resolves. The marker lets the builder say where arrival belongs; the fallback keeps every
+     * template authored before it working.</p>
+     */
+    public BlockPos partySpawn(Room room) {
+        for (TemplateMarkers.Marker marker : markers.getOrDefault(room, List.of())) {
+            if (marker.kind().equals("inicio")) {
+                return clampInside(room, marker.pos(), 1);
+            }
+        }
+        return roomCenter(room);
+    }
 }

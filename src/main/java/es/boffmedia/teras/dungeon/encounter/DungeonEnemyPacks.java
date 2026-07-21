@@ -182,26 +182,55 @@ public final class DungeonEnemyPacks {
      * spawn. What is lost with the model is the entity's own logic — this slime does <b>not</b>
      * split — which the tables account for by treating them as ordinary chaff.</p>
      */
+    /**
+     * The largest display size a clone may carry and still get through a doorway.
+     *
+     * <p>CustomNPCs scales a clone's <b>hitbox and its model by the same factor</b>
+     * ({@code EntityNPCInterface.getDimensions} → {@code size.scale(getSize() * 0.2f)}) from a
+     * player-shaped base of 0.6 × 1.8. A door is {@code alturaPuerta} = 3 blocks, so
+     * {@code 1.8 × 0.2 × size ≤ 3} caps size at 8 — above it an enemy simply cannot follow the
+     * party through the room it spawned in.</p>
+     *
+     * <p>This is the ceiling on how big a clone rendered as a <i>small</i> vanilla mob can look:
+     * a silverfish model is about a sixth of a player's height, so even at the maximum it is knee
+     * high. Making cave chaff genuinely bigger means making it a first-party
+     * {@code GeoEnemyVariant}, whose hitbox and model scale together from its own rig
+     * ({@code DungeonGeoEnemy.getDefaultDimensions}) with no such ratio baked in.</p>
+     */
+    public static final int MAX_CLONE_SIZE = 8;
+
+    /** Vanilla entity models whose clones should bounce rather than walk. */
+    private static final java.util.Set<String> HOPPING_MODELS =
+            java.util.Set.of("minecraft:slime", "minecraft:magma_cube");
+
+    /** The shipped preset with this id, or null — the bestiary is small and looked up by name. */
+    public static EnemyPreset byId(String id) {
+        for (EnemyPreset preset : all()) {
+            if (preset.id().equals(id)) {
+                return preset;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether a clone should hop. Read off the model it renders as rather than a field, so a
+     * slime an admin clones by hand moves like one too, with no code and no preset.
+     */
+    public static boolean hopsLikeASlime(EnemyPreset preset) {
+        return preset != null && HOPPING_MODELS.contains(preset.entityModel());
+    }
+
+    /**
+     * Retired. The cave swarm and the slimes were CustomNPCs clones wearing a vanilla silverfish
+     * and slime, and both are now first-party {@code GeoEnemyVariant}s — the only form in which
+     * they could be sized and made to move correctly. Clones stay the right answer for humanoids,
+     * where the model and the NPC's own player-shaped base agree; they are the wrong answer for
+     * anything whose silhouette does not, because a clone scales hitbox and model together from
+     * that base. See {@link #MAX_CLONE_SIZE}.
+     */
     public static List<EnemyPreset> vanillaLike() {
-        return List.of(
-                // Swarm chaff: small, fast, cheap. The skin is the vanilla mob's own texture: with
-                // an entity model set, CustomNPCs still binds the NPC's skin, so an empty one renders
-                // untextured (white). Pointing it at the real texture is what makes it look right.
-                EnemyPreset.melee("lepisma_cueva", "Lepisma de Cueva",
-                        "minecraft:textures/entity/silverfish.png",
-                        // size 4 (was 2): a real silverfish is tiny, and the clone shrank it further
-                        // — a bit bigger reads as a threat in a dark room without stopping being chaff.
-                        8, 2, 12, 1, 0, 16, 6, 4, "", "", "", 0, 1, 2, "")
-                        .renderedAs("minecraft:silverfish"),
-                // Bouncy filler. It does not split — a clone is not a real Slime — so it is tuned as
-                // plain chaff rather than as a splitter.
-                EnemyPreset.melee("limo_cueva", "Limo de Cueva",
-                        "minecraft:textures/entity/slime/slime.png",
-                        16, 3, 16, 1, 1, 16, 4, 4, "", "", "", 0, 1, 3, "")
-                        .renderedAs("minecraft:slime"));
-        // No ambient bat: a CustomNPCs clone walks (NPC navigation), so a bat clone drifts along the
-        // floor instead of flying — worse than none. The ambient path (aggroRange 0, wandering,
-        // isAmbient in the bridge) stays for a ground mob it actually suits.
+        return List.of();
     }
 
     /** Every preset, in install order. */

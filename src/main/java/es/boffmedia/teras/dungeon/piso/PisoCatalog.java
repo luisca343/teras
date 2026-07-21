@@ -697,10 +697,9 @@ public final class PisoCatalog {
 
     /**
      * Cuevas' roster: cave-specific humanoids on the shared rig, the two geo guardians as elites,
-     * and the vanilla-flavoured mobs for what a humanoid rig cannot be — a swarm and bouncy chaff.
-     * Those last are <b>CustomNPCs clones</b> ({@code lepisma_cueva}, {@code limo_cueva}), not
-     * {@code minecraft:} ids: on a Pixelmon server the real mobs are deleted the instant they spawn,
-     * so the clones wear the mob's model while staying something Pixelmon leaves alone. Weights are
+     * and first-party swarm and bouncy chaff for what a humanoid rig cannot be. Every id here is a
+     * {@code GeoEnemyVariant} or a humanoid clone — never a {@code minecraft:} id, since on a
+     * Pixelmon server a real vanilla monster is deleted the instant it spawns. Weights are
      * relative composition only; the tramo's dificultad supplies the depth.
      *
      * <p>No ambient entry: a CustomNPCs clone uses NPC navigation, so a bat clone walks the floor
@@ -715,8 +714,14 @@ public final class PisoCatalog {
                         SpawnRef.of("arquero_gruta", 2),
                         SpawnRef.of("husk_guardian", 2).asElite(),
                         SpawnRef.of("bone_sentinel", 1).asElite(),
-                        SpawnRef.cnpc("lepisma_cueva", CNPC_TAB, 3),
-                        SpawnRef.cnpc("limo_cueva", CNPC_TAB, 1)),
+                        // First-party now, not CustomNPCs clones — see GeoEnemyVariant. As clones
+                        // these could not be sized or made to bounce; as geo variants they are both,
+                        // and they need no `enemigos instalar` to exist at all.
+                        SpawnRef.of("lepisma_cueva", 3),
+                        SpawnRef.of("limo_cueva", 2),
+                        // The big slime is scarce and counts as elite: one is a fight, three is a
+                        // wall of them.
+                        SpawnRef.of("limo_mayor", 1).asElite()),
                 List.of());
     }
 
@@ -729,7 +734,7 @@ public final class PisoCatalog {
         return new EnemyTable(4, 6,
                 List.of(SpawnRef.of("cria", 5),
                         SpawnRef.of("tejedora", 2).asElite(),
-                        SpawnRef.cnpc("lepisma_cueva", CNPC_TAB, 2)),
+                        SpawnRef.of("lepisma_cueva", 2)),
                 List.of());
     }
 

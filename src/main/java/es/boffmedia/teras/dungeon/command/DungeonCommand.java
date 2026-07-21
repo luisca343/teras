@@ -114,6 +114,8 @@ public final class DungeonCommand {
                                                 .executes(ctx -> installEnemies(ctx, true))))
                                 .then(Commands.literal("listar")
                                         .executes(DungeonCommand::listEnemies))
+                                .then(Commands.literal("auditar")
+                                        .executes(DungeonCommand::auditBestiary))
                                 .then(Commands.literal("invocar")
                                         .then(Commands.argument("variante", StringArgumentType.word())
                                                 .suggests(SUMMONABLE)
@@ -513,6 +515,34 @@ public final class DungeonCommand {
                     (present ? "§a✔ " : "§7✘ ") + preset.id() + " — " + preset.displayName()), false);
         }
         return installed.size();
+    }
+
+    /**
+     * The bestiary held to {@code BestiaryAudit}, in game. The same rules run at build time, so a
+     * clean report here is expected rather than informative — what it is for is a server whose
+     * config or resources differ from the jar the tests ran against.
+     */
+    private static int auditBestiary(CommandContext<CommandSourceStack> ctx) {
+        var findings = es.boffmedia.teras.dungeon.entity.BestiaryAudit.auditAll();
+        var variants = es.boffmedia.teras.dungeon.entity.GeoEnemyVariant.all();
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§eBestiario: " + variants.size() + " variantes, " + findings.size()
+                        + " aviso(s)."), false);
+        for (var variant : variants) {
+            String behaviours = variant.behaviours().isEmpty() ? "—"
+                    : variant.behaviours().stream().map(Enum::name)
+                            .collect(java.util.stream.Collectors.joining(", "));
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "§7" + variant.id() + " §8[" + variant.movement() + "] §f" + behaviours
+                            + " §8x" + variant.scale()), false);
+        }
+        for (var finding : findings) {
+            boolean error = finding.level()
+                    == es.boffmedia.teras.dungeon.entity.BestiaryAudit.Level.ERROR;
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    (error ? "§c✖ " : "§6! ") + finding.variant() + ": " + finding.message()), false);
+        }
+        return findings.size();
     }
 
     private static int debug(CommandContext<CommandSourceStack> ctx) {

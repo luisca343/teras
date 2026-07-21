@@ -2,8 +2,10 @@ package es.boffmedia.teras.dungeon.encounter;
 
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.dungeon.entity.GeoEnemyVariant;
+import es.boffmedia.teras.dungeon.entity.goal.CloneHopGoal;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
 import net.neoforged.fml.ModList;
 import noppes.npcs.api.IWorld;
 import noppes.npcs.api.NpcAPI;
@@ -74,8 +76,14 @@ public final class CnpcBridge {
                 // and a dungeon enemy that resurrects itself puts untracked mobs in cleared rooms
                 // and, across floors, inside the next floor's geometry.
                 npc.getStats().setRespawnType(RESPAWN_NONE);
+                applyLook(npc, DungeonEnemyPacks.byId(name));
             }
-            return spawned == null ? null : (Entity) spawned.getMCEntity();
+            Entity entity = spawned == null ? null : (Entity) spawned.getMCEntity();
+            if (entity instanceof Mob mob
+                    && DungeonEnemyPacks.hopsLikeASlime(DungeonEnemyPacks.byId(name))) {
+                mob.goalSelector.addGoal(2, new CloneHopGoal(mob));
+            }
+            return entity;
         } catch (Exception e) {
             Teras.LOGGER.warn("Dungeons: could not spawn CNPC clone '{}' (tab {}): {}", name, tab, e.toString());
             return null;
@@ -121,6 +129,36 @@ public final class CnpcBridge {
             }
         }
         return installed;
+    }
+
+    /**
+     * Re-stamps how a shipped enemy <i>looks</i> onto the clone that just spawned.
+     *
+     * <p>A clone is written once by {@code enemigos instalar}, which skips ids already present, so
+     * every later change to the bestiary's size or model sat in the jar and never reached play —
+     * the size of a preset appeared not to do anything at all, and the fix was an operator
+     * remembering an {@code instalar sobrescribir} nobody had a reason to suspect. This is the same
+     * argument as {@code RESPAWN_NONE} above: what the mod ships is authoritative on every spawn,
+     * and stale clone data cannot quietly outlive it.</p>
+     *
+     * <p>Deliberately only the render identity — size, model, skin. Stats, AI and drops stay with
+     * the clone, so an admin retuning a built-in in the NPC editor keeps their work; a preset the
+     * bestiary does not know is left entirely alone.</p>
+     */
+    private static void applyLook(ICustomNpc<?> npc, EnemyPreset preset) {
+        if (preset == null) {
+            return;
+        }
+        try {
+            INPCDisplay display = npc.getDisplay();
+            display.setSize(preset.size());
+            display.setSkinTexture(preset.skinTexture());
+            if (!preset.entityModel().isEmpty()) {
+                display.setModel(preset.entityModel());
+            }
+        } catch (Exception e) {
+            Teras.LOGGER.warn("Dungeons: could not refresh clone '{}': {}", preset.id(), e.toString());
+        }
     }
 
     private static void apply(IWorld world, ICustomNpc<?> npc, EnemyPreset preset, int factionId) {

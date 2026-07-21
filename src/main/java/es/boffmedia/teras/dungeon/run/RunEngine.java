@@ -443,7 +443,7 @@ public final class RunEngine {
         if (floor == null) {
             return;
         }
-        BlockPos start = floor.built.roomCenter(floor.built.layout().start());
+        BlockPos start = floor.built.partySpawn(floor.built.layout().start());
         player.teleportTo(floor.level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                 player.getYRot(), player.getXRot());
         land(player);
@@ -752,7 +752,7 @@ public final class RunEngine {
                 return;
             }
             if (belowFloor) {
-                BlockPos start = floor.built.roomCenter(floor.built.layout().start());
+                BlockPos start = floor.built.partySpawn(floor.built.layout().start());
                 player.teleportTo(floor.level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
                         player.getYRot(), player.getXRot());
                 land(player);
@@ -1243,7 +1243,7 @@ public final class RunEngine {
             }
             if (opened) {
                 message(floor, "§5Los barrotes del trato ceden — algo espera al otro lado.");
-                playAt(floor, floor.built.roomCenter(floor.built.layout().start()),
+                playAt(floor, floor.built.partySpawn(floor.built.layout().start()),
                         DungeonSound.DEVIL_OPENED, 1.0f);
             }
         }

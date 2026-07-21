@@ -553,7 +553,7 @@ public final class DungeonRunManager {
         if (level == null) {
             return;
         }
-        BlockPos start = built.roomCenter(built.layout().start());
+        BlockPos start = built.partySpawn(built.layout().start());
         for (UUID member : run.party().keySet()) {
             ServerPlayer player = server.getPlayerList().getPlayer(member);
             if (player != null) {

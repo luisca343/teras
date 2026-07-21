@@ -590,11 +590,11 @@ def build_start():
     for (x, z) in ((7, 7), (13, 7), (7, 13), (13, 13), (10, 6), (10, 14), (6, 10), (14, 10)):
         r.set(x, 9 if max(abs(x - 10), abs(z - 10)) <= 4 else 8, z,
               r.block('minecraft:shroomlight'))
-    # the low natural plinth — one worked touch in a wild room
+    # the arrival dais: the party lands on it, so it is raised and its top stays clear
     for x in range(9, 12):
         for z in range(9, 12):
             r.set(x, 1, z, r.block('minecraft:polished_andesite'))
-    r.set(10, 2, 10, r.block('minecraft:calcite'))
+    r.set(10, 1, 10, r.block('minecraft:calcite'))
     for (x, z) in ((8, 10), (12, 10), (10, 8), (10, 12)):
         r.set(x, 1, z, r.block('minecraft:andesite_slab', type='bottom'))
     for (x, z) in ((3, 3), (17, 3), (3, 17), (17, 17), (5, 15), (15, 5)):
@@ -606,6 +606,9 @@ def build_start():
     r.lichen(19, 4, 13, 'east')
     r.lichen(6, 3, 19, 'south')
     r.enforce_aprons()
+    # Where the party lands: on the dais, not in it. Without this marker arrival falls back to the
+    # room centre, which here is the dais block itself.
+    r.mark('inicio', 10, 2, 10)
     for (x, z) in ((4, 4), (16, 4), (4, 16), (16, 16)):
         r.deco('decoracion:techo', x, 8, z)
     r.deco('decoracion:pared', 2, 2, 6)

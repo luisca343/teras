@@ -13,6 +13,22 @@ public enum Movement {
      * contested: an archer perches there, and a climber follows it up.
      */
     CLIMBER,
-    /** Flying navigation. Nothing uses it yet; it exists so the field is not a boolean. */
-    FLYER
+    /**
+     * Bounces; cannot walk. The distinction is the whole reason this is movement and not a
+     * behaviour: a hop bolted on as a goal leaves the ordinary walk running underneath it, so the
+     * enemy slides along the floor and occasionally jumps — which is exactly what a slime must not
+     * do. Replacing the move control instead means there is no walking left to show through.
+     */
+    HOPPER,
+    /** Flying navigation. */
+    FLYER;
+
+    /**
+     * Whether the entity implements this mode. A mode nothing honours is worse than a missing one:
+     * a variant declaring it looks configured and behaves as {@link #GROUND}, silently. Held by
+     * {@code BestiaryAudit} so an unimplemented mode cannot reach a shipped variant.
+     */
+    public boolean isImplemented() {
+        return true;
+    }
 }

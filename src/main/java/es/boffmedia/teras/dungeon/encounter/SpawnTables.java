@@ -266,14 +266,20 @@ public final class SpawnTables {
         stages = new LinkedHashMap<>();
         bosses = new LinkedHashMap<>();
         miniBosses = new LinkedHashMap<>();
+        // First-party variants, not vanilla mobs. This table is the fallback a piso with no roster
+        // of its own gets, so it has to work on the server that actually runs: Pixelmon's
+        // MobSpawnReplacement swaps every joining vanilla monster for a Pokémon, and a fallback
+        // wave of zombies and skeletons is deleted on spawn — a floor that never seals, with
+        // nothing in the log to say why. Geo enemies are never vanilla monsters, and unlike the
+        // CustomNPCs clones they need no `enemigos instalar` before they exist.
         stages.put(DEFAULT_KEY, new StageTable(3, 5, List.of(
-                new SpawnEntry(Kind.ENTITY, "minecraft:zombie", 0, 3),
-                new SpawnEntry(Kind.ENTITY, "minecraft:skeleton", 0, 2),
-                new SpawnEntry(Kind.ENTITY, "minecraft:spider", 0, 1))));
+                new SpawnEntry(Kind.GEO, "saqueador_cuevas", 0, 3),
+                new SpawnEntry(Kind.GEO, "arquero_gruta", 0, 2),
+                new SpawnEntry(Kind.GEO, "husk_guardian", 0, 1))));
         bosses.put(DEFAULT_KEY, List.of(
-                new SpawnEntry(Kind.ENTITY, "minecraft:ravager", 0, 1)));
+                new SpawnEntry(Kind.GEO, "coloso_guardian", 0, 1)));
         miniBosses.put(DEFAULT_KEY, List.of(
-                new SpawnEntry(Kind.ENTITY, "minecraft:vindicator", 0, 1)));
+                new SpawnEntry(Kind.GEO, "centinela_hueso", 0, 1)));
     }
 
     private static JsonObject renderDefaults() {

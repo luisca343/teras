@@ -95,6 +95,10 @@ public final class RoomKeys {
             // The challenge plate is where the fight starts, so its marker is load-bearing on top
             // of the wave spawns.
             case "challenge" -> List.of("spawn", "challenge");
+            // Where the party lands. Without it arrival falls back to the room's centre, which is
+            // only safe while that centre happens to be empty floor — a start chamber built around
+            // any central feature teleports the party inside it.
+            case "start" -> List.of("inicio");
             // Every normal room, whatever its footprint — keys carry the shape family, never the
             // orientation.
             case "normal", "normal_large", "normal_l", "normal_big" -> List.of("spawn");

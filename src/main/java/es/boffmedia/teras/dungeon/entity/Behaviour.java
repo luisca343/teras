@@ -38,6 +38,40 @@ public enum Behaviour {
         return this == RANGED || this == VOLLEY || this == WEB_SHOT;
     }
 
+    /**
+     * Whether {@link es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy#rebuildGoals} actually
+     * composes a goal for this.
+     *
+     * <p>Every value is implemented today, and this exists so that stops being something anyone has
+     * to check by reading. {@code VOLLEY} and {@code BLINK} sat in this enum unwired for two
+     * releases: a variant declaring {@code BLINK} did nothing at all, and one declaring
+     * {@code VOLLEY} was quietly handed a plain ranged goal and fired an ordinary bolt — a
+     * behaviour that looked configured, read as configured in every table, and was not. Declaring
+     * capability here and holding shipped variants to it in {@code BestiaryAudit} makes the next
+     * such gap a failed build instead of a mechanic nobody can find.</p>
+     *
+     * <p>A new behaviour is added here as {@code false} until its goal exists, which is exactly the
+     * window in which the audit is useful.</p>
+     */
+    public boolean isImplemented() {
+        return true;
+    }
+
+    /**
+     * The animation clip an enemy plays when this behaviour fires, or "" when it drives none. Held
+     * against each rig's animation file by the audit, so a behaviour can never request a clip its
+     * variant's rig does not have.
+     */
+    public String clip() {
+        return switch (this) {
+            case RANGED, WEB_SHOT -> "shoot";
+            case VOLLEY -> "cast";
+            case LEAP, CEILING_WEB -> "jump";
+            case MELEE -> "attack";
+            case BLINK -> "";
+        };
+    }
+
     /** Parses a config list, skipping names that no longer exist rather than failing the enemy. */
     public static Set<Behaviour> parse(Iterable<String> names) {
         Set<Behaviour> set = EnumSet.noneOf(Behaviour.class);

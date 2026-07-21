@@ -91,16 +91,24 @@ public record GeoEnemyVariant(
         String animation = "animations/dungeon_guardian.animation.json";
         String spider = "geo/dungeon_spider.geo.json";
         String spiderAnim = "animations/dungeon_spider.animation.json";
+        String limo = "geo/dungeon_limo.geo.json";
+        String limoAnim = "animations/dungeon_limo.animation.json";
         return Map.ofEntries(
                 Map.entry("husk_guardian", GeoEnemyVariant.melee("husk_guardian", model,
                         "textures/entity/dungeon/guardian_husk.png", animation,
                         1.0f, 24, 5, 0.28, 2, 24)),
-                Map.entry("bone_sentinel", GeoEnemyVariant.melee("bone_sentinel", model,
+                // LEAP is what makes an elite worth its slot: it closes the gap a party opens by
+                // backing off, so kiting it is a decision rather than a default.
+                Map.entry("bone_sentinel", new GeoEnemyVariant("bone_sentinel", model,
                         "textures/entity/dungeon/guardian_bone.png", animation,
-                        1.15f, 44, 8, 0.26, 6, 28)),
-                Map.entry("warden_colossus", GeoEnemyVariant.melee("warden_colossus", model,
+                        1.15f, 44, 8, 0.26, 6, 28, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP), 0f, 0)),
+                // VOLLEY gives the boss fight a second thing to do: a slam on the ground where you
+                // stood, which is answered by moving rather than by out-healing.
+                Map.entry("warden_colossus", new GeoEnemyVariant("warden_colossus", model,
                         "textures/entity/dungeon/guardian_warden.png", animation,
-                        1.6f, 140, 13, 0.23, 10, 36)),
+                        1.6f, 140, 13, 0.23, 10, 36, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.VOLLEY), 7f, 120)),
 
                 // Cuevas' own pair. The existing guardians read as crypt, so caves get their own
                 // chaff and their own shooter on the same rig — a texture each, no new model. The
@@ -112,17 +120,22 @@ public record GeoEnemyVariant(
                 Map.entry("arquero_gruta", new GeoEnemyVariant("arquero_gruta", model,
                         "textures/entity/dungeon/raider_arquero.png", animation,
                         0.95f, 16, 2, 0.27, 0, 32,
-                        Movement.GROUND, java.util.EnumSet.of(Behaviour.RANGED), 4f, 45)),
+                        // BLINK is the archer's answer to being closed on: without it a shooter in
+                        // a 21-wide room is a free target the moment anyone reaches it.
+                        Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.RANGED, Behaviour.BLINK), 4f, 45)),
 
                 // Tramo 1's boss and mini-boss. Distinct ids rather than reusing the two above
                 // because they are the cave tuning: slower and far tougher, sized to a 21x21 arena
                 // rather than to whatever room a wave happens to occupy.
-                Map.entry("coloso_guardian", GeoEnemyVariant.melee("coloso_guardian", model,
+                Map.entry("coloso_guardian", new GeoEnemyVariant("coloso_guardian", model,
                         "textures/entity/dungeon/guardian_warden.png", animation,
-                        1.7f, 210, 12, 0.22, 12, 40)),
-                Map.entry("centinela_hueso", GeoEnemyVariant.melee("centinela_hueso", model,
+                        1.7f, 210, 12, 0.22, 12, 40, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.VOLLEY), 8f, 110)),
+                Map.entry("centinela_hueso", new GeoEnemyVariant("centinela_hueso", model,
                         "textures/entity/dungeon/guardian_bone.png", animation,
-                        1.25f, 90, 9, 0.25, 8, 32)),
+                        1.25f, 90, 9, 0.25, 8, 32, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP), 0f, 0)),
 
                 // The infestation. One rig at three scales, the same trick the guardians use — and
                 // all three climb, which is what makes Infestadas' ledges contested where Cuevas'
@@ -144,6 +157,30 @@ public record GeoEnemyVariant(
                         // CEILING_WEB, not WEB_SHOT: she ascends and drops dense strands rather than
                         // parking at range. LEAP gives her the pounce, MELEE the bite up close.
                         java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP, Behaviour.CEILING_WEB),
-                        6f, 55)));
+                        6f, 55)),
+
+                // Cave chaff, first-party. Both of these were CustomNPCs clones wearing a vanilla
+                // silverfish and slime, and both were structurally broken: a clone scales its
+                // hitbox and its model by the same factor from a player-shaped base, so a small mob
+                // could never look bigger than knee high without growing a hitbox too tall to fit
+                // through a door — and a clone's walking and its melee damage are the same goal, so
+                // a slime could not be made to bounce without also being made harmless. As geo
+                // variants both size from their own rig and move however their Movement says.
+                Map.entry("lepisma_cueva", new GeoEnemyVariant("lepisma_cueva", spider,
+                        "textures/entity/dungeon/spider_lepisma.png", spiderAnim,
+                        0.55f, 10, 2, 0.36, 0, 20,
+                        // Deliberately not a climber: the swarm belongs on the floor, and leaving
+                        // the ledges to Infestadas' spiders is what keeps the two pisos apart.
+                        Movement.GROUND, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                Map.entry("limo_cueva", new GeoEnemyVariant("limo_cueva", limo,
+                        "textures/entity/dungeon/limo_cueva.png", limoAnim,
+                        0.85f, 22, 4, 0.30, 0, 22,
+                        Movement.HOPPER, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                Map.entry("limo_mayor", new GeoEnemyVariant("limo_mayor", limo,
+                        "textures/entity/dungeon/limo_mayor.png", limoAnim,
+                        // The big one is genuinely big now: a geo hitbox scales with the model, so
+                        // this is the size it looks, and it still clears a 3-high door at 1.5.
+                        1.5f, 60, 7, 0.26, 4, 26,
+                        Movement.HOPPER, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)));
     }
 }

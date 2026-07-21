@@ -61,7 +61,7 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
             SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.BOOLEAN);
 
     /** What the client is being told to animate. Ordinals ride the wire — append only. */
-    public enum Action { BITE, SHOOT, POUNCE }
+    public enum Action { BITE, SHOOT, POUNCE, HOP, CAST }
 
     private static final int ATTACK_ANIMATION_TICKS = 10;
 
@@ -71,6 +71,7 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     private static final RawAnimation ATTACK = RawAnimation.begin().thenPlay("attack");
     private static final RawAnimation SHOOT = RawAnimation.begin().thenPlay("shoot");
     private static final RawAnimation JUMP = RawAnimation.begin().thenPlay("jump");
+    private static final RawAnimation CAST = RawAnimation.begin().thenPlay("cast");
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -123,12 +124,24 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
             goalSelector.addGoal(1, new es.boffmedia.teras.dungeon.entity.goal
                     .SpiderCeilingWebGoal(this));
         }
-        if (variant.shoots()) {
+        // VOLLEY has its own goal below and aims at the ground, so it must not also be handed a
+        // RangedAttackGoal — that would fire a plain bolt at the target instead, which is what the
+        // behaviour did for as long as it was unwired.
+        if (variant.shoots() && !onlyVolleys(variant)) {
             // A ground shooter that walks into melee range stops being a shooter, so this sits above
             // melee and RangedAttackGoal keeps its own distance. The queen is deliberately not here:
             // CEILING_WEB is not isRanged, so she closes and bites instead of parking at range.
             goalSelector.addGoal(2, new RangedAttackGoal(this,
                     1.0, Math.max(20, variant.rangedCooldown()), 16f));
+        }
+        if (variant.has(Behaviour.BLINK)) {
+            // Above the ranged goal, not beside it. Both claim MOVE, and equal priority does not
+            // preempt — at 2 the archer's RangedAttackGoal holds the flag and the blink it exists
+            // to escape with would never fire.
+            goalSelector.addGoal(1, new es.boffmedia.teras.dungeon.entity.goal.BlinkGoal(this));
+        }
+        if (variant.has(Behaviour.VOLLEY)) {
+            goalSelector.addGoal(3, new es.boffmedia.teras.dungeon.entity.goal.VolleyGoal(this));
         }
         if (variant.has(Behaviour.LEAP)) {
             goalSelector.addGoal(3, new es.boffmedia.teras.dungeon.entity.goal.SpiderPounceGoal(this));
@@ -140,23 +153,66 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         // Navigation is built in the Mob constructor too, so a spider read back from NBT would
         // path along the floor until this is redone.
         this.navigation = createNavigation(level());
+        rebuildMovement();
+    }
+
+    /** A variant whose only ranged behaviour is VOLLEY, which aims at the ground on its own goal. */
+    private static boolean onlyVolleys(GeoEnemyVariant variant) {
+        return variant.has(Behaviour.VOLLEY)
+                && !variant.has(Behaviour.RANGED) && !variant.has(Behaviour.WEB_SHOT);
     }
 
     /** Goal classes {@link #rebuildGoals()} owns, so it never strips the constant ones. */
     private static final java.util.Set<Class<?>> BEHAVIOUR_GOALS = java.util.Set.of(
             MeleeAttackGoal.class, RangedAttackGoal.class,
             es.boffmedia.teras.dungeon.entity.goal.SpiderPounceGoal.class,
-            es.boffmedia.teras.dungeon.entity.goal.SpiderCeilingWebGoal.class);
+            es.boffmedia.teras.dungeon.entity.goal.SpiderCeilingWebGoal.class,
+            es.boffmedia.teras.dungeon.entity.goal.BlinkGoal.class,
+            es.boffmedia.teras.dungeon.entity.goal.VolleyGoal.class);
 
     /**
-     * Wall-climbing for the spiders. Chosen here rather than as a goal because navigation is the
+     * Navigation per movement mode. Chosen here rather than as a goal because navigation is the
      * ground rules underneath goals, not a decision the enemy makes.
+     *
+     * <p>A HOPPER keeps ordinary ground navigation on purpose: it still needs a path to know where
+     * to go, and {@link es.boffmedia.teras.dungeon.entity.goal.HopMoveControl} is what turns
+     * following that path into bouncing.</p>
      */
     @Override
     protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
-        return variant().movement() == Movement.CLIMBER
-                ? new net.minecraft.world.entity.ai.navigation.WallClimberNavigation(this, level)
-                : super.createNavigation(level);
+        return switch (variant().movement()) {
+            case CLIMBER -> new net.minecraft.world.entity.ai.navigation
+                    .WallClimberNavigation(this, level);
+            case FLYER -> {
+                net.minecraft.world.entity.ai.navigation.FlyingPathNavigation flying =
+                        new net.minecraft.world.entity.ai.navigation
+                                .FlyingPathNavigation(this, level);
+                flying.setCanOpenDoors(false);
+                flying.setCanFloat(true);
+                yield flying;
+            }
+            default -> super.createNavigation(level);
+        };
+    }
+
+    /**
+     * Rebuilt with the variant, for the same reason navigation is: the move control is chosen in the
+     * {@code Mob} constructor, so a hopper read back from NBT would otherwise walk.
+     */
+    private void rebuildMovement() {
+        this.moveControl = variant().movement() == Movement.HOPPER
+                ? new es.boffmedia.teras.dungeon.entity.goal.HopMoveControl(this)
+                : new net.minecraft.world.entity.ai.control.MoveControl(this);
+    }
+
+    /** Called by {@link es.boffmedia.teras.dungeon.entity.goal.HopMoveControl} on each bounce. */
+    public void playHopAnimation() {
+        triggerAction(Action.HOP, ATTACK_ANIMATION_TICKS);
+    }
+
+    /** A hopper is airborne between bounces; the client picks the hop clip rather than a walk. */
+    public boolean isHopper() {
+        return variant().movement() == Movement.HOPPER;
     }
 
     @Override
@@ -276,16 +332,24 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         controllers.add(new AnimationController<>(this, "main", 4, state -> {
             if (entityData.get(ATTACK_TICKS) > 0) {
-                // The action decides the clip. SHOOT and JUMP exist on both rigs (guardian's are
-                // placeholders it never triggers), so a variant only ever plays a clip it has.
+                // The action decides the clip. Every clip named here exists on every rig — the
+                // bestiary audit holds each variant's animation file to the full set, so a variant
+                // can never be asked for one it does not have.
                 return switch (actionOrdinal()) {
                     case 1 -> state.setAndContinue(SHOOT);   // Action.SHOOT
-                    case 2 -> state.setAndContinue(JUMP);    // Action.POUNCE
+                    case 2, 3 -> state.setAndContinue(JUMP); // Action.POUNCE, Action.HOP
+                    case 4 -> state.setAndContinue(CAST);    // Action.CAST
                     default -> state.setAndContinue(ATTACK); // Action.BITE
                 };
             }
             if (entityData.get(CLIMBING)) {
                 return state.setAndContinue(CLIMB);
+            }
+            // A hopper has no walk: between bounces it is still, and the bounce itself is the hop
+            // clip above. Playing a walk cycle under it is exactly the glide this rig exists to
+            // avoid.
+            if (isHopper()) {
+                return state.setAndContinue(IDLE);
             }
             return state.setAndContinue(state.isMoving() ? WALK : IDLE);
         }));
