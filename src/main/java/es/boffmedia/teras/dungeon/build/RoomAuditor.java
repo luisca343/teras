@@ -45,7 +45,9 @@ public final class RoomAuditor {
         List<Result> results = new ArrayList<>();
         for (String key : piso.requiredRooms()) {
             RoomShape shape = RoomKeys.shapeFor(key);
-            for (RoomVariant variant : piso.variants(key)) {
+            // Everything in the folder, including variants weighted to zero: a room switched off
+            // today is one someone means to fix, and an audit that skipped it would report it clean.
+            for (RoomVariant variant : RoomPools.declared(piso, key)) {
                 ResourceLocation id = ResourceLocation.tryParse(variant.template());
                 StructureTemplate template = id == null ? null : manager.get(id).orElse(null);
                 if (template == null) {
@@ -85,7 +87,7 @@ public final class RoomAuditor {
      */
     public static int waveMax(FloorDef piso) {
         if (piso != null && !piso.enemigos().isEmpty()) {
-            return piso.enemigos().countMax();
+            return partyAdjusted(piso.enemigos().countMax());
         }
         int max = 0;
         for (int stage = 1; stage <= 12; stage++) {
@@ -94,7 +96,17 @@ public final class RoomAuditor {
                 max = Math.max(max, table.countMax());
             }
         }
-        return max;
+        return partyAdjusted(max);
+    }
+
+    /**
+     * The bar has to include the party's share, or every room passes its audit and then stacks
+     * enemies the moment a full group walks in — the marker count is the only thing bounding a
+     * wave, so it must be held to the largest wave the room can actually be asked for.
+     */
+    private static int partyAdjusted(int countMax) {
+        return (int) Math.ceil(countMax
+                * es.boffmedia.teras.dungeon.piso.PartyScaling.MAX_PARTY_FACTOR);
     }
 
     /**

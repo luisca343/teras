@@ -20,10 +20,8 @@ import net.minecraft.world.entity.ai.control.MoveControl;
  */
 public class HopMoveControl extends MoveControl {
 
-    /** Ticks between hops when it has somewhere to be. */
+    /** Ticks on the ground between hops. Vanilla slimes idle far longer; a dungeon wants pressure. */
     private static final int INTERVAL = 11;
-    /** Upward impulse. Enough to clear a slab and to read as a bounce across a room. */
-    private static final double JUMP = 0.42;
 
     private final DungeonGeoEnemy enemy;
     private int cooldown;
@@ -37,9 +35,7 @@ public class HopMoveControl extends MoveControl {
 
     @Override
     public void tick() {
-        // Face the destination even while grounded, so the hop that follows goes where it looked
-        // rather than snapping mid-air.
-        enemy.setYRot(rotlerp(enemy.getYRot(), wantedYRot, 30f));
+        enemy.setYRot(rotlerp(enemy.getYRot(), wantedYRot, 90f));
         enemy.yHeadRot = enemy.getYRot();
         enemy.yBodyRot = enemy.getYRot();
 
@@ -50,31 +46,36 @@ public class HopMoveControl extends MoveControl {
         }
         operation = Operation.WAIT;
         if (!enemy.onGround()) {
-            // Mid-hop. Momentum carries it; steering in the air would make it fly.
+            // Mid-hop: keep the forward input so the arc carries it, and never steer — a hop that
+            // can be turned in the air is flight.
+            enemy.setSpeed(travelSpeed());
             return;
         }
         double dx = wantedX - enemy.getX();
         double dz = wantedZ - enemy.getZ();
-        double distance = Math.sqrt(dx * dx + dz * dz);
-        if (distance < 1.0E-5) {
-            enemy.setZza(0);
-            return;
+        if (dx * dx + dz * dz > 1.0E-7) {
+            wantedYRot = (float) (Math.atan2(dz, dx) * 180.0 / Math.PI) - 90f;
         }
-        wantedYRot = (float) (Math.atan2(dz, dx) * 180.0 / Math.PI) - 90f;
-        if (--cooldown > 0) {
-            // Between hops it is inert, which is what a slime looks like on the ground.
-            enemy.setZza(0);
-            return;
+        enemy.setSpeed(travelSpeed());
+        if (cooldown-- <= 0) {
+            cooldown = INTERVAL;
+            // The jump control, not a hand-written velocity. Setting deltaMovement here fought the
+            // control's own jump on the same tick, which is what turned the bounce into a shuffle.
+            enemy.getJumpControl().jump();
+            enemy.playHopAnimation();
+        } else {
+            // Between hops it is genuinely inert. Zeroing zza alone is not enough: Mob.setSpeed
+            // writes zza too, so leaving `speed` set kept feeding travel() a forward input every
+            // tick — which is exactly the sliding this control exists to remove.
+            enemy.xxa = 0f;
+            enemy.zza = 0f;
+            enemy.setSpeed(0f);
         }
-        cooldown = INTERVAL;
-        enemy.getJumpControl().jump();
-        enemy.setDeltaMovement(enemy.getDeltaMovement().x, JUMP, enemy.getDeltaMovement().z);
-        // The forward push rides the variant's speed attribute, so a heavier blob closes slower
-        // without needing its own control.
-        float speed = (float) (speedModifier
-                * enemy.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED));
-        enemy.setSpeed(speed);
-        enemy.setZza(1.0f);
-        enemy.playHopAnimation();
+    }
+
+    /** The variant's own speed, so a heavier blob closes slower without its own control. */
+    private float travelSpeed() {
+        return (float) (speedModifier * enemy.getAttributeValue(
+                net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED));
     }
 }

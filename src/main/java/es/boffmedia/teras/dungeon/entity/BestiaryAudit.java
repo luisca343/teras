@@ -79,12 +79,12 @@ public final class BestiaryAudit {
             findings.add(new Finding(Level.WARNING, id, "a HOPPER at speed " + variant.speed()
                     + " barely closes; its speed is spent per bounce, not per tick"));
         }
-        // A climber that shoots wants a perch, not a wall to stand on: the two compose, but the
-        // spawner routes shooters to ledges and a climber will leave one immediately.
-        if (variant.movement() == Movement.CLIMBER && variant.has(Behaviour.RANGED)) {
-            findings.add(new Finding(Level.WARNING, id,
-                    "is a CLIMBER with RANGED; perch routing will place it on a ledge it climbs off"));
-        }
+        // A "CLIMBER with a ranged behaviour" warning lived here and has been removed. It read as
+        // a real check and was not: it tested has(RANGED) while the spawner routes perches on
+        // shoots(), so it never fired for the tejedora — the one shipped variant it describes —
+        // and a tejedora leaving a ledge is the intended design anyway (§12: Infestadas has no
+        // archer because its shooters climb). A check that misses the case it is about, and would
+        // flag correct content if fixed, teaches people to ignore the audit.
         for (String path : List.of(variant.model(), variant.texture(), variant.animation())) {
             if (path == null || path.isBlank()) {
                 findings.add(new Finding(Level.ERROR, id, "has an empty asset path"));

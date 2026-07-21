@@ -28,7 +28,7 @@ class ValidationTest {
 
     private static FloorDef piso(String id, String nombre, Set<ShapeFamily> shapes, int luz) {
         return new FloorDef(id, nombre, "", shapes, luz, "", "", "",
-                EnumSet.of(Curse.LOST), List.of(), List.of(), Map.of());
+                EnumSet.of(Curse.LOST), List.of(), List.of());
     }
 
     private static FloorDef good() {

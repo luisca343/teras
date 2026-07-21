@@ -36,9 +36,13 @@ import java.util.Set;
  *                    LABYRINTH or it sprawls to the room cap in one repeated footprint
  * @param jefes       boss pool override; empty inherits the tramo's
  * @param minijefes   mini-boss pool override; empty inherits the tramo's
- * @param salas       authored variants per room key. A key absent here resolves to the single
- *                    conventional template {@code teras:dungeon/<id>/<key>}, so a piso needs no
- *                    entry at all until it has more than one room for a key
+ * @param hereda      the shared template sets this piso also draws from, in order. Null means
+ *                    {@link RoomPoolIndex#DEFAULT_SET} — an explicitly empty list means it shares
+ *                    nothing, which is a different and deliberate statement
+ * @param pesos       {@code roomKey -> variant name -> weight}. Tuning only: it can make a room
+ *                    rarer, commoner, or (at 0) switch an inherited one off, but it can never add
+ *                    or remove one. What exists is the folder's answer alone — see
+ *                    {@link RoomPoolIndex}
  * @param enemigos    what fights here, relative — the tramo supplies the depth
  * @param decoracion  what its {@code decoracion:*} markers become, per surface
  */
@@ -53,9 +57,13 @@ public record FloorDef(String id,
                        Set<Curse> maldiciones,
                        List<String> jefes,
                        List<String> minijefes,
-                       Map<String, List<RoomVariant>> salas,
+                       List<String> hereda,
+                       Map<String, Map<String, Double>> pesos,
                        EnemyTable enemigos,
                        DecorTables decoracion) {
+
+    /** The weight a variant draws at when {@code pesos} says nothing about it. */
+    public static final double DEFAULT_WEIGHT = 1.0;
 
     /**
      * A piso with no tables of its own. Kept as a constructor rather than pushed onto every caller
@@ -64,15 +72,35 @@ public record FloorDef(String id,
      */
     public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
                     String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
-                    List<String> jefes, List<String> minijefes,
-                    Map<String, List<RoomVariant>> salas) {
+                    List<String> jefes, List<String> minijefes) {
         this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
-                minijefes, salas, EnemyTable.EMPTY, DecorTables.EMPTY);
+                minijefes, null, Map.of(), EnemyTable.EMPTY, DecorTables.EMPTY);
+    }
+
+    /** A piso with tables but no sharing or weight tuning of its own — how the defaults are built. */
+    public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
+                    String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
+                    List<String> jefes, List<String> minijefes,
+                    EnemyTable enemigos, DecorTables decoracion) {
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
+                minijefes, null, Map.of(), enemigos, decoracion);
     }
 
     public FloorDef {
+        hereda = hereda == null ? List.of(RoomPoolIndex.DEFAULT_SET) : List.copyOf(hereda);
+        pesos = pesos == null ? Map.of() : Map.copyOf(pesos);
         enemigos = enemigos == null ? EnemyTable.EMPTY : enemigos;
         decoracion = decoracion == null ? DecorTables.EMPTY : decoracion;
+    }
+
+    /** The weight this piso gives one variant of one key. */
+    public double peso(String roomKey, String variantName) {
+        Map<String, Double> forKey = pesos.get(roomKey);
+        if (forKey == null) {
+            return DEFAULT_WEIGHT;
+        }
+        Double weight = forKey.get(variantName);
+        return weight == null ? DEFAULT_WEIGHT : weight;
     }
 
     /** The concrete shapes the generator may produce for this piso. */
@@ -83,27 +111,6 @@ public record FloorDef(String id,
     /** Every room key this piso is obliged to supply, given the families it declared. */
     public Set<String> requiredRooms() {
         return RoomKeys.requiredFor(formas);
-    }
-
-    /**
-     * The templates {@code roomKey} may resolve to: the authored variants, or the one conventional
-     * template when none are declared. Never empty, and never another piso's.
-     */
-    public List<RoomVariant> variants(String roomKey) {
-        List<RoomVariant> declared = salas == null ? null : salas.get(roomKey);
-        if (declared == null || declared.isEmpty()) {
-            return List.of(RoomVariant.conventional(id, roomKey));
-        }
-        return List.copyOf(declared);
-    }
-
-    /** Every template this piso can ever place, for load-time existence checks. */
-    public List<RoomVariant> allVariants() {
-        List<RoomVariant> all = new ArrayList<>();
-        for (String key : requiredRooms()) {
-            all.addAll(variants(key));
-        }
-        return all;
     }
 
     public boolean overridesBosses() {

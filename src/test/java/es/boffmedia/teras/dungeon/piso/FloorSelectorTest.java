@@ -29,7 +29,7 @@ class FloorSelectorTest {
             EnumSet.of(ShapeFamily.SINGLE, ShapeFamily.LARGE);
 
     private static FloorDef piso(String id, Set<ShapeFamily> shapes, Set<Curse> curses) {
-        return new FloorDef(id, id, "", shapes, 7, "", "", "", curses, List.of(), List.of(), Map.of());
+        return new FloorDef(id, id, "", shapes, 7, "", "", "", curses, List.of(), List.of());
     }
 
     private static Map<String, FloorDef> catalog(FloorDef... pisos) {
@@ -247,7 +247,7 @@ class FloorSelectorTest {
     @Test
     void titleIsPlaceAndDepthNotAbsoluteFloor() {
         FloorDef named = new FloorDef("cuevas", "Cuevas", "algo se mueve en la oscuridad",
-                ALL, 7, "", "", "", Set.of(), List.of(), List.of(), Map.of());
+                ALL, 7, "", "", "", Set.of(), List.of(), List.of());
         FloorPlan second =
                 FloorSelector.select(cripta(), catalog(named), 4, "semilla", Map.of());
         assertEquals("Cuevas II", second.title());
@@ -273,7 +273,7 @@ class FloorSelectorTest {
     void pisoOverridesTheTramoBossPool() {
         FloorDef queenPiso = new FloorDef("infestadas", "Cuevas Infestadas", "", TIGHT, 4,
                 "", "", "infestacion", EnumSet.of(Curse.LOST),
-                List.of("reina_cria"), List.of(), Map.of());
+                List.of("reina_cria"), List.of());
         FloorPlan plan = FloorSelector.select(
                 new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
                 catalog(queenPiso), 1, "s", Map.of());

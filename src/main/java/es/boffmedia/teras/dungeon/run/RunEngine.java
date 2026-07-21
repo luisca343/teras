@@ -646,8 +646,7 @@ public final class RunEngine {
         for (UUID member : floor.run.party().keySet()) {
             ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
             if (player != null && player.serverLevel() == floor.level) {
-                sendMap(floor, player, floor.lastCell.getOrDefault(member,
-                        floor.built.layout().start().cells().get(0)));
+                sendMap(floor, player);
             }
         }
     }
@@ -760,12 +759,10 @@ public final class RunEngine {
             }
             DungeonHealth.holdHunger(player);
             collectPickups(floor, player);
-            int cellX = Math.floorDiv(player.blockPosition().getX() - origin.getX(), floor.built.roomSize());
-            int cellY = Math.floorDiv(player.blockPosition().getZ() - origin.getZ(), floor.built.roomSize());
-            GridPos cell = new GridPos(cellX, cellY);
+            GridPos cell = cellOf(floor, player);
             floor.core.playerEnteredCell(member, cell, isClearOfDoors(floor, cell, player));
             if (!cell.equals(floor.lastCell.put(member, cell))) {
-                sendMap(floor, player, cell);
+                sendMap(floor, player);
             }
             checkPlates(floor, player, cell);
         }
@@ -813,6 +810,19 @@ public final class RunEngine {
      * enough — a distance check from the doorway's middle looks equivalent and is not: it keeps
      * the room open until the player is several blocks in, long after they have committed.
      */
+    /**
+     * The grid cell a player stands in. One derivation, used by the tick loop and by the map: two
+     * copies of this arithmetic drifting is how the minimap came to mark a cell the player had
+     * already left.
+     */
+    private static GridPos cellOf(ActiveFloor floor, ServerPlayer player) {
+        BlockPos origin = floor.built.origin();
+        int roomSize = floor.built.roomSize();
+        return new GridPos(
+                Math.floorDiv(player.blockPosition().getX() - origin.getX(), roomSize),
+                Math.floorDiv(player.blockPosition().getZ() - origin.getZ(), roomSize));
+    }
+
     private static boolean isClearOfDoors(ActiveFloor floor, GridPos cell, ServerPlayer player) {
         Room room = floor.built.layout().grid().roomAt(cell);
         return room != null && doorwayHolding(floor, room, player) == null;
@@ -875,16 +885,32 @@ public final class RunEngine {
         }
     }
 
-    /** The player's full minimap snapshot: discovered rooms plus dim outlines behind their doors. */
-    private static void sendMap(ActiveFloor floor, ServerPlayer player, GridPos playerCell) {
+    /**
+     * The player's full minimap snapshot: discovered rooms plus dim outlines behind their doors.
+     *
+     * <p>The player's position is read here rather than passed in. It used to be a parameter, and
+     * {@code syncMapFor} supplied {@code lastCell} — which {@code scanPlayers} updates <i>after</i>
+     * discovery, so any resync triggered by walking into a room carried the cell the player had
+     * just left. Deriving it from the player is the only way the two cannot disagree.</p>
+     */
+    private static void sendMap(ActiveFloor floor, ServerPlayer player) {
+        GridPos playerCell = cellOf(floor, player);
+        Room playerRoom = floor.built.layout().grid().roomAt(playerCell);
         List<DungeonMapPayload.Cell> cells = new java.util.ArrayList<>();
         var discovered = floor.core.discovered();
         java.util.Set<GridPos> outlined = new java.util.HashSet<>();
         for (Room room : discovered) {
+            // Every cell of the room the player stands in is marked current, not just the one they
+            // occupy: a 2x2 chamber outlined on one quadrant reads as a grid line rather than as a
+            // position, which is why multi-cell rooms looked unmarked while single ones did not.
+            boolean here = room == playerRoom;
+            // Placement index identifies the room: two adjacent cells sharing it are one chamber,
+            // which is how the map draws a 2x2 as a 2x2 rather than as four squares.
+            int id = floor.built.layout().rooms().indexOf(room);
             for (GridPos cell : room.cells()) {
                 cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
                         room.type().ordinal(), floor.core.state(room).ordinal(),
-                        cell.equals(room.cells().get(0))));
+                        cell.equals(room.cells().get(0)), here, id));
             }
         }
         for (Room room : discovered) {
@@ -898,7 +924,8 @@ public final class RunEngine {
                     GridPos cell = door.from() == room ? door.neighborCell() : door.cell();
                     if (outlined.add(cell)) {
                         cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
-                                DungeonMapPayload.TYPE_UNKNOWN, 0, false));
+                                DungeonMapPayload.TYPE_UNKNOWN, 0, false, false,
+                                DungeonMapPayload.ROOM_NONE));
                     }
                 }
             }
@@ -921,14 +948,15 @@ public final class RunEngine {
                     }
                     cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
                             named ? room.type().ordinal() : DungeonMapPayload.TYPE_UNKNOWN, 0,
-                            named && cell.equals(room.cells().get(0))));
+                            named && cell.equals(room.cells().get(0)), false,
+                            // A revealed room is still a room: its footprint reads as one shape.
+                            floor.built.layout().rooms().indexOf(room)));
                 }
             }
         }
         boolean mapHidden = floor.run.curses().contains(es.boffmedia.teras.dungeon.model.Curse.LOST);
         PacketDistributor.sendToPlayer(player, new DungeonMapPayload(true,
-                floor.built.layout().grid().size(), floor.run.stage(), mapHidden,
-                playerCell.x(), playerCell.y(), cells));
+                floor.built.layout().grid().size(), floor.run.stage(), mapHidden, cells));
     }
 
     private static boolean isSecret(Room room) {
@@ -1131,7 +1159,7 @@ public final class RunEngine {
         @Override
         public int spawnEncounter(Room room) {
             int roomIndex = floor.built.layout().rooms().indexOf(room);
-            List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room, roomIndex);
+            List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room, roomIndex, floor.run.party().size());
             for (Entity enemy : spawned) {
                 floor.enemyRooms.put(enemy.getUUID(), room);
             }
@@ -1148,7 +1176,7 @@ public final class RunEngine {
             float growth = (float) Math.pow(
                     1.0 + DungeonsConfig.challengeWaveGrowthPct() / 100.0, wave);
             List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room,
-                    roomIndex + wave * 1000, growth);
+                    roomIndex + wave * 1000, growth, floor.run.party().size());
             for (Entity enemy : spawned) {
                 floor.enemyRooms.put(enemy.getUUID(), room);
             }

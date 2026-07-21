@@ -48,26 +48,30 @@ public final class EnemySpawner {
     public static final String DUNGEON_TAG = "teras_dungeon_enemy";
 
     /** Spawns the room's encounter; the returned entities are the room's kill ledger. */
-    public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex) {
-        return spawn(level, built, room, roomIndex, 1.0f);
+    public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex,
+                                     int partySize) {
+        return spawn(level, built, room, roomIndex, 1.0f, partySize);
     }
 
     /**
      * @param sizeFactor multiplies the wave's enemy count — how a challenge room's later waves get
      *                   heavier. Bosses ignore it: a pool draws exactly one.
+     * @param partySize  how many players the floor is being fought by; see {@code PartyScaling}.
+     *                   Bosses take its health share but never its count — a boss room draws one
+     *                   boss whatever the party.
      */
     public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex,
-                                     float sizeFactor) {
+                                     float sizeFactor, int partySize) {
         // A challenge's later waves spawn into a room that still holds the previous one's corpses
         // and any stragglers; purging is what keeps the ledger and the floor in agreement.
         purgeLeftovers(level, built, room);
         SeededRng rng = new SeededRng(DungeonSeeds.derive(built.layout().baseSeed(), 0x656E656DL + roomIndex));
         List<Entity> spawned = switch (room.type()) {
             case BOSS -> spawnFromPool(level, built, room, bossPool(built), "boss", rng,
-                    CoinDrops.TIER_BOSS_TAG);
+                    CoinDrops.TIER_BOSS_TAG, partySize);
             case MINI_BOSS -> spawnFromPool(level, built, room, miniBossPool(built), "boss", rng,
-                    CoinDrops.TIER_MINIBOSS_TAG);
-            default -> spawnWave(level, built, room, rng, sizeFactor);
+                    CoinDrops.TIER_MINIBOSS_TAG, partySize);
+            default -> spawnWave(level, built, room, rng, sizeFactor, partySize);
         };
         if (spawned.isEmpty()) {
             Teras.LOGGER.warn("Dungeons: {} spawned no enemies — the room clears itself on entry. "
@@ -182,12 +186,12 @@ public final class EnemySpawner {
      * with archers is never broken by a room without ledges.</p>
      */
     private static List<Entity> spawnWave(ServerLevel level, BuiltDungeon built, Room room,
-                                          SeededRng rng, float sizeFactor) {
+                                          SeededRng rng, float sizeFactor, int partySize) {
         double dificultad = built.dificultad();
         es.boffmedia.teras.dungeon.piso.EnemyTable table = tableOf(built);
         List<es.boffmedia.teras.dungeon.piso.SpawnRef> roster = table.rosterAt(dificultad);
         if (roster.isEmpty()) {
-            return spawnLegacyWave(level, built, room, rng, sizeFactor);
+            return spawnLegacyWave(level, built, room, rng, sizeFactor, partySize);
         }
         List<BlockPos> floorPositions = spawnPositions(built, room, "spawn");
         List<BlockPos> perches = markerPositions(built, room, "spawn:ranged");
@@ -196,7 +200,10 @@ public final class EnemySpawner {
         if (room.shape().cellCount() > 1) {
             count = count * room.shape().cellCount() / 2 + 1;
         }
-        count = Math.max(1, Math.round(count * sizeFactor));
+        // The party is the second axis, kept off damage entirely: joining a friend must never make
+        // the floor hit harder. Count carries it, health moves a little, and PartyScaling caps the
+        // product so a wave still fits the markers the room was authored with.
+        count = Math.max(1, Math.round(count * sizeFactor * (float) es.boffmedia.teras.dungeon.piso.PartyScaling.count(partySize)));
 
         List<Entity> spawned = new ArrayList<>();
         int floorIndex = 0;
@@ -213,7 +220,8 @@ public final class EnemySpawner {
                 continue;
             }
             EnemyScaling.apply(enemy,
-                    ref.vida() * es.boffmedia.teras.dungeon.piso.Dificultad.health(dificultad),
+                    ref.vida() * es.boffmedia.teras.dungeon.piso.Dificultad.health(dificultad)
+                            * es.boffmedia.teras.dungeon.piso.PartyScaling.health(partySize),
                     ref.dano() * es.boffmedia.teras.dungeon.piso.Dificultad.damage(dificultad),
                     ref.escala());
             spawned.add(enemy);
@@ -319,14 +327,14 @@ public final class EnemySpawner {
      * before its pisos gained tables.
      */
     private static List<Entity> spawnLegacyWave(ServerLevel level, BuiltDungeon built, Room room,
-                                                SeededRng rng, float sizeFactor) {
+                                                SeededRng rng, float sizeFactor, int partySize) {
         SpawnTables.StageTable table = SpawnTables.stageTable(built.layout().stage());
         List<BlockPos> positions = spawnPositions(built, room, "spawn");
         int count = rng.between(table.countMin(), table.countMax());
         if (room.shape().cellCount() > 1) {
             count = count * room.shape().cellCount() / 2 + 1;
         }
-        count = Math.max(1, Math.round(count * sizeFactor));
+        count = Math.max(1, Math.round(count * sizeFactor * (float) es.boffmedia.teras.dungeon.piso.PartyScaling.count(partySize)));
         List<Entity> spawned = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             BlockPos pos = positions.get(i % positions.size());
@@ -344,7 +352,7 @@ public final class EnemySpawner {
      */
     private static List<Entity> spawnFromPool(ServerLevel level, BuiltDungeon built, Room room,
                                               List<SpawnTables.SpawnEntry> pool, String markerKind,
-                                              SeededRng rng, String tierTag) {
+                                              SeededRng rng, String tierTag, int partySize) {
         List<BlockPos> markers = markerPositions(built, room, markerKind);
         // A template without a boss marker puts its boss in the middle of the chamber. The
         // per-cell fallback would give the anchor cell — the corner quadrant of a 2x2 boss room.
@@ -362,8 +370,11 @@ public final class EnemySpawner {
         }
         // Depth reaches the boss too, or a tramo turning its floors up leaves the one fight that
         // gates the descent untouched — and the boss becomes the easy part of a hard floor.
+        // A boss room draws exactly one boss whatever the party, so the party's share has to land
+        // on health or four players simply delete it four times as fast.
         EnemyScaling.apply(boss,
-                es.boffmedia.teras.dungeon.piso.Dificultad.health(built.dificultad()),
+                es.boffmedia.teras.dungeon.piso.Dificultad.health(built.dificultad())
+                        * es.boffmedia.teras.dungeon.piso.PartyScaling.health(partySize),
                 es.boffmedia.teras.dungeon.piso.Dificultad.damage(built.dificultad()), 1.0);
         boss.addTag(tierTag);
         return List.of(boss);

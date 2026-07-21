@@ -59,6 +59,24 @@ public final class PisoCatalog {
     private static Map<String, List<String>> mismatched = new LinkedHashMap<>();
     private static Map<String, DungeonDef> dungeons = new LinkedHashMap<>();
 
+    /** One entry of the retired {@code salas} block. */
+    private record LegacyVariant(String template, double weight) {}
+
+    /**
+     * What a migrated room with no name of its own becomes. The old layout had one template per key
+     * so the file was named after the key; a folder full of files called {@code normal} would say
+     * nothing, and this is the name an admin sees in {@code sala listar} from then on.
+     */
+    private static final String MIGRATED_NAME = "original";
+
+    /**
+     * The {@code salas} blocks still on disk, {@code piso -> key -> variants}. Nothing reads these
+     * to build anything — room membership comes from the folder layout now — they are kept only so
+     * {@code piso migrar} can carry an old file's weights across, and so load can say out loud that
+     * the block is being ignored.
+     */
+    private static Map<String, Map<String, List<LegacyVariant>>> legacySalas = new LinkedHashMap<>();
+
     static {
         resetToDefaults();
     }
@@ -87,7 +105,14 @@ public final class PisoCatalog {
         Map<String, FloorDef> usable = new LinkedHashMap<>();
         missingRooms = new LinkedHashMap<>();
         mismatched = new LinkedHashMap<>();
+        // The folder layout is the only record of which templates exist, so it is read before
+        // anything asks a piso what it can build.
+        es.boffmedia.teras.dungeon.build.RoomPools.rebuild(manager);
         for (FloorDef piso : declared.values()) {
+            for (String problem : es.boffmedia.teras.dungeon.build.RoomPools.index()
+                    .problems(piso)) {
+                Teras.LOGGER.warn("Dungeons: piso '{}' {}", piso.id(), problem);
+            }
             List<String> missing =
                     es.boffmedia.teras.dungeon.build.RoomTemplates.missingTemplates(piso, manager);
             if (missing.isEmpty()) {
@@ -171,107 +196,174 @@ public final class PisoCatalog {
     }
 
     /**
-     * Registers a template as another weighted variant of {@code roomKey} on a piso, rewriting its
-     * file. The room editor's save-as-variant: the new room becomes one more draw alongside what
-     * was there.
+     * Sets the draw weight of one variant of one room key, rewriting the piso's file.
      *
-     * <p>Seeds the list with the piso's conventional template first when it had none, because an
-     * absent key means "the one conventional room" — writing only the new one would silently drop
-     * the original from selection.</p>
+     * <p>This is the whole of what a piso may say about its rooms. Membership comes from the folder
+     * and nothing else, so this can make a room rarer, commoner, or (at 0) switch off one it
+     * inherits from a shared set — but it can never conjure one that is not on disk, nor hide one
+     * that is by omission. That asymmetry is the point: the folder and the weights answer different
+     * questions, so they cannot disagree the way the old {@code salas} list could.</p>
+     *
+     * @param weight relative; 1.0 is the default every unlisted variant already has, so setting it
+     *               removes the entry rather than writing a line that says nothing
+     * @return an error to show, or null on success
      */
-    public static String addVariant(String pisoId, String roomKey, String template, int weight) {
+    public static String setWeight(String pisoId, String roomKey, String variantName,
+                                   double weight) {
         FloorDef piso = declared.get(pisoId);
         if (piso == null) {
             return "No existe el piso '" + pisoId + "'.";
         }
-        Path file = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
-                .resolve("pisos").resolve(pisoId + ".json");
+        if (weight < 0) {
+            return "El peso no puede ser negativo (0 = desactivada).";
+        }
+        Path file = pisoFile(pisoId);
         try {
-            JsonObject json;
-            if (Files.exists(file)) {
-                try (Reader reader = Files.newBufferedReader(file)) {
-                    json = GSON.fromJson(reader, JsonObject.class);
-                }
+            JsonObject json = Files.exists(file) ? readJson(file) : render(piso);
+            JsonObject pesos = json.has("pesos") ? json.getAsJsonObject("pesos") : new JsonObject();
+            json.add("pesos", pesos);
+            JsonObject forKey = pesos.has(roomKey)
+                    ? pesos.getAsJsonObject(roomKey) : new JsonObject();
+            if (weight == FloorDef.DEFAULT_WEIGHT) {
+                forKey.remove(variantName);
             } else {
-                json = render(piso);
+                forKey.addProperty(variantName, weight);
             }
-            JsonObject salas = json.has("salas") ? json.getAsJsonObject("salas") : new JsonObject();
-            json.add("salas", salas);
-            JsonArray list = salas.has(roomKey) ? salas.getAsJsonArray(roomKey) : null;
-            if (list == null) {
-                list = new JsonArray();
-                for (RoomVariant existing : piso.variants(roomKey)) {
-                    list.add(variantJson(existing));
-                }
-                salas.add(roomKey, list);
+            if (forKey.size() == 0) {
+                pesos.remove(roomKey);
+            } else {
+                pesos.add(roomKey, forKey);
             }
-            list.add(variantJson(new RoomVariant(template, weight, 0)));
             Files.createDirectories(file.getParent());
             Files.writeString(file, GSON.toJson(json));
             load();
             return null;
         } catch (Exception e) {
-            Teras.LOGGER.error("Dungeons: could not add variant to piso '{}': {}", pisoId, e.toString());
+            Teras.LOGGER.error("Dungeons: could not set weight on piso '{}': {}", pisoId, e.toString());
             return "No se pudo escribir el piso: " + e;
         }
     }
 
     /**
-     * Removes one variant of a room key, reloading afterwards. The counterpart to
-     * {@link #addVariant}: a room saved from the editor and then judged bad could otherwise only be
-     * taken out by hand-editing the file, and it keeps being built in the meantime.
+     * Moves a piso's templates from the old flat layout into per-key folders and converts any
+     * {@code salas} block into {@code pesos}.
      *
-     * <p>The last entry is refused rather than removed. An empty list reads back as "no variants
-     * declared", which resolves to the conventional template — so emptying the list would silently
-     * restore the original rather than leave the key empty, a confusing way to find out the delete
-     * did the opposite of what it said.</p>
+     * <p>Needed exactly once per server. Room templates used to be {@code dungeon/<piso>/<key>.nbt}
+     * with the variants listed in the piso's json; they are now {@code dungeon/<piso>/<key>/<name>.nbt}
+     * with the folder as the list. The jar's own templates ship in the new layout, but every room an
+     * admin authored lives in the world's {@code generated} folder and would simply stop being
+     * found — not an error anywhere, just work quietly falling out of the rotation. This moves it.
+     * </p>
+     *
+     * <p>The old file is <b>moved</b>, not copied: leaving it would keep shadowing nothing while
+     * looking like a template that still matters.</p>
+     *
+     * @return a human-readable report, or an error
      */
-    public static String removeVariant(String pisoId, String roomKey, int index) {
+    public static String migratePiso(net.minecraft.server.MinecraftServer server, String pisoId) {
         FloorDef piso = declared.get(pisoId);
         if (piso == null) {
             return "No existe el piso '" + pisoId + "'.";
         }
-        Path file = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
-                .resolve("pisos").resolve(pisoId + ".json");
-        try {
-            if (!Files.exists(file)) {
-                return "El piso '" + pisoId + "' no tiene archivo que editar.";
+        var manager = server.getStructureManager();
+        List<String> moved = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        Map<String, Map<String, Double>> pesos = new LinkedHashMap<>();
+
+        for (String key : piso.requiredRooms()) {
+            // The flat conventional path, plus anything the old salas block named for this key.
+            List<String> legacy = new ArrayList<>();
+            legacy.add(RoomPoolIndex.NAMESPACE + ":" + RoomPoolIndex.ROOT + pisoId + "/" + key);
+            for (LegacyVariant variant : legacySalas.getOrDefault(pisoId, Map.of())
+                    .getOrDefault(key, List.of())) {
+                if (!legacy.contains(variant.template())) {
+                    legacy.add(variant.template());
+                }
             }
-            JsonObject json;
-            try (Reader reader = Files.newBufferedReader(file)) {
-                json = GSON.fromJson(reader, JsonObject.class);
+            for (String template : legacy) {
+                var id = net.minecraft.resources.ResourceLocation.tryParse(template);
+                if (id == null) {
+                    continue;
+                }
+                String flat = id.getPath();
+                String name = flat.substring(flat.lastIndexOf('/') + 1);
+                // A legacy name of exactly the key is the conventional room and has no identity of
+                // its own; everything else keeps the name it was saved under.
+                String target = name.equals(key) ? MIGRATED_NAME : name;
+                var to = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                        id.getNamespace(), RoomPoolIndex.ROOT + pisoId + "/" + key + "/" + target);
+                try {
+                    Path from = manager.createAndValidatePathToGeneratedStructure(id, ".nbt");
+                    if (!Files.exists(from)) {
+                        continue;
+                    }
+                    Path into = manager.createAndValidatePathToGeneratedStructure(to, ".nbt");
+                    Files.createDirectories(into.getParent());
+                    Files.move(from, into, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    manager.remove(id);
+                    manager.remove(to);
+                    moved.add(key + "/" + target);
+                    double weight = weightOf(pisoId, key, template);
+                    if (weight != FloorDef.DEFAULT_WEIGHT) {
+                        pesos.computeIfAbsent(key, k -> new LinkedHashMap<>()).put(target, weight);
+                    }
+                } catch (Exception e) {
+                    Teras.LOGGER.error("Dungeons: could not migrate {} -> {}: {}", id, to, e.toString());
+                    failed.add(key + " (" + e + ")");
+                }
             }
-            JsonObject salas = json.has("salas") ? json.getAsJsonObject("salas") : null;
-            JsonArray list = salas == null || !salas.has(roomKey)
-                    ? null : salas.getAsJsonArray(roomKey);
-            if (list == null) {
-                return "'" + roomKey + "' no tiene variantes declaradas en " + pisoId + ".";
-            }
-            if (index < 0 || index >= list.size()) {
-                return "Variante fuera de rango: '" + roomKey + "' tiene " + list.size() + ".";
-            }
-            if (list.size() == 1) {
-                return "Es la única variante declarada de '" + roomKey + "' — deja al menos una.";
-            }
-            list.remove(index);
-            Files.writeString(file, GSON.toJson(json));
-            load();
-            return null;
-        } catch (Exception e) {
-            Teras.LOGGER.error("Dungeons: could not remove variant {} of {} on piso '{}': {}",
-                    index, roomKey, pisoId, e.toString());
-            return "No se pudo escribir el piso: " + e;
         }
+
+        Path file = pisoFile(pisoId);
+        try {
+            JsonObject json = Files.exists(file) ? readJson(file) : render(piso);
+            json.remove("salas");
+            JsonObject block = new JsonObject();
+            for (Map.Entry<String, Map<String, Double>> entry : pesos.entrySet()) {
+                JsonObject forKey = new JsonObject();
+                entry.getValue().forEach(forKey::addProperty);
+                block.add(entry.getKey(), forKey);
+            }
+            json.add("pesos", block);
+            if (!json.has("hereda")) {
+                json.add("hereda", names(List.of(RoomPoolIndex.DEFAULT_SET)));
+            }
+            json.addProperty(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY,
+                    es.boffmedia.teras.dungeon.build.ConfigVersion.CURRENT);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, GSON.toJson(json));
+        } catch (Exception e) {
+            Teras.LOGGER.error("Dungeons: could not rewrite piso '{}' during migration: {}",
+                    pisoId, e.toString());
+            return "Plantillas movidas pero no se pudo reescribir el piso: " + e;
+        }
+        load();
+        validateTemplates(manager);
+        String report = moved.size() + " plantilla(s) movidas" + (moved.isEmpty() ? "" : ": "
+                + String.join(", ", moved));
+        return failed.isEmpty() ? "§a" + report : "§e" + report + " · fallaron: "
+                + String.join("; ", failed);
     }
 
-    private static JsonObject variantJson(RoomVariant variant) {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("template", variant.template());
-        obj.addProperty("peso", variant.weight());
-        if (variant.rotation() != 0) {
-            obj.addProperty("rotacion", variant.rotation());
+    private static double weightOf(String pisoId, String roomKey, String template) {
+        for (LegacyVariant variant : legacySalas.getOrDefault(pisoId, Map.of())
+                .getOrDefault(roomKey, List.of())) {
+            if (variant.template().equals(template)) {
+                return variant.weight();
+            }
         }
-        return obj;
+        return FloorDef.DEFAULT_WEIGHT;
+    }
+
+    private static Path pisoFile(String pisoId) {
+        return FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
+                .resolve("pisos").resolve(pisoId + ".json");
+    }
+
+    private static JsonObject readJson(Path file) throws Exception {
+        try (Reader reader = Files.newBufferedReader(file)) {
+            return GSON.fromJson(reader, JsonObject.class);
+        }
     }
 
     /**
@@ -294,7 +386,8 @@ public final class PisoCatalog {
         }
         FloorDef seeded = new FloorDef(newId, newId, "", source.formas(), source.luz(),
                 source.musica(), source.ambiente(), "", source.maldiciones(),
-                List.of(), List.of(), Map.of());
+                List.of(), List.of(), source.hereda(), Map.of(),
+                EnemyTable.EMPTY, DecorTables.EMPTY);
         try {
             Files.createDirectories(file.getParent());
             Files.writeString(file, GSON.toJson(render(seeded)));
@@ -333,6 +426,10 @@ public final class PisoCatalog {
                 if (piso == null) {
                     continue;
                 }
+                es.boffmedia.teras.dungeon.build.ConfigVersion.warnIfStale(
+                        "pisos/" + id + ".json", versionOf(file),
+                        "Run '/teras dungeon piso resync " + id + "' to take the shipped content "
+                                + "(authored room variants are preserved).");
                 List<String> problems = piso.problems();
                 if (!problems.isEmpty()) {
                     Teras.LOGGER.error("Dungeons: piso '{}' is unusable and will never be "
@@ -348,11 +445,63 @@ public final class PisoCatalog {
             // narrows this to the pisos that can actually build.
             pisos = loaded;
         }
+        warnAboutOutdatedContent(loaded);
+    }
+
+    /**
+     * Says out loud when a config file on disk is older than the content the mod ships.
+     *
+     * <p>A shipped default only ever seeds a file that does <b>not</b> exist, so every content
+     * change since a server's first boot sits in the jar unread — §22 (`alturaSala`), §23
+     * (`formas`) and §26 (the ambient bat) were all this, and the enemy tables are the worst case
+     * yet: a piso written before §25 has no {@code enemigos} block at all, so its floors quietly
+     * draw from the global {@code enemies.json} stage curve instead of the piso's own bestiary.
+     * Nothing looks wrong — a wave still spawns — it is simply not the wave the piso describes,
+     * which is how a whole first-party bestiary can be built, shipped and never once seen.</p>
+     */
+    private static void warnAboutOutdatedContent(Map<String, FloorDef> loaded) {
+        for (FloorDef piso : loaded.values()) {
+            FloorDef factory = shipped.get(piso.id());
+            if (factory == null) {
+                continue;
+            }
+            if (piso.enemigos().isEmpty() && !factory.enemigos().isEmpty()) {
+                Teras.LOGGER.error("Dungeons: piso '{}' has no 'enemigos' block, so its floors "
+                        + "spawn from the global enemies.json curve and NOT from the piso's own "
+                        + "bestiary — its config predates per-piso enemy tables. Run "
+                        + "'/teras dungeon piso resync {}' to take the shipped table.",
+                        piso.id(), piso.id());
+            }
+            if (piso.decoracion().isEmpty() && !factory.decoracion().isEmpty()) {
+                Teras.LOGGER.warn("Dungeons: piso '{}' has no 'decoracion' block, so its "
+                        + "decoracion:* markers build as nothing. '/teras dungeon piso resync {}'",
+                        piso.id(), piso.id());
+            }
+        }
+    }
+
+    /** The stamp a config carries, or 0 when it predates stamping. */
+    private static int versionOf(Path file) {
+        try (Reader reader = Files.newBufferedReader(file)) {
+            JsonObject json = GSON.fromJson(reader, JsonObject.class);
+            return json != null && json.has(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY)
+                    ? json.get(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY).getAsInt() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private static FloorDef readPiso(String id, Path file) {
         try (Reader reader = Files.newBufferedReader(file)) {
             JsonObject json = GSON.fromJson(reader, JsonObject.class);
+            Map<String, List<LegacyVariant>> legacy = legacySalas(json.get("salas"));
+            if (!legacy.isEmpty()) {
+                legacySalas.put(id, legacy);
+                Teras.LOGGER.warn("Dungeons: piso '{}' still has a 'salas' block. Rooms are read "
+                        + "from dungeon/{}/<sala>/ folders now, so it is ignored — run "
+                        + "'/teras dungeon piso migrar {}' to move the templates it names into "
+                        + "folders and carry its weights over to 'pesos'.", id, id, id);
+            }
             return new FloorDef(id,
                     string(json, "nombre", id),
                     string(json, "subtitulo", ""),
@@ -364,7 +513,10 @@ public final class PisoCatalog {
                     curses(json.get("maldiciones")),
                     strings(json.get("jefes")),
                     strings(json.get("minijefes")),
-                    salas(json.get("salas")),
+                    // Absent means the default set; an explicit [] means "share nothing", which is
+                    // a different statement and has to survive the round trip.
+                    json.has("hereda") ? strings(json.get("hereda")) : null,
+                    pesos(json.get("pesos")),
                     enemyTable(json.get("enemigos")),
                     decorTables(json.get("decoracion")));
         } catch (Exception e) {
@@ -579,20 +731,57 @@ public final class PisoCatalog {
         return families;
     }
 
-    /** Authored variants per room key. Absent keys resolve to the piso's conventional template. */
-    private static Map<String, List<RoomVariant>> salas(JsonElement element) {
-        Map<String, List<RoomVariant>> salas = new LinkedHashMap<>();
+    /**
+     * Weight overrides per room key: {@code {"normal": {"geoda": 0.2}}}. Tuning only — a name here
+     * that is not in the folder is reported at load and does nothing, because a weight can never
+     * add a room.
+     */
+    private static Map<String, Map<String, Double>> pesos(JsonElement element) {
+        Map<String, Map<String, Double>> pesos = new LinkedHashMap<>();
+        if (element == null || !element.isJsonObject()) {
+            return pesos;
+        }
+        JsonObject json = element.getAsJsonObject();
+        for (String key : json.keySet()) {
+            if (!json.get(key).isJsonObject()) {
+                Teras.LOGGER.warn("Dungeons: 'pesos.{}' is not an object of "
+                        + "variante -> peso; skipped", key);
+                continue;
+            }
+            Map<String, Double> forKey = new LinkedHashMap<>();
+            JsonObject obj = json.getAsJsonObject(key);
+            for (String name : obj.keySet()) {
+                try {
+                    forKey.put(name, obj.get(name).getAsDouble());
+                } catch (Exception e) {
+                    Teras.LOGGER.warn("Dungeons: 'pesos.{}.{}' is not a number; skipped", key, name);
+                }
+            }
+            if (!forKey.isEmpty()) {
+                pesos.put(key, forKey);
+            }
+        }
+        return pesos;
+    }
+
+    /** The retired {@code salas} block, read only so {@code piso migrar} can convert it. */
+    private static Map<String, List<LegacyVariant>> legacySalas(JsonElement element) {
+        Map<String, List<LegacyVariant>> salas = new LinkedHashMap<>();
         if (element == null || !element.isJsonObject()) {
             return salas;
         }
         JsonObject json = element.getAsJsonObject();
         for (String key : json.keySet()) {
-            List<RoomVariant> variants = new ArrayList<>();
-            for (JsonElement item : json.getAsJsonArray(key)) {
-                JsonObject obj = item.getAsJsonObject();
-                variants.add(new RoomVariant(obj.get("template").getAsString(),
-                        obj.has("peso") ? obj.get("peso").getAsInt() : 1,
-                        obj.has("rotacion") ? obj.get("rotacion").getAsInt() : 0));
+            List<LegacyVariant> variants = new ArrayList<>();
+            try {
+                for (JsonElement item : json.getAsJsonArray(key)) {
+                    JsonObject obj = item.getAsJsonObject();
+                    variants.add(new LegacyVariant(obj.get("template").getAsString(),
+                            obj.has("peso") ? obj.get("peso").getAsDouble()
+                                    : FloorDef.DEFAULT_WEIGHT));
+                }
+            } catch (Exception e) {
+                Teras.LOGGER.warn("Dungeons: could not read the legacy 'salas.{}': {}", key, e.toString());
             }
             if (!variants.isEmpty()) {
                 salas.put(key, variants);
@@ -624,10 +813,11 @@ public final class PisoCatalog {
     private static void resetToDefaults() {
         pisos = new LinkedHashMap<>();
         missingRooms = new LinkedHashMap<>();
+        legacySalas = new LinkedHashMap<>();
         pisos.put("cuevas", new FloorDef("cuevas", "Cuevas", "el aire huele a piedra húmeda",
                 EnumSet.allOf(ShapeFamily.class), 7,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "",
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of(), List.of(), Map.of(),
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of(), List.of(),
                 cuevasEnemies(), cuevasDecor()));
         // Two shapes only: tight and choked is the identity, and it excuses six of the 21 rooms.
         // LABYRINTH is refused for the same reason — at two shapes it would sprawl to the room cap
@@ -636,7 +826,7 @@ public final class PisoCatalog {
                 "algo se mueve en la oscuridad",
                 EnumSet.of(ShapeFamily.SINGLE, ShapeFamily.LARGE), 4,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "infestacion",
-                EnumSet.of(Curse.LOST), List.of("reina_cria"), List.of(), Map.of(),
+                EnumSet.of(Curse.LOST), List.of("reina_cria"), List.of(),
                 infestadasEnemies(), infestadasDecor()));
 
         declared = pisos;
@@ -672,14 +862,16 @@ public final class PisoCatalog {
             return "'" + pisoId + "' no es un piso de fábrica — resync solo aplica a los que trae el "
                     + "mod (" + String.join(", ", shipped.keySet()) + ").";
         }
-        // Keep the on-disk salas if it has any, so a content resync never discards authored rooms.
+        // Keep what the operator chose about rooms — which sets this piso shares and how it has
+        // weighted them — so a content resync never undoes tuning. It could not discard authored
+        // rooms even if it tried: those are files in a folder, and nothing in the config names them.
         FloorDef current = declared.get(pisoId);
-        Map<String, List<RoomVariant>> keepSalas =
-                current != null && current.salas() != null && !current.salas().isEmpty()
-                        ? current.salas() : def.salas();
         FloorDef merged = new FloorDef(def.id(), def.nombre(), def.subtitulo(), def.formas(),
                 def.luz(), def.musica(), def.ambiente(), def.mecanica(), def.maldiciones(),
-                def.jefes(), def.minijefes(), keepSalas, def.enemigos(), def.decoracion());
+                def.jefes(), def.minijefes(),
+                current != null ? current.hereda() : def.hereda(),
+                current != null ? current.pesos() : def.pesos(),
+                def.enemigos(), def.decoracion());
         Path file = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
                 .resolve("pisos").resolve(pisoId + ".json");
         try {
@@ -772,6 +964,8 @@ public final class PisoCatalog {
 
     private static JsonObject render(FloorDef piso) {
         JsonObject json = new JsonObject();
+        json.addProperty(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY,
+                es.boffmedia.teras.dungeon.build.ConfigVersion.CURRENT);
         json.addProperty("nombre", piso.nombre());
         json.addProperty("subtitulo", piso.subtitulo());
         json.add("formas", names(piso.formas().stream().map(Enum::name).toList()));
@@ -782,15 +976,16 @@ public final class PisoCatalog {
         json.add("maldiciones", names(piso.maldiciones().stream().map(Enum::name).toList()));
         json.add("jefes", names(piso.jefes()));
         json.add("minijefes", names(piso.minijefes()));
-        JsonObject salas = new JsonObject();
-        for (Map.Entry<String, List<RoomVariant>> entry : piso.salas().entrySet()) {
-            JsonArray list = new JsonArray();
-            for (RoomVariant variant : entry.getValue()) {
-                list.add(variantJson(variant));
-            }
-            salas.add(entry.getKey(), list);
+        json.add("hereda", names(piso.hereda()));
+        JsonObject pesos = new JsonObject();
+        for (Map.Entry<String, Map<String, Double>> entry : piso.pesos().entrySet()) {
+            JsonObject forKey = new JsonObject();
+            entry.getValue().forEach(forKey::addProperty);
+            pesos.add(entry.getKey(), forKey);
         }
-        json.add("salas", salas);
+        // Written even when empty, because an empty block is the honest description of the normal
+        // case: every room in the folder, all at the same odds.
+        json.add("pesos", pesos);
         json.add("enemigos", renderEnemies(piso.enemigos()));
         json.add("decoracion", renderDecor(piso.decoracion()));
         return json;

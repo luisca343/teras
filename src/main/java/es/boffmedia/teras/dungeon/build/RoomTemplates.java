@@ -5,10 +5,10 @@ import es.boffmedia.teras.dungeon.model.DungeonSeeds;
 import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomShape;
 import es.boffmedia.teras.dungeon.model.ShapeFamily;
-import es.boffmedia.teras.dungeon.model.SeededRng;
 import es.boffmedia.teras.dungeon.piso.FloorDef;
 import es.boffmedia.teras.dungeon.piso.RoomKeys;
 import es.boffmedia.teras.dungeon.piso.RoomVariant;
+import es.boffmedia.teras.dungeon.piso.VariantBag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
@@ -24,16 +24,18 @@ import java.util.Locale;
  * <p>This replaced a theme-keyed pool map whose every lookup fell back to a {@code base} theme.
  * That fallback was the whole problem: it meant a "theme" could declare nothing and still build a
  * floor out of another theme's rooms, so every place was structurally identical by construction.
- * <b>There is no fallback here.</b> A piso resolves its own rooms or it is not usable, which is
- * caught at load by {@link #missingTemplates} rather than mid-build.</p>
+ * <b>There is no implicit fallback here.</b> A piso resolves its own rooms, plus whatever shared
+ * sets it deliberately names in {@code hereda}, or it is not usable — caught at load by
+ * {@link #missingTemplates} rather than mid-build.</p>
  *
- * <p>Selection is derived from the layout's base seed and the room's placement index, never from
- * world randomness: the same seed rebuilds the same floor down to each room's variant.</p>
+ * <p>Selection is derived from the layout's base seed and the room's ordinal within its key, never
+ * from world randomness: the same seed rebuilds the same floor down to each room's variant.</p>
  */
 public final class RoomTemplates {
     private RoomTemplates() {}
 
-    public record TemplateEntry(ResourceLocation template, int weight, Rotation rotation) {}
+    public record TemplateEntry(String name, ResourceLocation template, double weight,
+                                Rotation rotation) {}
 
     /**
      * The room key a room draws from — its type plus its shape <b>family</b>, never its orientation.
@@ -51,58 +53,56 @@ public final class RoomTemplates {
     }
 
     /**
-     * Deterministic weighted pick for a room; {@code roomIndex} is its position in placement order.
+     * Deterministic pick for a room.
      *
-     * <p>Draws are independent per room, which is fine while a piso ships one template per key. Once
-     * pools carry several, this wants memory instead — independent weighted rolls put the same room
-     * down four times in a row often enough to read as no variety at all (see DUNGEONS.md §11).</p>
+     * @param ordinal this room's position among the rooms of the <i>same key</i>, in placement
+     *                order — not its index on the floor. The bag deals one cycle per key, so a
+     *                floor-wide index would skip entries and reintroduce the clustering the bag
+     *                exists to remove
      */
-    public static TemplateEntry select(FloorDef piso, Room room, long baseSeed, int roomIndex) {
-        List<RoomVariant> variants = piso.variants(keyFor(room));
-        SeededRng rng = new SeededRng(DungeonSeeds.derive(baseSeed, 0x726F6F6DL + roomIndex));
-        int total = variants.stream().mapToInt(RoomVariant::weight).sum();
-        int roll = rng.between(1, Math.max(1, total));
-        RoomVariant chosen = variants.get(variants.size() - 1);
-        for (RoomVariant variant : variants) {
-            roll -= variant.weight();
-            if (roll <= 0) {
-                chosen = variant;
-                break;
-            }
+    public static TemplateEntry select(FloorDef piso, Room room, long baseSeed, int ordinal) {
+        String key = keyFor(room);
+        List<RoomVariant> pool = RoomPools.pool(piso, key);
+        if (pool.isEmpty()) {
+            Teras.LOGGER.error("Dungeons: piso '{}' has no template for '{}' — the cell will be "
+                    + "left empty", piso.id(), key);
+            return new TemplateEntry(key, ResourceLocation.fromNamespaceAndPath(
+                    Teras.MOD_ID, "dungeon/missing"), 1.0,
+                    rotation(room.shape().baseRotation() % 360));
         }
-        // The shape's own turn, plus whatever the variant asked for on top. This is what lets one
-        // authored L serve all four orientations and one 2x1 serve both.
+        RoomVariant chosen = VariantBag.draw(pool, baseSeed, DungeonSeeds.fnv1a64(key), ordinal);
+        // The shape's own turn: this is what lets one authored L serve all four orientations and
+        // one 2x1 serve both.
         return entry(chosen, room.shape().baseRotation());
     }
 
     /**
-     * Every variant of one key, unrotated — the editor pastes and saves templates in the orientation
-     * they are authored in, so showing them turned would bake a rotation into the next save.
+     * Every variant of one key, unrotated and including the ones weighted to zero — the editor
+     * pastes and saves templates in the orientation they are authored in, so showing them turned
+     * would bake a rotation into the next save.
      */
     public static List<TemplateEntry> pool(FloorDef piso, String roomKey) {
         List<TemplateEntry> entries = new ArrayList<>();
-        for (RoomVariant variant : piso.variants(roomKey)) {
+        for (RoomVariant variant : RoomPools.declared(piso, roomKey)) {
             entries.add(entry(variant, 0));
         }
         return entries;
     }
 
     /**
-     * The templates this piso names that do not exist, as {@code key -> template} strings. Empty
-     * means the piso can build every room it might be asked for.
+     * The room keys this piso owes and cannot supply, as {@code key -> reason} strings. Empty means
+     * the piso can build every room it might be asked for.
      *
-     * <p>Run once at server start, because it is the only check that needs the game: a piso passes
-     * its structural validation with ids that resolve to nothing on disk.</p>
+     * <p>Run once at server start, because it is the only check that needs the game: what a piso
+     * owes follows from its {@code formas}, but what it has is whatever is in its folders.</p>
      */
     public static List<String> missingTemplates(FloorDef piso, StructureTemplateManager manager) {
         List<String> missing = new ArrayList<>();
-        for (String key : piso.requiredRooms()) {
-            for (RoomVariant variant : piso.variants(key)) {
-                ResourceLocation id = ResourceLocation.tryParse(variant.template());
-                if (id == null || manager.get(id).isEmpty()) {
-                    missing.add(key + " -> " + variant.template());
-                }
-            }
+        for (String key : RoomPools.index().emptyKeys(piso)) {
+            boolean switchedOff = !RoomPools.declared(piso, key).isEmpty();
+            missing.add(key + (switchedOff
+                    ? " -> every variant is weighted 0 in 'pesos'"
+                    : " -> dungeon/" + piso.id() + "/" + key + "/ is empty"));
         }
         return missing;
     }
@@ -116,6 +116,10 @@ public final class RoomTemplates {
      * applies to a file that does not exist yet), and a template copied into the world's
      * {@code generated} folder keeps its old geometry and takes precedence over the jar.</p>
      *
+     * <p>Shared sets make this sharper: a {@code comun/} room is authored once and drawn by every
+     * piso that inherits it, so a piso whose cell differs would place it clipped. Checking here
+     * covers that too, since every piso is checked against every template it can actually draw.</p>
+     *
      * <p>Either way the floor still builds, just wrongly: ceilings at the wrong height, and a
      * discard that clears the configured height and leaves whatever stood above it. Loud, and not
      * fatal — dropping the piso would take the whole dungeon offline over something an admin can
@@ -128,7 +132,7 @@ public final class RoomTemplates {
             RoomShape shape = RoomKeys.shapeFor(key);
             int wantX = shape.cellsWide() * roomSize;
             int wantZ = shape.cellsDeep() * roomSize;
-            for (RoomVariant variant : piso.variants(key)) {
+            for (RoomVariant variant : RoomPools.pool(piso, key)) {
                 ResourceLocation id = ResourceLocation.tryParse(variant.template());
                 StructureTemplate template = id == null ? null : manager.get(id).orElse(null);
                 if (template == null) {
@@ -150,14 +154,13 @@ public final class RoomTemplates {
         return List.copyOf(RoomKeys.requiredFor(java.util.EnumSet.allOf(ShapeFamily.class)));
     }
 
-    private static TemplateEntry entry(RoomVariant variant, int extraDegrees) {
+    private static TemplateEntry entry(RoomVariant variant, int degrees) {
         ResourceLocation id = ResourceLocation.tryParse(variant.template());
         if (id == null) {
             Teras.LOGGER.error("Dungeons: '{}' is not a valid template id", variant.template());
             id = ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon/missing");
         }
-        return new TemplateEntry(id, variant.weight(),
-                rotation((variant.rotation() + extraDegrees) % 360));
+        return new TemplateEntry(variant.name(), id, variant.weight(), rotation(degrees % 360));
     }
 
     private static Rotation rotation(int degrees) {

@@ -62,8 +62,8 @@ import java.util.UUID;
  * <p>Saving goes through the world's {@code generated} structure folder — the same override path
  * DUNGEONS.md §5 already designates — so {@code guardar} with no name replaces the template the
  * dungeon builds from (in memory immediately: the manager's cached instance is the one filled), and
- * {@code guardar <nombre>} writes a new template and registers it as a weighted variant on
- * the piso being edited.</p>
+ * {@code guardar <nombre>} writes a new template into the room key's folder, which <i>is</i> the
+ * registration — nothing else records that a variant exists (see {@code RoomPoolIndex}).</p>
  */
 @EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RoomEditor {
@@ -379,10 +379,35 @@ public final class RoomEditor {
      * keep iterating or save several variants from one visit.
      */
     public static String save(ServerPlayer player, String name) {
+        return save(player, name, null);
+    }
+
+    /**
+     * @param targetPiso the piso to save into, or null for the one being edited. Naming another is
+     *                   how one piso's room becomes a starting point for another's without
+     *                   reopening anything: the dressing of an infested room is a few minutes of
+     *                   work on top of a cave room, and before this the only way to move it was to
+     *                   copy the {@code .nbt} by hand outside the game.
+     */
+    public static String save(ServerPlayer player, String name, String targetPiso) {
         Session session = SESSIONS.get(player.getUUID());
         if (session == null) {
             return "No estás editando ninguna sala.";
         }
+        String piso = targetPiso == null ? session.pisoId : targetPiso;
+        if (targetPiso != null) {
+            if (es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(targetPiso) == null) {
+                return "No existe el piso '" + targetPiso + "'.";
+            }
+            if (name == null) {
+                // Overwriting "the template you opened" has no meaning in another piso, and the
+                // guess it would have to make is the destructive one.
+                return "Para guardar en otro piso hace falta un nombre: "
+                        + "/teras dungeon sala guardar <nombre> " + targetPiso;
+            }
+        }
+        ServerLevel level = player.serverLevel();
+        StructureTemplateManager manager = level.getServer().getStructureManager();
         ResourceLocation id;
         if (name == null) {
             id = session.templateId;
@@ -391,12 +416,19 @@ public final class RoomEditor {
             if (!clean.matches("[a-z0-9_]+")) {
                 return "Nombre inválido '" + name + "' — solo minúsculas, dígitos y '_'.";
             }
+            // The folder comes from the session's room key, never from what was typed: a template
+            // saved under the wrong key would be invisible to the piso that owes it and drawn by
+            // the one that does not.
             id = ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID,
-                    "dungeon/" + session.pisoId + "/" + clean);
+                    es.boffmedia.teras.dungeon.piso.RoomPoolIndex.ROOT
+                            + piso + "/" + session.poolKey + "/" + clean);
+            if (!id.equals(session.templateId) && manager.get(id).isPresent()) {
+                return "Ya existe '" + clean + "' en " + piso + "/" + session.poolKey
+                        + ". Elige otro nombre, o ábrela con 'sala editar " + session.poolKey
+                        + "' y guarda sin nombre para reemplazarla.";
+            }
         }
 
-        ServerLevel level = player.serverLevel();
-        StructureTemplateManager manager = level.getServer().getStructureManager();
         StructureTemplate template = manager.getOrCreate(id);
         // With entities, matching the paste: pasteTemplate places them, so capturing without them
         // meant every save quietly emptied a room of whatever it was authored with.
@@ -409,16 +441,14 @@ public final class RoomEditor {
             return "No se pudo escribir la plantilla " + id + " en la carpeta 'generated'.";
         }
 
-        if (name != null) {
-            String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.addVariant(
-                    session.pisoId, session.poolKey, id.toString(), 1);
-            if (error != null) {
-                return "Plantilla guardada como " + id + " pero no se registró: " + error;
-            }
-        }
+        // No registration step: the file in the folder is the registration. Only the index that
+        // caches the folder listing has to hear about it, and it does so now rather than at the
+        // next reload, so a room saved in game is drawable immediately.
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(manager);
         player.sendSystemMessage(Component.literal("§aSala guardada como " + id
                 + (name == null ? " (reemplaza a la original)."
-                        : " y registrada como variante de " + session.poolKey + ".")));
+                        : " — ya es una variante más de " + session.poolKey
+                                + " en " + piso + ".")));
         reportSave(player, session, template);
         return null;
     }

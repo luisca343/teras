@@ -139,6 +139,8 @@ public final class DungeonMaterializer {
         private final List<Room> rooms;
         private final es.boffmedia.teras.dungeon.piso.FloorPlan plan;
         private final Map<Room, List<TemplateMarkers.Marker>> markers = new HashMap<>();
+        /** How many rooms of each key have been placed, which is the bag's deal position. */
+        private final Map<String, Integer> drawn = new HashMap<>();
         private final int roomSize = DungeonsConfig.roomSize();
         private final int roomHeight = DungeonsConfig.roomHeight();
         private int index;
@@ -165,7 +167,11 @@ public final class DungeonMaterializer {
                 sweepEntities(level, origin, layout.grid().size() * roomSize, roomHeight);
             }
             if (index < rooms.size()) {
-                placeRoom(rooms.get(index), index);
+                Room room = rooms.get(index);
+                // Per key, not per floor: the variant bag deals one cycle per room key, so a
+                // floor-wide index would jump around inside the cycle and cluster again.
+                String key = RoomTemplates.keyFor(room);
+                placeRoom(room, drawn.merge(key, 1, Integer::sum) - 1);
                 index++;
                 return false;
             }
@@ -177,9 +183,9 @@ public final class DungeonMaterializer {
             return true;
         }
 
-        private void placeRoom(Room room, int roomIndex) {
+        private void placeRoom(Room room, int ordinalInKey) {
             RoomTemplates.TemplateEntry entry =
-                    RoomTemplates.select(plan.piso(), room, layout.baseSeed(), roomIndex);
+                    RoomTemplates.select(plan.piso(), room, layout.baseSeed(), ordinalInKey);
             StructureTemplate template = level.getStructureManager().get(entry.template()).orElse(null);
             if (template == null) {
                 Teras.LOGGER.error("Dungeons: missing template {} for {} — leaving the cell empty",

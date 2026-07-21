@@ -2,6 +2,7 @@ package es.boffmedia.teras.dungeon.build;
 
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.dungeon.piso.FloorDef;
+import es.boffmedia.teras.dungeon.piso.RoomPoolIndex;
 import es.boffmedia.teras.dungeon.piso.RoomVariant;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -46,8 +47,11 @@ public final class PisoAuthoring {
         List<String> failed = new ArrayList<>();
         int removed = 0;
         for (String key : piso.requiredRooms()) {
-            for (RoomVariant variant : piso.variants(key)) {
-                ResourceLocation id = ResourceLocation.tryParse(variant.template());
+            for (RoomVariant variant : RoomPools.declared(piso, key)) {
+                // Only the piso's own: purging would otherwise delete a shared set's templates out
+                // from under every other piso that inherits it.
+                ResourceLocation id = variant.set().isEmpty()
+                        ? ResourceLocation.tryParse(variant.template()) : null;
                 if (id == null) {
                     continue;
                 }
@@ -64,6 +68,8 @@ public final class PisoAuthoring {
                 }
             }
         }
+        // The pool index is a cache of the folder listing, and this just changed it.
+        RoomPools.rebuild(manager);
         return new Result(removed, failed);
     }
 
@@ -101,19 +107,28 @@ public final class PisoAuthoring {
         int copied = 0;
 
         for (String key : target.requiredRooms()) {
+            // The source's first variant: a piso with several rooms for a key seeds the copy with
+            // one of them, and the builder varies it from there. The copy keeps its name, so the
+            // new piso's folder reads the same as the one it was stamped from.
+            List<RoomVariant> variants = RoomPools.pool(source, key);
+            if (variants.isEmpty()) {
+                failed.add(key + " (source has none)");
+                continue;
+            }
+            RoomVariant seed = variants.get(0);
             ResourceLocation targetId = ResourceLocation.tryParse(
-                    RoomVariant.conventional(target.id(), key).template());
+                    RoomPoolIndex.NAMESPACE + ":" + RoomPoolIndex.ROOT + target.id() + "/" + key
+                            + "/" + seed.file());
             if (targetId == null) {
                 failed.add(key + " (bad id)");
                 continue;
             }
-            if (!overwrite && manager.get(targetId).isPresent()) {
+            // "Already has" means the folder is non-empty, not that this one file exists: a piso
+            // that has authored its own rooms for a key must not be handed another.
+            if (!overwrite && !RoomPools.pool(target, key).isEmpty()) {
                 continue;
             }
-            // The source's first variant: a piso with several rooms for a key seeds the copy with
-            // one of them, and the builder varies it from there.
-            List<RoomVariant> variants = source.variants(key);
-            ResourceLocation sourceId = ResourceLocation.tryParse(variants.get(0).template());
+            ResourceLocation sourceId = ResourceLocation.tryParse(seed.template());
             StructureTemplate from = sourceId == null ? null : manager.get(sourceId).orElse(null);
             if (from == null) {
                 failed.add(key + " (source has none)");
@@ -134,6 +149,7 @@ public final class PisoAuthoring {
                 failed.add(key + " (" + e + ")");
             }
         }
+        RoomPools.rebuild(manager);
         return new Result(copied, failed);
     }
 }

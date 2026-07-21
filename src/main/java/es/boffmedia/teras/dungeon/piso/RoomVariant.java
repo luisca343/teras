@@ -1,34 +1,44 @@
 package es.boffmedia.teras.dungeon.piso;
 
 /**
- * One authored template a room key may resolve to. A key with several is how a piso varies its
- * rooms between runs.
+ * One authored template a room key may resolve to, as discovered on disk.
  *
- * <p>Held as strings and degrees rather than {@code ResourceLocation} and {@code Rotation} so the
- * piso model stays free of Minecraft and can be validated in tests; the build layer resolves them.
- * </p>
+ * <p>Variants are no longer declared anywhere: a room key is a <b>folder</b>, and every
+ * {@code .nbt} in it is a peer. That is the whole point of {@link RoomPoolIndex} — there is exactly
+ * one answer to "which rooms exist", and it is the folder listing. A piso may only adjust the odds
+ * afterwards, never the membership, so the two can never disagree about what a room can be.</p>
  *
- * @param template structure id, e.g. {@code teras:dungeon/cuevas/normal_b}
- * @param weight   relative draw weight
- * @param rotation 0/90/180/270 — one authored template reused at several orientations
+ * <p>Held as strings rather than {@code ResourceLocation} so the piso model stays free of Minecraft
+ * and can be validated in tests; the build layer resolves them.</p>
+ *
+ * @param name     what an admin types and what {@code pesos} keys on — {@code repisa} for the
+ *                 piso's own, {@code comun/altar} for one it inherits. The set prefix is part of
+ *                 the identity, which is why a local {@code altar} and an inherited one are two
+ *                 distinct entries rather than a shadowing rule to remember
+ * @param template structure id, e.g. {@code teras:dungeon/cuevas/normal/repisa}
+ * @param weight   relative draw weight; 1.0 unless {@code pesos} says otherwise, and 0 means the
+ *                 piso has switched this one off
  */
-public record RoomVariant(String template, int weight, int rotation) {
+public record RoomVariant(String name, String template, double weight) {
 
     public RoomVariant {
-        weight = Math.max(1, weight);
-        rotation = ((rotation % 360) + 360) % 360;
-        rotation = switch (rotation) {
-            case 90, 180, 270 -> rotation;
-            default -> 0;
-        };
+        weight = Math.max(0.0, weight);
     }
 
-    /**
-     * The template a room key resolves to when the piso declares no variants for it:
-     * {@code teras:dungeon/<piso>/<key>}. A convention <i>within</i> the piso, not a fallback to
-     * another one — a piso that has not authored the room still has nowhere to borrow it from.
-     */
-    public static RoomVariant conventional(String pisoId, String roomKey) {
-        return new RoomVariant("teras:dungeon/" + pisoId + "/" + roomKey, 1, 0);
+    /** Whether it can be drawn at all. A zero weight is how a piso declines an inherited room. */
+    public boolean enabled() {
+        return weight > 0;
+    }
+
+    /** The shared set it came from, or "" when it is the piso's own. */
+    public String set() {
+        int slash = name.indexOf('/');
+        return slash < 0 ? "" : name.substring(0, slash);
+    }
+
+    /** The file name without its set prefix. */
+    public String file() {
+        int slash = name.indexOf('/');
+        return slash < 0 ? name : name.substring(slash + 1);
     }
 }

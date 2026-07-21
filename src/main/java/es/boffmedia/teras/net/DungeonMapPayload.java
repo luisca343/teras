@@ -23,12 +23,9 @@ import java.util.List;
  * @param gridSize   floor grid width in cells
  * @param stage      current stage, shown on the map header
  * @param mapHidden  Curse of the Lost: show the curse notice instead of the map
- * @param currentX   the receiving player's grid cell, x
- * @param currentY   the receiving player's grid cell, y
  * @param cells      one entry per visible cell
  */
 public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean mapHidden,
-                                int currentX, int currentY,
                                 List<Cell> cells) implements CustomPacketPayload {
 
     /**
@@ -38,16 +35,33 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
      * @param label whether this cell carries the room's glyph. A multi-cell room sends several
      *              cells and only one of them is labelled — without it a 2×2 boss chamber drew
      *              four B's, which read as four boss rooms
+     * @param current whether this cell belongs to the room the receiving player is standing in.
+     *                Every cell of that room carries it, not just the one the player occupies:
+     *                "you are here" is a statement about a <b>room</b>, and outlining a single
+     *                quadrant of a 2×2 chamber drew a box around an interior cell that read as a
+     *                grid line rather than as a position. Carried per cell rather than as one
+     *                coordinate pair so the client never has to infer room membership it was
+     *                not told
+     * @param room    which room this cell belongs to, as its index in the floor's room list, or
+     *                {@link #ROOM_NONE} for a cell that is only an outline. Two adjacent cells are
+     *                the same room exactly when these match — which is what lets the map draw a
+     *                2×1 or a 2×2 as one chamber instead of as two or four identical squares,
+     *                whether or not the player is standing in it. The client cannot derive this:
+     *                nothing else in the payload distinguishes one big room from several small
+     *                ones side by side
      */
-    public record Cell(int x, int y, int type, int state, boolean label) {}
+    public record Cell(int x, int y, int type, int state, boolean label, boolean current,
+                       int room) {}
 
     public static final int TYPE_UNKNOWN = -1;
+    /** A cell that belongs to no known room: an outline behind a door, or a revealed footprint. */
+    public static final int ROOM_NONE = -1;
 
     public static final Type<DungeonMapPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_map"));
 
     public static DungeonMapPayload hidden() {
-        return new DungeonMapPayload(false, 0, 0, false, 0, 0, List.of());
+        return new DungeonMapPayload(false, 0, 0, false, List.of());
     }
 
     public static final StreamCodec<FriendlyByteBuf, DungeonMapPayload> STREAM_CODEC =
@@ -57,8 +71,6 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
                         buffer.writeVarInt(payload.gridSize());
                         buffer.writeVarInt(payload.stage());
                         buffer.writeBoolean(payload.mapHidden());
-                        buffer.writeVarInt(payload.currentX());
-                        buffer.writeVarInt(payload.currentY());
                         buffer.writeVarInt(payload.cells().size());
                         for (Cell cell : payload.cells()) {
                             buffer.writeVarInt(cell.x());
@@ -66,6 +78,8 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
                             buffer.writeVarInt(cell.type());
                             buffer.writeVarInt(cell.state());
                             buffer.writeBoolean(cell.label());
+                            buffer.writeBoolean(cell.current());
+                            buffer.writeVarInt(cell.room());
                         }
                     },
                     buffer -> {
@@ -73,16 +87,15 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
                         int gridSize = buffer.readVarInt();
                         int stage = buffer.readVarInt();
                         boolean mapHidden = buffer.readBoolean();
-                        int currentX = buffer.readVarInt();
-                        int currentY = buffer.readVarInt();
                         int count = buffer.readVarInt();
                         List<Cell> cells = new ArrayList<>(count);
                         for (int i = 0; i < count; i++) {
                             cells.add(new Cell(buffer.readVarInt(), buffer.readVarInt(),
-                                    buffer.readVarInt(), buffer.readVarInt(), buffer.readBoolean()));
+                                    buffer.readVarInt(), buffer.readVarInt(),
+                                    buffer.readBoolean(), buffer.readBoolean(),
+                                    buffer.readVarInt()));
                         }
-                        return new DungeonMapPayload(active, gridSize, stage, mapHidden,
-                                currentX, currentY, cells);
+                        return new DungeonMapPayload(active, gridSize, stage, mapHidden, cells);
                     });
 
     @Override

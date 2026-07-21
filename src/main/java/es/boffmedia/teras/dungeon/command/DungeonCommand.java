@@ -2,6 +2,7 @@ package es.boffmedia.teras.dungeon.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -166,6 +167,10 @@ public final class DungeonCommand {
                                         .then(Commands.argument("piso", StringArgumentType.word())
                                                 .suggests(PISOS)
                                                 .executes(DungeonCommand::purgePiso)))
+                                .then(Commands.literal("migrar")
+                                        .then(Commands.argument("piso", StringArgumentType.word())
+                                                .suggests(PISOS)
+                                                .executes(DungeonCommand::migratePiso)))
                                 .then(Commands.literal("resync")
                                         .then(Commands.argument("piso", StringArgumentType.word())
                                                 .suggests(PISOS)
@@ -208,6 +213,16 @@ public final class DungeonCommand {
                                                                 .suggests(PISOS)
                                                                 .executes(ctx -> deleteRoom(ctx,
                                                                         StringArgumentType.getString(ctx, "piso")))))))
+                                .then(Commands.literal("peso")
+                                        .then(Commands.argument("tipo", StringArgumentType.word())
+                                                .suggests(ROOM_TYPES)
+                                                .then(Commands.argument("variante", StringArgumentType.word())
+                                                        .then(Commands.argument("peso", DoubleArgumentType.doubleArg(0))
+                                                                .executes(ctx -> weighRoom(ctx, null))
+                                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                                        .suggests(PISOS)
+                                                                        .executes(ctx -> weighRoom(ctx,
+                                                                                StringArgumentType.getString(ctx, "piso"))))))))
                                 .then(Commands.literal("marcar")
                                         // greedyString: a bare string() would refuse the ':' in
                                         // "spawn:default" unless the caller remembered to quote it.
@@ -215,10 +230,15 @@ public final class DungeonCommand {
                                                 .suggests(MARKER_KINDS)
                                                 .executes(DungeonCommand::markRoom)))
                                 .then(Commands.literal("guardar")
-                                        .executes(ctx -> saveRoom(ctx, null))
+                                        .executes(ctx -> saveRoom(ctx, null, null))
                                         .then(Commands.argument("nombre", StringArgumentType.word())
                                                 .executes(ctx -> saveRoom(ctx,
-                                                        StringArgumentType.getString(ctx, "nombre")))))
+                                                        StringArgumentType.getString(ctx, "nombre"), null))
+                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                        .suggests(PISOS)
+                                                        .executes(ctx -> saveRoom(ctx,
+                                                                StringArgumentType.getString(ctx, "nombre"),
+                                                                StringArgumentType.getString(ctx, "piso"))))))
                                 .then(Commands.literal("salir")
                                         .executes(DungeonCommand::exitRoom)))
                         .then(Commands.literal("descartar")
@@ -669,33 +689,143 @@ public final class DungeonCommand {
             return 0;
         }
         var pool = RoomTemplates.pool(piso, type);
+        double total = pool.stream().mapToDouble(RoomTemplates.TemplateEntry::weight).sum();
         ctx.getSource().sendSuccess(() -> Component.literal("§7" + pisoId + " · §e" + type
-                + " §7(" + pool.size() + ")"), false);
+                + " §7(" + pool.size() + ") §8dungeon/" + pisoId + "/" + type + "/"), false);
+        var manager = ctx.getSource().getServer().getStructureManager();
         for (int i = 0; i < pool.size(); i++) {
             var entry = pool.get(i);
-            String rotation = entry.rotation() == net.minecraft.world.level.block.Rotation.NONE
-                    ? "" : " §8rot " + entry.rotation();
-            String line = "  §7[" + i + "] §f" + entry.template()
-                    + " §7peso " + entry.weight() + rotation;
+            // Where it actually comes from. "mundo" is the one that matters: a copy in the world's
+            // generated folder shadows the jar's, which is invisible in game and has cost days.
+            String source = entry.name().indexOf('/') >= 0
+                    ? "§dheredada" : (inGenerated(manager, entry.template()) ? "§bmundo" : "§8jar");
+            String odds = entry.weight() <= 0 ? "§cdesactivada"
+                    : "§7" + Math.round(entry.weight() / Math.max(total, 1e-9) * 100) + "%";
+            String line = "  §7[" + i + "] §f" + entry.name() + " " + source
+                    + " §7peso " + trim(entry.weight()) + " · " + odds;
             ctx.getSource().sendSuccess(() -> Component.literal(line), false);
         }
         return 1;
     }
 
+    /** Whether the world's generated folder holds this template, and is therefore shadowing the jar. */
+    private static boolean inGenerated(
+            net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager manager,
+            net.minecraft.resources.ResourceLocation id) {
+        try {
+            return java.nio.file.Files.exists(
+                    manager.createAndValidatePathToGeneratedStructure(id, ".nbt"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 1.0 rather than 1.0000000001, and 0.2 rather than 0.2000000001. */
+    private static String trim(double value) {
+        return value == Math.rint(value) ? String.valueOf((long) value) : String.valueOf(value);
+    }
+
+    /**
+     * Takes a variant out of the rotation.
+     *
+     * <p>Two different acts behind one word, because the admin asking does not care which: a room
+     * that lives in the world's {@code generated} folder is a file this server owns and is deleted,
+     * while one shipped in the jar or lent by a shared set cannot be — it is weighted to 0 instead,
+     * which is the same thing from the floor's point of view and is reversible with
+     * {@code sala peso}.</p>
+     */
     private static int deleteRoom(CommandContext<CommandSourceStack> ctx, String pisoArg) {
         String type = StringArgumentType.getString(ctx, "tipo");
         int variant = IntegerArgumentType.getInteger(ctx, "variante");
         String pisoId = pisoArg == null || pisoArg.isBlank()
                 ? es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultPisoId() : pisoArg;
-        String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.removeVariant(pisoId, type, variant);
+        var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(pisoId);
+        if (piso == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el piso '" + pisoId + "'."));
+            return 0;
+        }
+        var pool = RoomTemplates.pool(piso, type);
+        if (variant >= pool.size()) {
+            ctx.getSource().sendFailure(Component.literal("'" + type + "' tiene " + pool.size()
+                    + " variante(s) en " + pisoId + "."));
+            return 0;
+        }
+        var entry = pool.get(variant);
+        var manager = ctx.getSource().getServer().getStructureManager();
+        boolean own = entry.name().indexOf('/') < 0;
+        if (own && inGenerated(manager, entry.template())) {
+            try {
+                java.nio.file.Files.delete(
+                        manager.createAndValidatePathToGeneratedStructure(entry.template(), ".nbt"));
+                manager.remove(entry.template());
+            } catch (Exception e) {
+                ctx.getSource().sendFailure(Component.literal("No se pudo borrar: " + e));
+                return 0;
+            }
+            es.boffmedia.teras.dungeon.build.RoomPools.rebuild(manager);
+            es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(manager);
+            ctx.getSource().sendSuccess(() -> Component.literal("§a" + entry.name()
+                    + " borrada de " + pisoId + "/" + type + "."), false);
+            return 1;
+        }
+        String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.setWeight(
+                pisoId, type, entry.name(), 0);
+        if (error != null) {
+            ctx.getSource().sendFailure(Component.literal(error));
+            return 0;
+        }
+        es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(manager);
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + entry.name()
+                + " desactivada en " + pisoId + " (peso 0) §7— viene "
+                + (own ? "del jar" : "de un set compartido")
+                + ", así que no es un archivo de este servidor. "
+                + "Para reactivarla: sala peso " + type + " " + entry.name() + " 1"), false);
+        return 1;
+    }
+
+    /** Retunes one variant's odds. The only thing a piso may say about its own rooms. */
+    private static int weighRoom(CommandContext<CommandSourceStack> ctx, String pisoArg) {
+        String type = StringArgumentType.getString(ctx, "tipo");
+        String name = StringArgumentType.getString(ctx, "variante");
+        double weight = DoubleArgumentType.getDouble(ctx, "peso");
+        String pisoId = pisoArg == null || pisoArg.isBlank()
+                ? es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultPisoId() : pisoArg;
+        var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(pisoId);
+        if (piso == null) {
+            ctx.getSource().sendFailure(Component.literal("No existe el piso '" + pisoId + "'."));
+            return 0;
+        }
+        boolean known = RoomTemplates.pool(piso, type).stream()
+                .anyMatch(e -> e.name().equals(name));
+        if (!known) {
+            // A peso can never add a room, so a typo here would sit in the file doing nothing.
+            ctx.getSource().sendFailure(Component.literal("'" + name + "' no está en "
+                    + type + " de " + pisoId + " — 'sala listar " + type + " " + pisoId
+                    + "' lista los nombres."));
+            return 0;
+        }
+        String error = es.boffmedia.teras.dungeon.piso.PisoCatalog.setWeight(pisoId, type, name, weight);
         if (error != null) {
             ctx.getSource().sendFailure(Component.literal(error));
             return 0;
         }
         es.boffmedia.teras.dungeon.piso.PisoCatalog.validateTemplates(
                 ctx.getSource().getServer().getStructureManager());
-        ctx.getSource().sendSuccess(() -> Component.literal(
-                "§aVariante " + variant + " de '" + type + "' borrada de " + pisoId + "."), false);
+        ctx.getSource().sendSuccess(() -> Component.literal("§a" + type + "/" + name
+                + " = " + trim(weight) + (weight == 0 ? " §7(desactivada)" : "")), false);
+        return 1;
+    }
+
+    /** Moves a piso from the old flat template layout into per-key folders. Once per server. */
+    private static int migratePiso(CommandContext<CommandSourceStack> ctx) {
+        String id = StringArgumentType.getString(ctx, "piso");
+        String report = es.boffmedia.teras.dungeon.piso.PisoCatalog.migratePiso(
+                ctx.getSource().getServer(), id);
+        if (report.startsWith("No existe")) {
+            ctx.getSource().sendFailure(Component.literal(report));
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal(id + ": " + report), false);
         return 1;
     }
 
@@ -913,9 +1043,10 @@ public final class DungeonCommand {
                 StringArgumentType.getString(ctx, "marca")));
     }
 
-    private static int saveRoom(CommandContext<CommandSourceStack> ctx, String name)
+    private static int saveRoom(CommandContext<CommandSourceStack> ctx, String name, String piso)
             throws CommandSyntaxException {
-        return editorCall(ctx, RoomEditor.save(ctx.getSource().getPlayerOrException(), name));
+        return editorCall(ctx,
+                RoomEditor.save(ctx.getSource().getPlayerOrException(), name, piso));
     }
 
     private static int exitRoom(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

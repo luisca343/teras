@@ -68,6 +68,13 @@ public final class SpawnTables {
             try (Reader reader = Files.newBufferedReader(path)) {
                 root = GSON.fromJson(reader, JsonObject.class);
             }
+            es.boffmedia.teras.dungeon.build.ConfigVersion.warnIfStale("enemies.json",
+                    root != null && root.has(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY)
+                            ? root.get(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY).getAsInt()
+                            : 0,
+                    "This is the fallback table a piso with no roster of its own uses; if it still "
+                            + "names vanilla mobs they are deleted on spawn by Pixelmon. Delete the "
+                            + "file to have it rewritten from the current defaults.");
             if (root.has("stages")) {
                 JsonObject stagesJson = root.getAsJsonObject("stages");
                 for (String key : stagesJson.keySet()) {
@@ -154,6 +161,8 @@ public final class SpawnTables {
         }
 
         JsonObject root = new JsonObject();
+        root.addProperty(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY,
+                es.boffmedia.teras.dungeon.build.ConfigVersion.CURRENT);
         root.add("stages", stages);
         JsonObject bosses = new JsonObject();
         bosses.add(DEFAULT_KEY, renderPool(cnpcPool(DungeonEnemyPacks.bosses(), 1, tab)));
@@ -284,6 +293,8 @@ public final class SpawnTables {
 
     private static JsonObject renderDefaults() {
         JsonObject root = new JsonObject();
+        root.addProperty(es.boffmedia.teras.dungeon.build.ConfigVersion.KEY,
+                es.boffmedia.teras.dungeon.build.ConfigVersion.CURRENT);
         JsonObject stagesJson = new JsonObject();
         stagesJson.add(DEFAULT_KEY, renderStage(stages.get(DEFAULT_KEY)));
         root.add("stages", stagesJson);

@@ -19,6 +19,7 @@ plain `spawn` markers so the spawner never stacks a wave on one block.
 """
 import argparse
 import gzip
+import math
 import io
 import os
 import random
@@ -218,6 +219,69 @@ class Room:
         assert self.solid_at(x, y - 1, z), f'{self.key}: spawn at {x},{y},{z} floats'
         self.clear(x, y, z, x, min(H - 2, y + 2), z)
         self.mark('spawn:ranged' if ranged else 'spawn', x, y, z)
+
+    def auto_spawns(self, count, ranged=0):
+        """Scatters `count` floor spawns (and `ranged` perch spawns) over the room's usable space.
+
+        Hand-placing these stopped being reasonable once the party's share reached the bar: a 2x2
+        normal room has to hold 23. Positions are chosen deterministically and greedily spread —
+        each new marker takes the candidate furthest from those already placed — so a wave fills
+        the room rather than clumping in a corner, and the same seed gives the same room.
+        """
+        placed = []
+        for (x, z, y) in self._candidates(ranged=False):
+            if len(placed) >= count:
+                break
+            if self._far_enough(placed, x, z, count):
+                self.spawn(x, z, y=y)
+                placed.append((x, z))
+        if len(placed) < count:
+            # Second pass with no spacing requirement: a cramped room still has to meet the bar,
+            # and two markers a block apart beat the spawner stacking a whole wave on one.
+            for (x, z, y) in self._candidates(ranged=False):
+                if len(placed) >= count:
+                    break
+                if (x, z) not in placed:
+                    self.spawn(x, z, y=y)
+                    placed.append((x, z))
+        perches = []
+        for (x, z, y) in self._candidates(ranged=True):
+            if len(perches) >= ranged:
+                break
+            if self._far_enough(perches, x, z, max(1, ranged)):
+                self.spawn(x, z, ranged=True, y=y)
+                perches.append((x, z))
+        return len(placed), len(perches)
+
+    def _candidates(self, ranged):
+        """Standable positions, in a stable order. A perch is anything at y>=5 with headroom."""
+        out = []
+        taken = {(mx, mz) for (_, mx, _, mz) in self.markers}
+        for (cx, cz) in self.cells:
+            for lx in range(2, S - 2):
+                for lz in range(2, S - 2):
+                    x, z = cx * S + lx, cz * S + lz
+                    if (x, z) in self.keep_clear or (x, z) in taken or self.is_wall(x, z):
+                        continue
+                    for y in range(1, H - 3):
+                        if not self.solid_at(x, y - 1, z) or self.solid_at(x, y, z):
+                            continue
+                        if self.in_zone(x, y, z):
+                            continue
+                        # Headroom, so nothing spawns inside the ceiling or a shelf above it.
+                        if self.solid_at(x, y + 1, z) or self.solid_at(x, y + 2, z):
+                            continue
+                        high = y >= 5
+                        if high == ranged:
+                            out.append((x, z, y))
+                        break
+        return out
+
+    @staticmethod
+    def _far_enough(placed, x, z, count):
+        # Loosens as the room fills: a bar of 23 cannot also demand they stay far apart.
+        spacing = 5 if count <= 8 else (4 if count <= 14 else 3)
+        return all(abs(px - x) + abs(pz - z) >= spacing for (px, pz) in placed)
 
     def deco(self, tag, x, y, z):
         """A decoration marker; whatever sculpting left there yields to it, since the
@@ -566,11 +630,20 @@ def required_markers(key):
     }.get(key, [])
 
 
+# The largest wave EnemySpawner can ask a room for, mirroring RoomAuditor.waveMax:
+# countMax (5) -> multi-cell count*cells/2+1 -> challenge growth (+30% per wave) -> and finally
+# the party's share, capped at PartyScaling.MAX_PARTY_FACTOR. The party factor is the reason these
+# numbers are large: the marker count is the only thing bounding a wave, so a room has to hold the
+# biggest one a full group can pull, not the one a solo runner sees.
+MAX_PARTY_FACTOR = 2.05
+
+
 def wave_bar(key):
-    """Largest wave EnemySpawner can ask of the room: countMax 5, multi-cell
-    count*cells/2+1, challenge two waves growing 30%."""
-    return {'normal': 5, 'challenge': 7, 'normal_large': 6,
+    base = {'normal': 5, 'challenge': 7, 'normal_large': 6,
             'normal_l': 8, 'normal_big': 11}.get(key, 0)
+    if base == 0:
+        return 0
+    return int(math.ceil(base * MAX_PARTY_FACTOR))
 
 # ---------------------------------------------------------------------------- the rooms
 
@@ -635,10 +708,7 @@ def build_normal():
         r.set(x + 1, 1, z, r.block('minecraft:cobblestone_slab', type='bottom'))
     r.ore_seam(4)
     r.enforce_aprons()
-    for (x, z) in ((4, 8), (6, 16), (8, 6), (12, 14), (13, 7), (7, 12)):
-        r.spawn(x, z)
-    r.spawn(17, 6, ranged=True, y=5)
-    r.spawn(17, 12, ranged=True, y=5)
+    r.auto_spawns(wave_bar('normal'), ranged=2)
     r.deco('decoracion:techo', 4, 9, 4)
     r.deco('decoracion:techo', 14, 9, 16)
     r.deco('decoracion:suelo', 3, 1, 12)
@@ -838,10 +908,7 @@ def build_challenge():
         r.set(x, 11, z, r.block('minecraft:shroomlight'))
     r.enforce_aprons()
     r.mark('challenge', 10, 1, 10)
-    for (x, z) in ((6, 8), (8, 6), (12, 6), (14, 8), (6, 12), (8, 14), (12, 14), (14, 12)):
-        r.spawn(x, z)
-    r.spawn(3, 3, ranged=True, y=5)
-    r.spawn(17, 17, ranged=True, y=5)
+    r.auto_spawns(wave_bar('challenge'), ranged=2)
     r.deco('decoracion:techo', 10, 9, 6)
     r.deco('decoracion:techo', 10, 9, 14)
     return r
@@ -987,10 +1054,7 @@ def build_normal_large():
     r.set(36, 6, 15, r.block('minecraft:shroomlight'))
     r.ore_seam(6)
     r.enforce_aprons()
-    for (x, z) in ((5, 8), (8, 15), (13, 12), (26, 14), (31, 8), (36, 15), (16, 6)):
-        r.spawn(x, z)
-    r.spawn(27, 3, ranged=True, y=5)
-    r.spawn(37, 3, ranged=True, y=5)
+    r.auto_spawns(wave_bar('normal_large'), ranged=2)
     r.deco('decoracion:techo', 8, 9, 8)
     r.deco('decoracion:techo', 33, 9, 12)
     r.deco('decoracion:suelo', 13, 1, 16)
@@ -1026,12 +1090,7 @@ def build_normal_l():
     r.set(15, 6, 30, r.block('minecraft:shroomlight'))
     r.ore_seam(7)
     r.enforce_aprons()
-    for (x, z) in ((6, 6), (12, 9), (8, 14), (26, 8), (31, 15), (36, 6),
-                   (7, 27), (14, 31), (8, 36)):
-        r.spawn(x, z)
-    r.spawn(18, 16, ranged=True, y=6)
-    r.spawn(16, 18, ranged=True, y=6)
-    r.spawn(18, 18, ranged=True, y=6)
+    r.auto_spawns(wave_bar('normal_l'), ranged=3)
     r.deco('decoracion:techo', 8, 9, 8)
     r.deco('decoracion:techo', 33, 9, 10)
     r.deco('decoracion:techo', 10, 9, 33)
@@ -1078,11 +1137,7 @@ def build_normal_big():
         r.set(x, 6, z, r.block('minecraft:shroomlight'))
     r.ore_seam(8)
     r.enforce_aprons()
-    for (x, z) in ((6, 12), (12, 6), (29, 6), (35, 12), (6, 29), (12, 35),
-                   (29, 35), (35, 29), (13, 24), (28, 17), (24, 13), (17, 28)):
-        r.spawn(x, z)
-    for (x, z) in ((18, 18), (23, 23), (18, 23), (23, 18)):
-        r.spawn(x, z, ranged=True, y=5)
+    r.auto_spawns(wave_bar('normal_big'), ranged=4)
     r.deco('decoracion:techo', 8, 9, 20)
     r.deco('decoracion:techo', 33, 9, 21)
     r.deco('decoracion:techo', 20, 9, 8)
@@ -1124,6 +1179,122 @@ def build_boss_big():
     return r
 
 
+# ---------------------------------------------------------------------------- Cuevas Infestadas
+
+# The palette swap that turns a cave into an infested one. Infestadas is the second kind of Isaac
+# variant (DUNGEONS_PISOS.md §10): the same layouts, dressed — so every apron, marker and shelf the
+# base room earned is inherited exactly, and only the surface changes.
+INFEST_PALETTE = {
+    'minecraft:andesite': 'minecraft:deepslate',
+    'minecraft:stone': 'minecraft:deepslate',
+    'minecraft:cobblestone': 'minecraft:cobbled_deepslate',
+    'minecraft:tuff': 'minecraft:cobbled_deepslate',
+    'minecraft:polished_andesite': 'minecraft:polished_deepslate',
+    'minecraft:andesite_slab': 'minecraft:cobbled_deepslate_slab',
+    'minecraft:cobblestone_slab': 'minecraft:cobbled_deepslate_slab',
+    'minecraft:cobblestone_stairs': 'minecraft:cobbled_deepslate_stairs',
+    'minecraft:mossy_cobblestone': 'minecraft:cobbled_deepslate',
+    'minecraft:moss_block': 'minecraft:sculk',
+    'minecraft:moss_carpet': 'minecraft:sculk_vein',
+    'minecraft:calcite': 'minecraft:sculk',
+    # The one light the piso keeps, and it is dimmer and rarer than Cuevas' shroomlight.
+    'minecraft:shroomlight': 'minecraft:ochre_froglight',
+    'minecraft:glow_lichen': 'minecraft:sculk_vein',
+}
+
+# Ceiling and corner cobweb: decorative, vanilla, and never on a walkable route (§10). It is
+# unbreakable and that is harmless precisely because nothing ever has to cross it.
+INFEST_WEB_CHANCE = 0.18
+
+
+def infest(base):
+    """Dresses a finished Cuevas room as its infested twin, in place.
+
+    Geometry is untouched on purpose. Everything that makes a room work — the doorway aprons, the
+    spawn markers, the shelves and their ramps — was verified on the base room, and re-deriving any
+    of it here would be a second chance to get it wrong for no gain.
+    """
+    r = base
+    r.key = base.key
+    rng = random.Random('infestadas:' + base.key)
+
+    # 1. Palette. Rebuilt entry by entry so block states (stairs facing, slab type) survive.
+    for i, (name, props) in enumerate(list(r.palette)):
+        swapped = INFEST_PALETTE.get(name)
+        if swapped:
+            r.palette[i] = (swapped, props)
+    # The index map is stale after a rename; rebuild it so later lookups do not resurrect a
+    # Cuevas block under an Infestadas name.
+    r.pal_index = {}
+    for i, key in enumerate(r.palette):
+        r.pal_index.setdefault(key, i)
+
+    # 2. Thin the lighting: an infested cave is darker than the one it grew in.
+    froglight = r.block('minecraft:ochre_froglight')
+    for pos, idx in list(r.grid.items()):
+        if r.palette[idx][0] == 'minecraft:ochre_froglight' and rng.random() < 0.45:
+            r.grid[pos] = r.block('minecraft:deepslate')
+
+    # 3. Cobweb in the ceiling and in the upper corners, where nobody walks.
+    web = r.block('minecraft:cobweb')
+    for (cx, cz) in r.cells:
+        for lx in range(1, S - 1):
+            for lz in range(1, S - 1):
+                x, z = cx * S + lx, cz * S + lz
+                if r.is_wall(x, z):
+                    continue
+                for y in range(H - 4, H - 1):
+                    if r.solid_at(x, y, z) or r.in_zone(x, y, z):
+                        continue
+                    # Only hanging from something solid, and only in the ceiling band.
+                    if r.solid_at(x, y + 1, z) and rng.random() < INFEST_WEB_CHANCE:
+                        r.set(x, y, z, web)
+                        break
+
+    # 4. Nests. A `nido` marker replaces some decoration markers — the mechanic's content, and the
+    # reason Infestadas fights differently rather than merely looking different.
+    replaced = 0
+    for i, (tag, x, y, z) in enumerate(list(r.markers)):
+        if tag.startswith('decoracion') and rng.random() < 0.55:
+            r.markers[i] = ('nido', x, y, z)
+            replaced += 1
+    if replaced == 0 and r.markers:
+        for i, (tag, x, y, z) in enumerate(list(r.markers)):
+            if tag.startswith('decoracion'):
+                r.markers[i] = ('nido', x, y, z)
+                break
+    return r
+
+
+def infestadas_builders():
+    """Infestadas owes only what its two families require — 14 rooms, not Cuevas' 17."""
+    keys = [k for k in BUILDERS if not k.endswith('_l') and not k.endswith('_big')]
+    return {key: (lambda k=key: infest(BUILDERS[k]())) for key in keys}
+
+
+# The file each room key's shipped template is written as. A room key is a folder now and every
+# .nbt in it is a peer variant, so the name has to say what the room *is* — 'normal.nbt' inside
+# normal/ would be the only file in the folder that told you nothing.
+NAMES = {
+    'start': 'boveda',            # the domed arrival chamber
+    'normal': 'repisa',           # shelf along the east wall, pool below
+    'boss': 'anillo',             # rimmed arena
+    'mini_boss': 'columna',       # one column, one shelf
+    'shop': 'alcoba',             # the worked, paved end of a cave
+    'treasure': 'pedestal',       # a pedestal under a shaft of light
+    'secret': 'rendija',          # a cramped pocket, ceiling pressed down
+    'super_secret': 'geoda',      # calcite and amethyst; wrong for the piso on purpose
+    'challenge': 'galerias',      # corner galleries ringing the arena
+    'curse': 'santuario',         # blackstone shrine against the south rock
+    'sacrifice': 'altar',         # raised basalt, magma channels
+    'arcade': 'plinto',           # a lit plinth in a dim cave
+    'devil_deal': 'circulo',      # gilded circle, iron cage arcs
+    'normal_large': 'garganta',   # two chambers joined by an arched neck
+    'normal_l': 'codo',           # the elbow massif
+    'normal_big': 'terrazas',     # three terraces a ring route circles
+    'boss_big': 'oculo',          # the arena scaled up, under a great oculus
+}
+
 BUILDERS = {
     'start': build_start, 'normal': build_normal, 'boss': build_boss,
     'mini_boss': build_mini_boss, 'shop': build_shop, 'treasure': build_treasure,
@@ -1139,20 +1310,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--preview', action='store_true', help='print floor plans, write nothing')
     parser.add_argument('--room', help='build only this room key')
-    parser.add_argument('--out', default=os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), '..',
-        'src/main/resources/data/teras/structure/dungeon/cuevas'))
+    parser.add_argument('--piso', default='cuevas',
+                        choices=['cuevas', 'cuevas_infestadas'],
+                        help='which piso to author; infestadas dresses the cuevas set')
+    parser.add_argument('--out')
     args = parser.parse_args()
 
+    out = args.out or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..',
+        'src/main/resources/data/teras/structure/dungeon', args.piso)
+    builders = BUILDERS if args.piso == 'cuevas' else infestadas_builders()
+
     failed = False
-    for key, builder in BUILDERS.items():
+    for key, builder in builders.items():
         if args.room and key != args.room:
             continue
         room = builder()
         errors, warnings = room.audit()
         plain = sum(1 for (t, _, _, _) in room.markers if t == 'spawn')
         ranged = sum(1 for (t, _, _, _) in room.markers if t == 'spawn:ranged')
-        print(f'{key:14} {room.sx}x{H}x{room.sz}  markers={len(room.markers)}'
+        print(f'{key:14} {NAMES[key]:12} {room.sx}x{H}x{room.sz}  markers={len(room.markers)}'
               f' (spawn {plain}+{ranged}r)  palette={len(room.palette)}')
         for w in warnings:
             print(f'    ! {w}')
@@ -1163,13 +1340,14 @@ def main():
             print(room.preview())
             print()
         elif not errors:
-            os.makedirs(args.out, exist_ok=True)
-            write_nbt(os.path.join(args.out, key + '.nbt'), room.to_nbt())
+            folder = os.path.join(out, key)
+            os.makedirs(folder, exist_ok=True)
+            write_nbt(os.path.join(folder, NAMES[key] + '.nbt'), room.to_nbt())
     if failed:
         print('ERRORS - nothing written for failing rooms', file=sys.stderr)
         return 1
     if not args.preview:
-        print(f'\nwrote templates to {os.path.abspath(args.out)}')
+        print(f'\nwrote {args.piso} templates to {os.path.abspath(out)}')
     return 0
 
 
