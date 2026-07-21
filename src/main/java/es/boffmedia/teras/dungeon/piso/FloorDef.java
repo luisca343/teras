@@ -39,6 +39,12 @@ import java.util.Set;
  * @param hereda      the shared template sets this piso also draws from, in order. Null means
  *                    {@link RoomPoolIndex#DEFAULT_SET} — an explicitly empty list means it shares
  *                    nothing, which is a different and deliberate statement
+ * @param pesoFormas  {@code family -> multiplier} over the global shape chances. Empty means the
+ *                    piso rolls its shapes exactly like every other one. This is what lets two
+ *                    pisos declare the same families and still feel different: Infestadas declares
+ *                    BIG so a 2x2 chamber is <i>possible</i>, and weights it low so meeting one is
+ *                    an event. Absence of a shape and rarity of a shape are different statements,
+ *                    and only the second is tunable
  * @param pesos       {@code roomKey -> variant name -> weight}. Tuning only: it can make a room
  *                    rarer, commoner, or (at 0) switch an inherited one off, but it can never add
  *                    or remove one. What exists is the folder's answer alone — see
@@ -58,6 +64,7 @@ public record FloorDef(String id,
                        List<String> jefes,
                        List<String> minijefes,
                        List<String> hereda,
+                       Map<ShapeFamily, Double> pesoFormas,
                        Map<String, Map<String, Double>> pesos,
                        EnemyTable enemigos,
                        DecorTables decoracion) {
@@ -74,7 +81,7 @@ public record FloorDef(String id,
                     String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
                     List<String> jefes, List<String> minijefes) {
         this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
-                minijefes, null, Map.of(), EnemyTable.EMPTY, DecorTables.EMPTY);
+                minijefes, null, Map.of(), Map.of(), EnemyTable.EMPTY, DecorTables.EMPTY);
     }
 
     /** A piso with tables but no sharing or weight tuning of its own — how the defaults are built. */
@@ -83,14 +90,31 @@ public record FloorDef(String id,
                     List<String> jefes, List<String> minijefes,
                     EnemyTable enemigos, DecorTables decoracion) {
         this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
-                minijefes, null, Map.of(), enemigos, decoracion);
+                minijefes, null, Map.of(), Map.of(), enemigos, decoracion);
+    }
+
+    /** A piso with tables and shape weights of its own. */
+    public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
+                    String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
+                    List<String> jefes, List<String> minijefes,
+                    Map<ShapeFamily, Double> pesoFormas,
+                    EnemyTable enemigos, DecorTables decoracion) {
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
+                minijefes, null, pesoFormas, Map.of(), enemigos, decoracion);
     }
 
     public FloorDef {
         hereda = hereda == null ? List.of(RoomPoolIndex.DEFAULT_SET) : List.copyOf(hereda);
+        pesoFormas = pesoFormas == null ? Map.of() : Map.copyOf(pesoFormas);
         pesos = pesos == null ? Map.of() : Map.copyOf(pesos);
         enemigos = enemigos == null ? EnemyTable.EMPTY : enemigos;
         decoracion = decoracion == null ? DecorTables.EMPTY : decoracion;
+    }
+
+    /** How much likelier or rarer this piso makes one shape family, relative to the global odds. */
+    public double pesoForma(ShapeFamily family) {
+        Double weight = pesoFormas.get(family);
+        return weight == null ? DEFAULT_WEIGHT : weight;
     }
 
     /** The weight this piso gives one variant of one key. */

@@ -76,6 +76,45 @@ public final class DungeonCommand {
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     es.boffmedia.teras.dungeon.piso.PisoCatalog.declared().keySet(), builder);
 
+    /**
+     * The variant names of the room key and piso already typed on the line — what makes editing,
+     * reweighting or deleting a specific room a matter of tabbing rather than running {@code sala
+     * listar} first and counting. It reads {@code tipo} and {@code piso} back out of the partial
+     * parse, which is why every command that uses it puts the piso <b>before</b> the variant: a
+     * variant only means anything once its piso is known, and the folder that answers "which
+     * variants exist" is per piso.
+     */
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> VARIANTS =
+            (ctx, builder) -> {
+                String tipo = argOrNull(ctx, "tipo");
+                if (tipo == null) {
+                    return builder.buildFuture();
+                }
+                String pisoId = argOrNull(ctx, "piso");
+                if (pisoId == null || pisoId.isBlank()) {
+                    pisoId = es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultPisoId();
+                }
+                es.boffmedia.teras.dungeon.piso.FloorDef piso = pisoId == null ? null
+                        : es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(pisoId);
+                if (piso == null) {
+                    return builder.buildFuture();
+                }
+                // declared, not the enabled pool: a variant switched off with peso 0 is exactly the
+                // one you need to name to turn back on, or to edit before re-enabling.
+                return net.minecraft.commands.SharedSuggestionProvider.suggest(
+                        RoomTemplates.pool(piso, tipo).stream()
+                                .map(RoomTemplates.TemplateEntry::name), builder);
+            };
+
+    /** A parsed string argument, or null when the node is not on the line yet. */
+    private static String argOrNull(CommandContext<CommandSourceStack> ctx, String name) {
+        try {
+            return StringArgumentType.getString(ctx, name);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> GEAR_IDS =
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     es.boffmedia.teras.dungeon.gear.GearDefs.all().keySet(), builder);
@@ -184,17 +223,22 @@ public final class DungeonCommand {
                                                                 .then(Commands.literal("rehacer")
                                                                         .executes(ctx -> createPiso(ctx, true))))))))
                         .then(Commands.literal("sala")
+                                // Order is <tipo> [piso] <variante> so the variant autocompletes: a
+                                // variant only means something once its piso is known. Naming a
+                                // specific variant therefore requires naming its piso, which is the
+                                // safety 'always name the piso' the guide already asks for anyway.
                                 .then(Commands.literal("editar")
                                         .then(Commands.argument("tipo", StringArgumentType.word())
                                                 .suggests(ROOM_TYPES)
-                                                .executes(ctx -> editRoom(ctx, 0, null))
-                                                .then(Commands.argument("variante", IntegerArgumentType.integer(0))
-                                                        .executes(ctx -> editRoom(ctx,
-                                                                IntegerArgumentType.getInteger(ctx, "variante"), null))
-                                                        .then(Commands.argument("piso", StringArgumentType.word())
-                                                                .suggests(PISOS)
+                                                .executes(ctx -> editRoom(ctx, null, null))
+                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                        .suggests(PISOS)
+                                                        .executes(ctx -> editRoom(ctx, null,
+                                                                StringArgumentType.getString(ctx, "piso")))
+                                                        .then(Commands.argument("variante", StringArgumentType.word())
+                                                                .suggests(VARIANTS)
                                                                 .executes(ctx -> editRoom(ctx,
-                                                                        IntegerArgumentType.getInteger(ctx, "variante"),
+                                                                        StringArgumentType.getString(ctx, "variante"),
                                                                         StringArgumentType.getString(ctx, "piso")))))))
                                 .then(Commands.literal("listar")
                                         .then(Commands.argument("tipo", StringArgumentType.word())
@@ -207,20 +251,20 @@ public final class DungeonCommand {
                                 .then(Commands.literal("borrar")
                                         .then(Commands.argument("tipo", StringArgumentType.word())
                                                 .suggests(ROOM_TYPES)
-                                                .then(Commands.argument("variante", IntegerArgumentType.integer(0))
-                                                        .executes(ctx -> deleteRoom(ctx, null))
-                                                        .then(Commands.argument("piso", StringArgumentType.word())
-                                                                .suggests(PISOS)
+                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                        .suggests(PISOS)
+                                                        .then(Commands.argument("variante", StringArgumentType.word())
+                                                                .suggests(VARIANTS)
                                                                 .executes(ctx -> deleteRoom(ctx,
                                                                         StringArgumentType.getString(ctx, "piso")))))))
                                 .then(Commands.literal("peso")
                                         .then(Commands.argument("tipo", StringArgumentType.word())
                                                 .suggests(ROOM_TYPES)
-                                                .then(Commands.argument("variante", StringArgumentType.word())
-                                                        .then(Commands.argument("peso", DoubleArgumentType.doubleArg(0))
-                                                                .executes(ctx -> weighRoom(ctx, null))
-                                                                .then(Commands.argument("piso", StringArgumentType.word())
-                                                                        .suggests(PISOS)
+                                                .then(Commands.argument("piso", StringArgumentType.word())
+                                                        .suggests(PISOS)
+                                                        .then(Commands.argument("variante", StringArgumentType.word())
+                                                                .suggests(VARIANTS)
+                                                                .then(Commands.argument("peso", DoubleArgumentType.doubleArg(0))
                                                                         .executes(ctx -> weighRoom(ctx,
                                                                                 StringArgumentType.getString(ctx, "piso"))))))))
                                 .then(Commands.literal("marcar")
@@ -384,7 +428,7 @@ public final class DungeonCommand {
 
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults(),
+            layout = DungeonGenerator.generate(GenConfig.defaults().withShapeWeights(plan.piso().pesoFormas()),
                     es.boffmedia.teras.dungeon.gen.FloorDepth.of(
                             GenConfig.defaults(), stage, dungeon.length()),
                     floorCurses, plan.piso().shapes(), genSeed);
@@ -672,13 +716,13 @@ public final class DungeonCommand {
 
     // --- the room editor: every handler is a thin shell over RoomEditor's error-or-null API ------
 
-    private static int editRoom(CommandContext<CommandSourceStack> ctx, int variant, String piso)
-            throws CommandSyntaxException {
+    private static int editRoom(CommandContext<CommandSourceStack> ctx, String variantName,
+                                String piso) throws CommandSyntaxException {
         return editorCall(ctx, RoomEditor.start(ctx.getSource().getPlayerOrException(),
-                StringArgumentType.getString(ctx, "tipo"), variant, piso));
+                StringArgumentType.getString(ctx, "tipo"), variantName, piso));
     }
 
-    /** The variants of one room key, with the indices {@code sala editar} and {@code borrar} take. */
+    /** The variants of one room key, named — the handles {@code sala editar/borrar/peso} take. */
     private static int listRooms(CommandContext<CommandSourceStack> ctx, String pisoArg) {
         String type = StringArgumentType.getString(ctx, "tipo");
         String pisoId = pisoArg == null || pisoArg.isBlank()
@@ -693,15 +737,16 @@ public final class DungeonCommand {
         ctx.getSource().sendSuccess(() -> Component.literal("§7" + pisoId + " · §e" + type
                 + " §7(" + pool.size() + ") §8dungeon/" + pisoId + "/" + type + "/"), false);
         var manager = ctx.getSource().getServer().getStructureManager();
-        for (int i = 0; i < pool.size(); i++) {
-            var entry = pool.get(i);
+        for (RoomTemplates.TemplateEntry entry : pool) {
             // Where it actually comes from. "mundo" is the one that matters: a copy in the world's
             // generated folder shadows the jar's, which is invisible in game and has cost days.
             String source = entry.name().indexOf('/') >= 0
                     ? "§dheredada" : (inGenerated(manager, entry.template()) ? "§bmundo" : "§8jar");
             String odds = entry.weight() <= 0 ? "§cdesactivada"
                     : "§7" + Math.round(entry.weight() / Math.max(total, 1e-9) * 100) + "%";
-            String line = "  §7[" + i + "] §f" + entry.name() + " " + source
+            // The name is the handle now, not a bracketed index — it is what the other commands take
+            // and what they autocomplete.
+            String line = "  §f" + entry.name() + " " + source
                     + " §7peso " + trim(entry.weight()) + " · " + odds;
             ctx.getSource().sendSuccess(() -> Component.literal(line), false);
         }
@@ -736,7 +781,7 @@ public final class DungeonCommand {
      */
     private static int deleteRoom(CommandContext<CommandSourceStack> ctx, String pisoArg) {
         String type = StringArgumentType.getString(ctx, "tipo");
-        int variant = IntegerArgumentType.getInteger(ctx, "variante");
+        String variantName = StringArgumentType.getString(ctx, "variante");
         String pisoId = pisoArg == null || pisoArg.isBlank()
                 ? es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultPisoId() : pisoArg;
         var piso = es.boffmedia.teras.dungeon.piso.PisoCatalog.declaredPiso(pisoId);
@@ -745,12 +790,13 @@ public final class DungeonCommand {
             return 0;
         }
         var pool = RoomTemplates.pool(piso, type);
-        if (variant >= pool.size()) {
-            ctx.getSource().sendFailure(Component.literal("'" + type + "' tiene " + pool.size()
-                    + " variante(s) en " + pisoId + "."));
+        var entry = pool.stream().filter(e -> e.name().equals(variantName)).findFirst().orElse(null);
+        if (entry == null) {
+            ctx.getSource().sendFailure(Component.literal("'" + variantName + "' no es una variante de '"
+                    + type + "' en " + pisoId + " — 'sala listar " + type + " " + pisoId
+                    + "' las lista."));
             return 0;
         }
-        var entry = pool.get(variant);
         var manager = ctx.getSource().getServer().getStructureManager();
         boolean own = entry.name().indexOf('/') < 0;
         if (own && inGenerated(manager, entry.template())) {
@@ -779,7 +825,7 @@ public final class DungeonCommand {
                 + " desactivada en " + pisoId + " (peso 0) §7— viene "
                 + (own ? "del jar" : "de un set compartido")
                 + ", así que no es un archivo de este servidor. "
-                + "Para reactivarla: sala peso " + type + " " + entry.name() + " 1"), false);
+                + "Para reactivarla: sala peso " + type + " " + pisoId + " " + entry.name() + " 1"), false);
         return 1;
     }
 
@@ -964,6 +1010,8 @@ public final class DungeonCommand {
                 + piso.maldiciones().stream().map(Enum::name).sorted().toList()
                 + " §7· luz §f" + piso.luz()
                 + (piso.mecanica().isBlank() ? "" : " §7· mecánica §f" + piso.mecanica())), false);
+        ctx.getSource().sendSuccess(() -> Component.literal("§7hereda: §f"
+                + (piso.hereda().isEmpty() ? "(nada)" : String.join(", ", piso.hereda()))), false);
         java.util.List<String> wrongSize =
                 es.boffmedia.teras.dungeon.piso.PisoCatalog.mismatchedRooms(id);
         if (!wrongSize.isEmpty()) {
@@ -977,8 +1025,15 @@ public final class DungeonCommand {
         java.util.List<String> missing =
                 es.boffmedia.teras.dungeon.piso.PisoCatalog.missingRooms(id);
         if (missing.isEmpty()) {
+            int variants = piso.requiredRooms().stream()
+                    .mapToInt(k -> RoomTemplates.pool(piso, k).size()).sum();
+            long onlyOne = piso.requiredRooms().stream()
+                    .filter(k -> RoomTemplates.pool(piso, k).size() == 1).count();
             ctx.getSource().sendSuccess(() -> Component.literal("§aTiene sus "
-                    + piso.requiredRooms().size() + " salas."), false);
+                    + piso.requiredRooms().size() + " salas §7(" + variants + " plantillas en total"
+                    + (onlyOne == 0 ? "" : ", " + onlyOne + " con una sola variante") + ")."), false);
+            ctx.getSource().sendSuccess(() -> Component.literal(
+                    "§8'sala listar <tipo> " + id + "' desglosa cada tipo."), false);
             return 1;
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§cLe faltan " + missing.size()

@@ -47,9 +47,15 @@ class ShippedPisoTest {
      * {@code tools/author_cuevas_rooms.py} is the other half of this pair.
      */
     private static final List<String> AUTHORED = List.of(
-            "boveda", "repisa", "anillo", "columna", "alcoba", "pedestal", "rendija", "geoda",
-            "galerias", "santuario", "altar", "plinto", "circulo", "garganta", "codo", "terrazas",
-            "oculo");
+            // one per key
+            "cupula", "repisa", "anillo", "columna", "alcoba", "pedestal", "rendija", "geoda",
+            "galerias", "santuario", "altar", "vitrina", "circulo", "garganta", "codo", "terrazas",
+            "oculo",
+            // the extra variants
+            "pozo", "columnas", "derrumbe", "balcon", "columnata", "manantial", "mirador",
+            "anfiteatro", "cuatro_pilares",
+            // Infestadas only
+            "nidal", "capullos");
 
     private static List<String> namesIn(String piso, String key) {
         List<String> found = new ArrayList<>();
@@ -66,7 +72,7 @@ class ShippedPisoTest {
     private static FloorDef piso(String id, Set<ShapeFamily> shapes) {
         return new FloorDef(id, id, "", shapes, 7, "", "", "",
                 EnumSet.noneOf(es.boffmedia.teras.dungeon.model.Curse.class),
-                List.of(), List.of(), List.of(), java.util.Map.of(),
+                List.of(), List.of(), List.of(), java.util.Map.of(), java.util.Map.of(),
                 EnemyTable.EMPTY, DecorTables.EMPTY);
     }
 
@@ -94,8 +100,10 @@ class ShippedPisoTest {
         RoomPoolIndex index = shippedIndex();
         FloorDef cuevas = piso("cuevas", EnumSet.allOf(ShapeFamily.class));
         List<RoomVariant> pool = index.pool(cuevas, "normal_big");
-        assertEquals(1, pool.size());
-        assertEquals("teras:dungeon/cuevas/normal_big/terrazas", pool.get(0).template());
+        assertEquals(3, pool.size());
+        assertTrue(pool.stream()
+                        .anyMatch(v -> v.template().equals("teras:dungeon/cuevas/normal_big/terrazas")),
+                "terrazas is still there, now beside anfiteatro and cuatro_pilares");
 
         Set<String> flat = new TreeSet<>();
         for (String key : cuevas.requiredRooms()) {
@@ -105,6 +113,26 @@ class ShippedPisoTest {
             }
         }
         assertTrue(flat.isEmpty(), "these still ship in the retired flat layout: " + flat);
+    }
+
+    /**
+     * The point of the folder layout, held to a number: the most-placed room on any floor has real
+     * variety, and Infestadas has rooms Cuevas does not — without which it is a palette over shared
+     * geometry, which is the themes idea the pisos redesign deleted.
+     */
+    @Test
+    void normalHasSeveralVariantsAndInfestadasHasItsOwn() {
+        RoomPoolIndex index = shippedIndex();
+        FloorDef cuevas = piso("cuevas", EnumSet.allOf(ShapeFamily.class));
+        FloorDef infestadas = piso("cuevas_infestadas", EnumSet.allOf(ShapeFamily.class));
+        assertEquals(5, index.pool(cuevas, "normal").size());
+        assertEquals(7, index.pool(infestadas, "normal").size());
+
+        List<String> onlyInfested = index.pool(infestadas, "normal").stream()
+                .map(RoomVariant::name)
+                .filter(n -> index.pool(cuevas, "normal").stream().noneMatch(v -> v.name().equals(n)))
+                .toList();
+        assertEquals(List.of("capullos", "nidal"), onlyInfested);
     }
 
     /** A piso narrowed to one family owes fewer rooms — the lever that makes a variant affordable. */

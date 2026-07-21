@@ -46,9 +46,11 @@ public final class ConfigVersion {
      *       bestiary (§30), and the geo swarm and slimes replacing the clone chaff (§33)</li>
      *   <li>folder-based room pools (§35): {@code salas} is retired in favour of one folder per
      *       room key, with {@code hereda} for shared sets and {@code pesos} for odds</li>
+     *   <li>Infestadas declares all four {@code formas} and accepts LABYRINTH (§36), with
+     *       {@code pesosFormas} keeping its big shapes rare instead of impossible</li>
      * </ol>
      */
-    public static final int CURRENT = 3;
+    public static final int CURRENT = 4;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

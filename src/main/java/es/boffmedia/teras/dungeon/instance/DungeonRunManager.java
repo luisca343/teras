@@ -123,7 +123,7 @@ public final class DungeonRunManager {
 
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults(),
+            layout = DungeonGenerator.generate(GenConfig.defaults().withShapeWeights(plan.piso().pesoFormas()),
                     FloorDepth.of(GenConfig.defaults(), stage, dungeon.length()),
                     plan.curses(), plan.piso().shapes(), runSeed);
         } catch (DungeonGenerationException e) {
@@ -237,7 +237,7 @@ public final class DungeonRunManager {
                 completeRun(server, run);
                 return;
             }
-            newLayout = DungeonGenerator.generate(GenConfig.defaults(),
+            newLayout = DungeonGenerator.generate(GenConfig.defaults().withShapeWeights(plan.piso().pesoFormas()),
                     FloorDepth.of(GenConfig.defaults(), next, dungeon.length()),
                     plan.curses(), plan.piso().shapes(), run.layout().seedString());
         } catch (DungeonGenerationException e) {

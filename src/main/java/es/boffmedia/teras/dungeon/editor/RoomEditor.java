@@ -215,7 +215,7 @@ public final class RoomEditor {
      * A piso whose templates are still missing is deliberately editable — that is the state a piso
      * is in right after {@code piso crear}.</p>
      */
-    public static String start(ServerPlayer player, String poolKey, int variantIndex,
+    public static String start(ServerPlayer player, String poolKey, String variantName,
                                String pisoArg) {
         if (SESSIONS.containsKey(player.getUUID())) {
             return "Ya estás editando una sala — usa 'sala guardar' o 'sala salir' primero.";
@@ -241,13 +241,21 @@ public final class RoomEditor {
         }
         List<RoomTemplates.TemplateEntry> pool = RoomTemplates.pool(piso, poolKey);
         if (pool.isEmpty()) {
-            return "El tipo " + poolKey + " no tiene plantillas.";
+            return "El tipo " + poolKey + " no tiene plantillas en " + pisoId + ".";
         }
-        if (variantIndex < 0 || variantIndex >= pool.size()) {
-            return "Variante fuera de rango: el tipo tiene " + pool.size() + " (0.."
-                    + (pool.size() - 1) + ").";
+        // A blank name opens the first variant, so 'sala editar <tipo>' still just works; a named
+        // one is matched by the file name the folder listing shows, never an index to count out.
+        RoomTemplates.TemplateEntry entry;
+        if (variantName == null || variantName.isBlank()) {
+            entry = pool.get(0);
+        } else {
+            entry = pool.stream().filter(e -> e.name().equals(variantName)).findFirst().orElse(null);
+            if (entry == null) {
+                return "'" + variantName + "' no es una variante de " + poolKey + " en " + pisoId
+                        + ". Hay: " + pool.stream().map(RoomTemplates.TemplateEntry::name)
+                                .collect(java.util.stream.Collectors.joining(", "));
+            }
         }
-        RoomTemplates.TemplateEntry entry = pool.get(variantIndex);
 
         int pad = 0;
         Set<Integer> used = new LinkedHashSet<>();

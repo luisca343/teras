@@ -42,6 +42,43 @@ public record GenConfig(
         }
     }
 
+    /**
+     * This config with the multi-cell shape chances scaled by a piso's own weights.
+     *
+     * <p>Shape odds are global, which is right for the generator — it should not know what a piso
+     * is. But two pisos that declare the same families then roll identically, so the only lever for
+     * making one feel tighter was to <b>forbid</b> it a shape. That is blunt: forbidding also
+     * deletes the rooms, and a shape that can never appear cannot be a surprise when it does.
+     * Scaling here keeps the generator ignorant of pisos and lets one say "big rooms exist, and
+     * they are rare".</p>
+     *
+     * <p>SINGLE is deliberately not scalable: it is what every layout falls back to, and weighting
+     * it would only mean something relative to the other three, which those already express.</p>
+     */
+    public GenConfig withShapeWeights(
+            java.util.Map<es.boffmedia.teras.dungeon.model.ShapeFamily, Double> weights) {
+        if (weights == null || weights.isEmpty()) {
+            return this;
+        }
+        double big = weight(weights, es.boffmedia.teras.dungeon.model.ShapeFamily.BIG);
+        double large = weight(weights, es.boffmedia.teras.dungeon.model.ShapeFamily.LARGE);
+        double l = weight(weights, es.boffmedia.teras.dungeon.model.ShapeFamily.L);
+        return new GenConfig(gridSize,
+                chanceQuad * big, chanceHorizontal * large, chanceVertical * large, chanceLShape * l,
+                largeShapeDecay, shapeResetInterval,
+                curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
+                devilDealChance, miniBossChance, firstStageMiniBossBoost,
+                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                referenceLength, finalStageRooms, maxAttempts);
+    }
+
+    private static double weight(
+            java.util.Map<es.boffmedia.teras.dungeon.model.ShapeFamily, Double> weights,
+            es.boffmedia.teras.dungeon.model.ShapeFamily family) {
+        Double value = weights.get(family);
+        return value == null ? 1.0 : Math.max(0.0, value);
+    }
+
     public static GenConfig defaults() {
         return new GenConfig(
                 13,

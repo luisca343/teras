@@ -1207,6 +1207,424 @@ INFEST_PALETTE = {
 INFEST_WEB_CHANCE = 0.18
 
 
+# --------------------------------------------------------------- more normals
+
+def build_normal_pozo():
+    """The basin room: the middle is water, so the fight happens on the ring around it."""
+    r = Room('normal', 'single', 'cuevas:normal:pozo')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=8, dripstone=6)
+    r.pool(7, 7, 13, 13)
+    # A low rock in the middle: a landmark, deliberately too low to be a perch. This is the one
+    # normal room with no high ground at all — its pressure is footing, not sightlines.
+    for x in range(9, 12):
+        for z in range(9, 12):
+            r.set(x, 1, z, r.block('minecraft:mossy_cobblestone'))
+    r.set(10, 2, 10, r.block('minecraft:shroomlight'))
+    for (x, z) in ((3, 3), (17, 3), (3, 17), (17, 17)):
+        r.stalagmite(x, z, rng.randint(2, 3))
+    for (x, z) in ((5, 8), (16, 12), (8, 16)):
+        r.set(x, 1, z, r.floor_blend(rng))
+    r.ore_seam(4)
+    r.lichen(1, 3, 7, 'west')
+    r.lichen(19, 3, 13, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=0)
+    r.deco('decoracion:techo', 4, 9, 16)
+    r.deco('decoracion:techo', 16, 9, 4)
+    r.deco('decoracion:suelo', 3, 1, 13)
+    r.deco('decoracion:pared', 1, 3, 16)
+    return r
+
+
+def build_normal_columnas():
+    """The column forest: sightlines break constantly, so ranged loses and ambush gains."""
+    r = Room('normal', 'single', 'cuevas:normal:columnas')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=11, dripstone=7)
+    for (x, z) in ((4, 4), (5, 4), (4, 5), (7, 7), (8, 7),
+                   (13, 4), (14, 4), (14, 5), (16, 7), (17, 7),
+                   (4, 13), (4, 14), (5, 14), (7, 14), (8, 14),
+                   (13, 16), (14, 16), (14, 17), (16, 13), (17, 13),
+                   (10, 10)):
+        r.column(x, z)
+    r.stalagmite(11, 6, 2)
+    r.stalagmite(9, 15, 2)
+    r.ore_seam(3)
+    r.lichen(1, 4, 12, 'west')
+    r.lichen(19, 4, 8, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=0)
+    r.deco('decoracion:techo', 6, 9, 10)
+    r.deco('decoracion:techo', 15, 9, 10)
+    r.deco('decoracion:suelo', 12, 1, 8)
+    r.deco('decoracion:pared', 19, 3, 4)
+    return r
+
+
+def build_normal_derrumbe():
+    """The collapse: a raised quarter with a rubble slope, so the high ground is asymmetric
+    and both sides can take it."""
+    r = Room('normal', 'single', 'cuevas:normal:derrumbe')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=9, dripstone=5)
+    r.shelf(12, 1, 19, 8, top=5)
+    r.ramp(10, 7, 1, 0, top=5)
+    # the spill: rock that came down with it, thinning away from the shelf
+    for (x, z, n) in ((11, 10, 3), (9, 12, 2), (12, 12, 2), (7, 9, 1), (14, 13, 1)):
+        for i in range(n):
+            r.set(x + i, 1, z, r.block('minecraft:cobblestone'))
+        r.set(x, 2, z, r.block('minecraft:cobblestone_slab', type='bottom'))
+    r.stalagmite(4, 4, 3)
+    r.stalagmite(6, 16, 2)
+    r.ore_seam(4)
+    r.lichen(1, 3, 9, 'west')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=2)
+    r.deco('decoracion:techo', 5, 9, 6)
+    r.deco('decoracion:techo', 14, 9, 15)
+    r.deco('decoracion:suelo', 4, 1, 12)
+    r.deco('decoracion:pared', 1, 3, 15)
+    return r
+
+
+def build_normal_balcon():
+    """The archer room: a real balcony wrapping one corner, and a long walk to contest it."""
+    r = Room('normal', 'single', 'cuevas:normal:balcon')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.01)
+    r.ceiling_relief(blobs=7, dripstone=4)
+    r.shelf(1, 1, 7, 7, top=5, light=False)
+    r.ramp(8, 6, -1, 0, top=5)
+    # lit from under the lip, so the balcony reads as a shelf and not as a wall
+    for z in (2, 4, 6):
+        r.set(8, 4, z, r.block('minecraft:shroomlight'))
+    for x in (2, 4, 6):
+        r.set(x, 4, 8, r.block('minecraft:shroomlight'))
+    r.stalagmite(15, 15, 3)
+    r.stalagmite(12, 17, 2)
+    r.stalactite(16, 5, 3)
+    r.ore_seam(3)
+    r.lichen(19, 3, 12, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=3)
+    r.deco('decoracion:techo', 13, 9, 6)
+    r.deco('decoracion:techo', 16, 9, 14)
+    r.deco('decoracion:suelo', 17, 1, 13)
+    r.deco('decoracion:pared', 19, 3, 17)
+    return r
+
+
+# ----------------------------------------------------------- more 2x1 chambers
+
+def build_normal_large_columnata():
+    """One long hall with a colonnade down it — no neck, which is what garganta always gives."""
+    r = Room('normal_large', 'large', 'cuevas:normal_large:columnata')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=15, dripstone=9)
+    for x in (4, 9, 14, 19, 24, 29, 34, 39):
+        for z in (7, 13):
+            r.column(x, z)
+    r.shelf(1, 1, 6, 6, top=5, light=False)
+    r.ramp(7, 3, -1, 0, top=5)
+    r.shelf(35, 14, 40, 19, top=5, light=False)
+    r.ramp(34, 16, 1, 0, top=5)
+    for (x, z) in ((3, 3), (38, 17)):
+        r.set(x, 5, z, r.block('minecraft:shroomlight'))
+    r.ore_seam(6)
+    r.lichen(1, 4, 15, 'west')
+    r.lichen(40, 4, 5, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_large'), ranged=3)
+    r.deco('decoracion:techo', 12, 9, 10)
+    r.deco('decoracion:techo', 27, 9, 10)
+    r.deco('decoracion:suelo', 20, 1, 4)
+    r.deco('decoracion:pared', 1, 3, 5)
+    return r
+
+
+def build_normal_large_manantial():
+    """A ledge that overhangs a basin, with a spring on top of it seeping through the rock: a wet
+    half and a dry half, and a perch worth taking.
+
+    Authored as a spring rather than the waterfall it started as, because a waterfall cannot pass
+    the audit: every water block must be walled on all four sides, and a fall is by definition open
+    on the side you can see it from. The rule is stricter than the game needs and deliberately so —
+    nothing here can verify where loose water ends up, and a flooded room is discovered in play. So
+    the water is contained and the *reading* is carried by the undercut lip and the dripstone
+    hanging off it.
+    """
+    r = Room('normal_large', 'large', 'cuevas:normal_large:manantial')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.02)
+    r.ceiling_relief(blobs=12, dripstone=7)
+    r.shelf(22, 1, 29, 8, top=6, light=False)
+    r.ramp(21, 4, 1, 0, top=6)
+    # undercut the lip, so the ledge overhangs the basin and the seep has something to hang from
+    for x in range(23, 29):
+        r.clear(x, 1, 8, x, 5, 8)
+    for x in (24, 26, 27):
+        r.set(x, 5, 8, r.block('minecraft:pointed_dripstone',
+                               vertical_direction='down', thickness='tip'))
+    r.pool(23, 10, 28, 15)
+    # The spring sits directly over the undercut lip, and clear of the ramp lane at z=4..5 — a
+    # ramp cuts headroom above every step, so a basin there would lose its own rim.
+    water = r.block('minecraft:water', level='0')
+    for (x, z) in ((27, 6), (28, 6), (27, 7), (28, 7)):
+        r.set(x, 6, z, water)
+    for (x, z) in ((24, 3), (27, 6)):
+        r.set(x, 6, z, r.block('minecraft:shroomlight'))
+    for (x, z) in ((5, 5), (9, 15), (15, 8)):
+        r.column(x, z)
+    r.stalagmite(6, 12, 3)
+    r.stalagmite(16, 16, 2)
+    r.ore_seam(5)
+    r.lichen(1, 3, 12, 'west')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_large'), ranged=3)
+    r.deco('decoracion:techo', 8, 9, 6)
+    r.deco('decoracion:techo', 34, 9, 12)
+    r.deco('decoracion:suelo', 12, 1, 4)
+    r.deco('decoracion:pared', 40, 3, 15)
+    return r
+
+
+# ------------------------------------------------------------- another L, and 2x2s
+
+def build_normal_l_mirador():
+    """The outer corner raised instead of the inner: the vantage no longer covers both arms,
+    so holding it is a choice rather than the default."""
+    r = Room('normal_l', 'l', 'cuevas:normal_l:mirador')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=18, dripstone=11)
+    r.shelf(33, 1, 40, 7, top=6, light=False)
+    r.ramp(32, 6, 1, 0, top=6)
+    for (x, z) in ((35, 3), (38, 6)):
+        r.set(x, 6, z, r.block('minecraft:shroomlight'))
+    # the elbow stays open, marked only by columns — the contrast with codo is the whole point
+    for (x, z) in ((14, 14), (15, 14), (14, 15), (18, 18), (13, 19), (19, 13)):
+        r.column(x, z)
+    for (x, z) in ((6, 30), (7, 30), (6, 31), (14, 35)):
+        r.column(x, z)
+    r.stalagmite(4, 6, 3)
+    r.stalagmite(8, 36, 3)
+    r.stalagmite(25, 14, 2)
+    r.ore_seam(7)
+    r.lichen(1, 4, 6, 'west')
+    r.lichen(19, 4, 34, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_l'), ranged=3)
+    r.deco('decoracion:techo', 10, 9, 14)
+    r.deco('decoracion:techo', 26, 9, 6)
+    r.deco('decoracion:techo', 10, 9, 30)
+    r.deco('decoracion:suelo', 4, 1, 25)
+    r.deco('decoracion:pared', 1, 3, 33)
+    return r
+
+
+def build_normal_big_anfiteatro():
+    """A stepped bowl: the party fights at the bottom and is looked down on — the inverse of
+    terrazas. Every step is one block over two tiles, so the whole rim is walkable and needs
+    no ramp cut into it."""
+    r = Room('normal_big', 'big', 'cuevas:normal_big:anfiteatro')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.ceiling_relief(blobs=22, dripstone=12)
+    for x in range(1, 41):
+        for z in range(1, 41):
+            if (x, z) in r.keep_clear or r.is_wall(x, z) or not r.owned(x, z):
+                continue
+            d = min(x, z, 41 - x, 41 - z)
+            if d > 9:
+                continue
+            top = 5 - (d // 2)
+            for y in range(1, top + 1):
+                r.set(x, y, z, r.stone_blend(y, rng))
+    for (x, z) in ((3, 20), (38, 20), (20, 3), (20, 38), (3, 3), (38, 38)):
+        r.set(x, 5, z, r.block('minecraft:shroomlight'))
+    for (x, z) in ((20, 20), (21, 20), (20, 21), (21, 21)):
+        r.set(x, 1, z, r.block('minecraft:polished_andesite'))
+    r.ore_seam(8)
+    r.lichen(1, 7, 20, 'west')
+    r.lichen(40, 7, 21, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_big'), ranged=4)
+    r.deco('decoracion:techo', 14, 9, 14)
+    r.deco('decoracion:techo', 27, 9, 27)
+    r.deco('decoracion:techo', 14, 9, 27)
+    r.deco('decoracion:suelo', 24, 1, 17)
+    r.deco('decoracion:pared', 1, 3, 25)
+    return r
+
+
+def build_normal_big_cuatro_pilares():
+    """A big room that does not read as one open field: four column clusters quarter it, and the
+    perches sit in the corners rather than in the middle."""
+    r = Room('normal_big', 'big', 'cuevas:normal_big:cuatro_pilares')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=20, dripstone=12)
+    for (cx, cz) in ((13, 13), (28, 13), (13, 28), (28, 28)):
+        for dx in range(-1, 2):
+            for dz in range(-1, 2):
+                r.column(cx + dx, cz + dz)
+    for (x0, z0, x1, z1, rx, rz, dx, dz) in (
+            (1, 1, 7, 7, 8, 4, -1, 0),
+            (34, 1, 40, 7, 33, 4, 1, 0),
+            (1, 34, 7, 40, 8, 37, -1, 0),
+            (34, 34, 40, 40, 33, 37, 1, 0)):
+        r.shelf(x0, z0, x1, z1, top=5, light=False)
+        r.ramp(rx, rz, dx, dz, top=5)
+        r.set((x0 + x1) // 2, 5, (z0 + z1) // 2, r.block('minecraft:shroomlight'))
+    r.stalagmite(20, 20, 3)
+    r.stalagmite(21, 25, 2)
+    r.stalagmite(25, 20, 2)
+    r.ore_seam(8)
+    r.lichen(1, 4, 20, 'west')
+    r.lichen(40, 4, 21, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_big'), ranged=4)
+    r.deco('decoracion:techo', 20, 9, 8)
+    r.deco('decoracion:techo', 20, 9, 33)
+    r.deco('decoracion:techo', 8, 9, 20)
+    r.deco('decoracion:suelo', 18, 1, 18)
+    r.deco('decoracion:pared', 40, 3, 25)
+    return r
+
+
+# ------------------------------------------------- rooms only Cuevas Infestadas has
+#
+# These are the answer to "is Infestadas a place or a filter". Every other infested room is
+# derived from a Cuevas one by infest(), which means geometry is shared and only the palette
+# differs — the themes idea the pisos redesign deleted, arrived at from the other direction.
+# A room that exists in one piso and not the other cannot be that, and the folder layout makes
+# it cost nothing: a file in cuevas_infestadas/normal/ needs no registration anywhere.
+
+def build_infestadas_nidal():
+    """The nest is the terrain. A web-choked mound holds the room's height and its nido markers,
+    so taking the high ground and clearing the nests are the same job."""
+    r = Room('normal', 'single', 'infestadas:normal:nidal')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.01)
+    r.ceiling_relief(blobs=8, dripstone=4)
+    r.shelf(7, 7, 13, 13, top=5, light=False)
+    r.ramp(6, 10, 1, 0, top=5)
+    r.ramp(14, 10, -1, 0, top=5)
+    for (x, z) in ((8, 8), (12, 12)):
+        r.set(x, 5, z, r.block('minecraft:shroomlight'))
+    for (x, y, z) in ((9, 6, 9), (12, 6, 8), (8, 6, 12), (11, 6, 12)):
+        r.mark('nido', x, y, z)
+    for (x, y, z) in ((4, 1, 4), (17, 1, 5), (4, 1, 16), (16, 1, 17)):
+        r.mark('nido', x, y, z)
+    r.stalagmite(3, 9, 2)
+    r.stalagmite(18, 12, 2)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=2)
+    r.deco('decoracion:techo', 5, 9, 14)
+    r.deco('decoracion:pared', 19, 3, 6)
+    return r
+
+
+def build_infestadas_capullos():
+    """The ceiling presses down and the webbing hangs in curtains, so sightlines break
+    vertically as well as horizontally — the room where a climbing tejedora is at its worst."""
+    r = Room('normal', 'single', 'infestadas:normal:capullos')
+    r.shell()
+    rng = r.rng
+    for x in range(1, 20):
+        for z in range(1, 20):
+            if (x, z) in r.keep_clear:
+                continue
+            d = max(abs(x - 10), abs(z - 10))
+            top = 7 if d >= 7 else 8
+            for y in range(top, 11):
+                r.set(x, y, z, r.stone_blend(y, rng))
+    r.rough_walls(light_chance=0.0)
+    web = r.block('minecraft:cobweb')
+    # Curtains, not a fog: six short columns you walk through, hung where nobody has to fight.
+    for (x, z) in ((5, 7), (7, 4), (14, 6), (16, 13), (6, 15), (13, 16)):
+        if (x, z) in r.keep_clear:
+            continue
+        for y in range(4, 7):
+            r.set(x, y, z, web)
+    for (x, y, z) in ((4, 1, 5), (16, 1, 4), (5, 1, 16), (17, 1, 15), (10, 1, 6)):
+        r.mark('nido', x, y, z)
+    r.stalagmite(9, 13, 2)
+    r.stalagmite(12, 9, 2)
+    r.ore_seam(2)
+    r.lichen(1, 3, 10, 'west')
+    r.lichen(19, 3, 10, 'east')
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=0)
+    r.deco('decoracion:techo', 8, 6, 8)
+    r.deco('decoracion:pared', 1, 3, 15)
+    return r
+
+
+# ----------------------------------------------------------- the first shared room
+
+def build_comun_pacto():
+    """The devil's room, shared by every piso that inherits `comun`.
+
+    A shared template is fixed blocks in every place that draws it, which is wrong for a cave and
+    right for this: the deal room is *supposed* to look like it does not belong to the floor. That
+    is why it is the one worth sharing first.
+    """
+    r = Room('devil_deal', 'single', 'comun:devil_deal:pacto')
+    r.shell()
+    rng = r.rng
+    black = r.block('minecraft:blackstone')
+    polished = r.block('minecraft:polished_blackstone')
+    bricks = r.block('minecraft:polished_blackstone_bricks')
+    for x in range(1, 20):
+        for z in range(1, 20):
+            r.set(x, 0, z, black if rng.random() < 0.7 else polished)
+            for y in range(9, 11):
+                r.set(x, y, z, black if rng.random() < 0.8 else polished)
+    for x in range(21):
+        for z in range(21):
+            if r.is_wall(x, z):
+                for y in range(H):
+                    r.set(x, y, z, black if rng.random() < 0.75 else polished)
+    # the pact floor: a stepped dais with a gilded rim, and chains of iron overhead
+    for x in range(7, 14):
+        for z in range(7, 14):
+            if (x, z) in r.keep_clear:
+                continue
+            edge = max(abs(x - 10), abs(z - 10))
+            r.set(x, 0, z, bricks if edge <= 1 else polished)
+            if edge == 3:
+                r.set(x, 1, z, r.block('minecraft:gilded_blackstone'))
+    r.set(10, 1, 10, r.block('minecraft:chiseled_polished_blackstone'))
+    for (x, z) in ((8, 8), (12, 8), (8, 12), (12, 12)):
+        r.set(x, 1, z, r.block('minecraft:blackstone_wall'))
+        r.set(x, 2, z, r.block('minecraft:soul_lantern', hanging='false'))
+    for (x, z) in ((5, 10), (15, 10), (10, 5), (10, 15)):
+        for y in range(6, 9):
+            r.set(x, y, z, r.block('minecraft:chain', axis='y'))
+    r.mark('deal', 10, 2, 10)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 4, 8, 4)
+    r.deco('decoracion:techo', 16, 8, 16)
+    return r
+
+
 def infest(base):
     """Dresses a finished Cuevas room as its infested twin, in place.
 
@@ -1266,44 +1684,65 @@ def infest(base):
     return r
 
 
-def infestadas_builders():
-    """Infestadas owes only what its two families require — 14 rooms, not Cuevas' 17."""
-    keys = [k for k in BUILDERS if not k.endswith('_l') and not k.endswith('_big')]
-    return {key: (lambda k=key: infest(BUILDERS[k]())) for key in keys}
 
 
-# The file each room key's shipped template is written as. A room key is a folder now and every
-# .nbt in it is a peer variant, so the name has to say what the room *is* — 'normal.nbt' inside
-# normal/ would be the only file in the folder that told you nothing.
-NAMES = {
-    'start': 'boveda',            # the domed arrival chamber
-    'normal': 'repisa',           # shelf along the east wall, pool below
-    'boss': 'anillo',             # rimmed arena
-    'mini_boss': 'columna',       # one column, one shelf
-    'shop': 'alcoba',             # the worked, paved end of a cave
-    'treasure': 'pedestal',       # a pedestal under a shaft of light
-    'secret': 'rendija',          # a cramped pocket, ceiling pressed down
-    'super_secret': 'geoda',      # calcite and amethyst; wrong for the piso on purpose
-    'challenge': 'galerias',      # corner galleries ringing the arena
-    'curse': 'santuario',         # blackstone shrine against the south rock
-    'sacrifice': 'altar',         # raised basalt, magma channels
-    'arcade': 'plinto',           # a lit plinth in a dim cave
-    'devil_deal': 'circulo',      # gilded circle, iron cage arcs
-    'normal_large': 'garganta',   # two chambers joined by an arched neck
-    'normal_l': 'codo',           # the elbow massif
-    'normal_big': 'terrazas',     # three terraces a ring route circles
-    'boss_big': 'oculo',          # the arena scaled up, under a great oculus
+# Every template that ships, as folder -> file -> builder. A room key is a folder and each .nbt
+# inside it is a peer variant, so a name has to say what the room IS: "normal.nbt" inside normal/
+# would be the only file in the folder that told you nothing.
+VARIANTS = {
+    'start':        {'cupula': build_start},                    # the domed arrival chamber
+    'normal':       {'repisa': build_normal,                    # shelf along the east wall
+                     'pozo': build_normal_pozo,                 # central basin, no high ground
+                     'columnas': build_normal_columnas,         # column forest, broken sightlines
+                     'derrumbe': build_normal_derrumbe,         # collapsed quarter, rubble slope
+                     'balcon': build_normal_balcon},            # a real balcony to contest
+    'boss':         {'anillo': build_boss},                     # rimmed arena
+    'mini_boss':    {'columna': build_mini_boss},               # one column, one shelf
+    'shop':         {'alcoba': build_shop},                     # the worked, paved end of a cave
+    'treasure':     {'pedestal': build_treasure},               # pedestal under a shaft of light
+    'secret':       {'rendija': build_secret},                  # cramped pocket
+    'super_secret': {'geoda': build_super_secret},              # calcite and amethyst
+    'challenge':    {'galerias': build_challenge},              # corner galleries
+    'curse':        {'santuario': build_curse},                 # blackstone shrine
+    'sacrifice':    {'altar': build_sacrifice},                 # basalt altar, magma channels
+    'arcade':       {'vitrina': build_arcade},                  # a lit plinth in a dim cave
+    'devil_deal':   {'circulo': build_devil_deal},              # gilded circle, cage arcs
+    'normal_large': {'garganta': build_normal_large,            # two chambers, arched neck
+                     'columnata': build_normal_large_columnata, # one hall, colonnade
+                     'manantial': build_normal_large_manantial},# overhung ledge, spring, basin
+    'normal_l':     {'codo': build_normal_l,                    # elbow massif, inner perch
+                     'mirador': build_normal_l_mirador},        # outer perch instead
+    'normal_big':   {'terrazas': build_normal_big,              # three terraces, ring route
+                     'anfiteatro': build_normal_big_anfiteatro, # stepped bowl, looked down on
+                     'cuatro_pilares': build_normal_big_cuatro_pilares},
+    'boss_big':     {'oculo': build_boss_big},                  # the arena under a great oculus
 }
 
-BUILDERS = {
-    'start': build_start, 'normal': build_normal, 'boss': build_boss,
-    'mini_boss': build_mini_boss, 'shop': build_shop, 'treasure': build_treasure,
-    'secret': build_secret, 'super_secret': build_super_secret,
-    'challenge': build_challenge, 'curse': build_curse, 'sacrifice': build_sacrifice,
-    'arcade': build_arcade, 'devil_deal': build_devil_deal,
-    'normal_large': build_normal_large, 'normal_l': build_normal_l,
-    'normal_big': build_normal_big, 'boss_big': build_boss_big,
+# Rooms that exist ONLY in Cuevas Infestadas, authored rather than derived. See the comment above
+# build_infestadas_nidal for why a piso needs at least one of these to be a place and not a filter.
+INFESTADAS_ONLY = {
+    'normal': {'nidal': build_infestadas_nidal,
+               'capullos': build_infestadas_capullos},
 }
+
+# Rooms in a shared set, drawn by every piso whose `hereda` names it.
+SHARED = {
+    'comun': {'devil_deal': {'pacto': build_comun_pacto}},
+}
+
+
+def variants_for(piso):
+    """folder -> file -> builder for one piso. Infestadas takes every Cuevas room dressed by
+    infest(), plus its own — it declares all four families now, so it owes all 17 keys."""
+    if piso == 'cuevas':
+        return {k: dict(v) for k, v in VARIANTS.items()}
+    out = {}
+    for key, named in VARIANTS.items():
+        out[key] = {name: (lambda b=builder: infest(b())) for name, builder in named.items()}
+    for key, named in INFESTADAS_ONLY.items():
+        out.setdefault(key, {}).update(
+            {name: (lambda b=builder: infest(b())) for name, builder in named.items()})
+    return out
 
 
 def main():
@@ -1311,38 +1750,45 @@ def main():
     parser.add_argument('--preview', action='store_true', help='print floor plans, write nothing')
     parser.add_argument('--room', help='build only this room key')
     parser.add_argument('--piso', default='cuevas',
-                        choices=['cuevas', 'cuevas_infestadas'],
-                        help='which piso to author; infestadas dresses the cuevas set')
+                        choices=['cuevas', 'cuevas_infestadas', 'comun'],
+                        help='which set to author; infestadas dresses the cuevas rooms, and '
+                             'comun is the shared set every piso inherits by default')
+    parser.add_argument('--variante', help='build only this variant of --room')
     parser.add_argument('--out')
     args = parser.parse_args()
 
     out = args.out or os.path.join(
         os.path.dirname(os.path.abspath(__file__)), '..',
         'src/main/resources/data/teras/structure/dungeon', args.piso)
-    builders = BUILDERS if args.piso == 'cuevas' else infestadas_builders()
+    builders = SHARED[args.piso] if args.piso in SHARED else variants_for(args.piso)
 
     failed = False
-    for key, builder in builders.items():
+    for key, named in builders.items():
         if args.room and key != args.room:
             continue
-        room = builder()
-        errors, warnings = room.audit()
-        plain = sum(1 for (t, _, _, _) in room.markers if t == 'spawn')
-        ranged = sum(1 for (t, _, _, _) in room.markers if t == 'spawn:ranged')
-        print(f'{key:14} {NAMES[key]:12} {room.sx}x{H}x{room.sz}  markers={len(room.markers)}'
-              f' (spawn {plain}+{ranged}r)  palette={len(room.palette)}')
-        for w in warnings:
-            print(f'    ! {w}')
-        for e in errors:
-            print(f'    x {e}')
-            failed = True
-        if args.preview:
-            print(room.preview())
-            print()
-        elif not errors:
-            folder = os.path.join(out, key)
-            os.makedirs(folder, exist_ok=True)
-            write_nbt(os.path.join(folder, NAMES[key] + '.nbt'), room.to_nbt())
+        for name, builder in named.items():
+            if args.variante and name != args.variante:
+                continue
+            room = builder()
+            errors, warnings = room.audit()
+            plain = sum(1 for (t, _, _, _) in room.markers if t == 'spawn')
+            ranged = sum(1 for (t, _, _, _) in room.markers if t == 'spawn:ranged')
+            nests = sum(1 for (t, _, _, _) in room.markers if t == 'nido')
+            print(f'{key:14} {name:15} {room.sx}x{H}x{room.sz}  markers={len(room.markers)}'
+                  f' (spawn {plain}+{ranged}r{f", nido {nests}" if nests else ""})'
+                  f'  palette={len(room.palette)}')
+            for w in warnings:
+                print(f'    ! {w}')
+            for e in errors:
+                print(f'    x {e}')
+                failed = True
+            if args.preview:
+                print(room.preview())
+                print()
+            elif not errors:
+                folder = os.path.join(out, key)
+                os.makedirs(folder, exist_ok=True)
+                write_nbt(os.path.join(folder, name + '.nbt'), room.to_nbt())
     if failed:
         print('ERRORS - nothing written for failing rooms', file=sys.stderr)
         return 1

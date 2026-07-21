@@ -26,7 +26,7 @@ class RoomPoolIndexTest {
     private static FloorDef piso(String id, Set<ShapeFamily> shapes, List<String> hereda,
                                  Map<String, Map<String, Double>> pesos) {
         return new FloorDef(id, id, "", shapes, 7, "", "", "",
-                EnumSet.of(Curse.LOST), List.of(), List.of(), hereda, pesos,
+                EnumSet.of(Curse.LOST), List.of(), List.of(), hereda, Map.of(), pesos,
                 EnemyTable.EMPTY, DecorTables.EMPTY);
     }
 

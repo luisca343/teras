@@ -386,7 +386,7 @@ public final class PisoCatalog {
         }
         FloorDef seeded = new FloorDef(newId, newId, "", source.formas(), source.luz(),
                 source.musica(), source.ambiente(), "", source.maldiciones(),
-                List.of(), List.of(), source.hereda(), Map.of(),
+                List.of(), List.of(), source.hereda(), source.pesoFormas(), Map.of(),
                 EnemyTable.EMPTY, DecorTables.EMPTY);
         try {
             Files.createDirectories(file.getParent());
@@ -516,6 +516,7 @@ public final class PisoCatalog {
                     // Absent means the default set; an explicit [] means "share nothing", which is
                     // a different statement and has to survive the round trip.
                     json.has("hereda") ? strings(json.get("hereda")) : null,
+                    pesoFormas(json.get("pesosFormas")),
                     pesos(json.get("pesos")),
                     enemyTable(json.get("enemigos")),
                     decorTables(json.get("decoracion")));
@@ -764,6 +765,29 @@ public final class PisoCatalog {
         return pesos;
     }
 
+    /**
+     * Per-piso multipliers over the global shape odds: {@code {"big": 0.3}}. Not a way to forbid a
+     * shape — that is what {@code formas} is for — only to make one rarer or commoner than the
+     * generator's baseline.
+     */
+    private static Map<ShapeFamily, Double> pesoFormas(JsonElement element) {
+        Map<ShapeFamily, Double> weights = new LinkedHashMap<>();
+        if (element == null || !element.isJsonObject()) {
+            return weights;
+        }
+        JsonObject json = element.getAsJsonObject();
+        for (String name : json.keySet()) {
+            try {
+                weights.put(ShapeFamily.valueOf(name.trim().toUpperCase(Locale.ROOT)),
+                        json.get(name).getAsDouble());
+            } catch (Exception e) {
+                Teras.LOGGER.warn("Dungeons: 'pesosFormas.{}' is not a forma and a number; skipped",
+                        name);
+            }
+        }
+        return weights;
+    }
+
     /** The retired {@code salas} block, read only so {@code piso migrar} can convert it. */
     private static Map<String, List<LegacyVariant>> legacySalas(JsonElement element) {
         Map<String, List<LegacyVariant>> salas = new LinkedHashMap<>();
@@ -819,14 +843,20 @@ public final class PisoCatalog {
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "",
                 EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of(), List.of(),
                 cuevasEnemies(), cuevasDecor()));
-        // Two shapes only: tight and choked is the identity, and it excuses six of the 21 rooms.
-        // LABYRINTH is refused for the same reason — at two shapes it would sprawl to the room cap
-        // in one repeated footprint.
+        // Every family, but not at every piso's odds. This used to be two families, on the argument
+        // that "tight and choked is the identity" and that it excused six rooms of authoring. The
+        // second half stopped being true when infest() started deriving Infestadas from Cuevas —
+        // its rooms cost nothing to add. The first half was real but the instrument was wrong:
+        // forbidding BIG also deletes the room, so a 2x2 chamber could never be a shock because it
+        // could never happen. It declares all four now and weights the big shapes down instead, so
+        // the floor still reads as choked and a wide chamber lands as an event. LABYRINTH comes
+        // with it: the reason for refusing it was the two-shape sprawl, and that reason is gone.
         pisos.put("cuevas_infestadas", new FloorDef("cuevas_infestadas", "Cuevas Infestadas",
                 "algo se mueve en la oscuridad",
-                EnumSet.of(ShapeFamily.SINGLE, ShapeFamily.LARGE), 4,
+                EnumSet.allOf(ShapeFamily.class), 4,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "infestacion",
-                EnumSet.of(Curse.LOST), List.of("reina_cria"), List.of(),
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of("reina_cria"), List.of(),
+                Map.of(ShapeFamily.LARGE, 0.7, ShapeFamily.L, 0.6, ShapeFamily.BIG, 0.3),
                 infestadasEnemies(), infestadasDecor()));
 
         declared = pisos;
@@ -870,6 +900,8 @@ public final class PisoCatalog {
                 def.luz(), def.musica(), def.ambiente(), def.mecanica(), def.maldiciones(),
                 def.jefes(), def.minijefes(),
                 current != null ? current.hereda() : def.hereda(),
+                current != null && !current.pesoFormas().isEmpty()
+                        ? current.pesoFormas() : def.pesoFormas(),
                 current != null ? current.pesos() : def.pesos(),
                 def.enemigos(), def.decoracion());
         Path file = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
@@ -977,6 +1009,11 @@ public final class PisoCatalog {
         json.add("jefes", names(piso.jefes()));
         json.add("minijefes", names(piso.minijefes()));
         json.add("hereda", names(piso.hereda()));
+        JsonObject pesosFormas = new JsonObject();
+        for (Map.Entry<ShapeFamily, Double> entry : piso.pesoFormas().entrySet()) {
+            pesosFormas.addProperty(entry.getKey().name().toLowerCase(Locale.ROOT), entry.getValue());
+        }
+        json.add("pesosFormas", pesosFormas);
         JsonObject pesos = new JsonObject();
         for (Map.Entry<String, Map<String, Double>> entry : piso.pesos().entrySet()) {
             JsonObject forKey = new JsonObject();
