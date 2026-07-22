@@ -75,8 +75,66 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
+    /**
+     * Extra hit boxes for the long enemies, allocated once here and never regrown. Every enemy
+     * carries them because the client learns its variant a packet after it is added to the level,
+     * and by then {@link #isMultipartEntity()} has already been read — a variant that turned out to
+     * be multipart later would have parts nothing tracks. Single-box variants collapse theirs onto
+     * the body in {@link #updateParts()}.
+     */
+    private final DungeonEnemyPart[] parts;
+
     public DungeonGeoEnemy(EntityType<? extends Monster> type, Level level) {
         super(type, level);
+        this.parts = new DungeonEnemyPart[EnemyHitboxParts.MAX_SEGMENTS];
+        for (int i = 0; i < parts.length; i++) {
+            parts[i] = new DungeonEnemyPart(this);
+        }
+    }
+
+    @Override
+    public boolean isMultipartEntity() {
+        return true;
+    }
+
+    @Override
+    public net.neoforged.neoforge.entity.PartEntity<?>[] getParts() {
+        return parts;
+    }
+
+    /**
+     * Part ids track the parent's so client and server name the same box. Server ids are already
+     * consecutive with the parent — the parts are built right after it in the constructor — and this
+     * makes the client match on spawn.
+     */
+    @Override
+    public void recreateFromPacket(net.minecraft.network.protocol.game.ClientboundAddEntityPacket packet) {
+        super.recreateFromPacket(packet);
+        for (int i = 0; i < parts.length; i++) {
+            parts[i].setId(packet.getId() + i + 1);
+        }
+    }
+
+    /** A hit on any box damages the whole enemy the same — no per-part behaviour yet. */
+    public boolean hurtPart(DungeonEnemyPart part, net.minecraft.world.damagesource.DamageSource source,
+                            float amount) {
+        return hurt(source, amount);
+    }
+
+    /** Places each part over the body for the current variant, or collapses the ones it does not use. */
+    private void updateParts() {
+        float scale = variant().scale();
+        java.util.List<EnemyHitboxParts> segments = EnemyHitboxParts.forVariant(variantId());
+        for (int i = 0; i < parts.length; i++) {
+            if (i >= segments.size()) {
+                parts[i].place(getX(), getY(), getZ(), 0.1f, 0.1f);
+                continue;
+            }
+            EnemyHitboxParts s = segments.get(i);
+            double[] offset = s.worldOffset(scale, yBodyRot);
+            parts[i].place(getX() + offset[0], getY() + s.bottom() * scale, getZ() + offset[1],
+                    (float) (s.width() * scale), (float) (s.height() * scale));
+        }
     }
 
     /** Baseline attributes; {@link #applyVariant} overrides them per variant on spawn. */
@@ -403,6 +461,7 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     @Override
     public void tick() {
         super.tick();
+        updateParts();
         int ticks = entityData.get(ATTACK_TICKS);
         if (ticks > 0) {
             entityData.set(ATTACK_TICKS, ticks - 1);
@@ -566,9 +625,9 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     @Override
     public net.minecraft.world.entity.EntityDimensions getDefaultDimensions(net.minecraft.world.entity.Pose pose) {
         GeoEnemyVariant variant = variant();
+        // Scale and the small-side floor are already folded into these — see GeoEnemyVariant.
         return net.minecraft.world.entity.EntityDimensions
-                .scalable(variant.hitboxWidth(), variant.hitboxHeight())
-                .scale(variant.scale());
+                .scalable(variant.scaledWidth(), variant.scaledHeight());
     }
 
     @Override

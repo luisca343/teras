@@ -74,38 +74,40 @@ public record GeoEnemyVariant(
     }
 
     /**
-     * What a rig occupies on the ground, in blocks at scale 1.0: {@code {width, height}}.
+     * A rig's footprint in blocks at scale 1.0, {@code {width, height}}, keyed by model.
      *
-     * <p>The entity type is {@code sized(0.6, 1.95)} — a person — and every variant's hitbox was
-     * that shape times its scale. For the two upright rigs it is right, because that is the shape
-     * they are. For anything else it is a column that has nothing to do with the model: a slime
-     * whose sprite is two thirds of a block tall was hittable to nearly two blocks, so a swing over
-     * an empty patch of floor connected and a swing at the slime itself often did not.</p>
-     *
-     * <p>Keyed by rig rather than by variant because that is what it is a property of — the scale
-     * on the variant does the rest — and because a rig's real extents are printed by
-     * {@code tools/preview_rig.py}, which is where these numbers come from. Width is the body, not
-     * the reach: arms and legs that hang outside the trunk are not what a hit lands on.</p>
-     *
-     * <p>Absent means the humanoid default, which is deliberately how the arachnids still resolve:
-     * their footprint is wrong in both directions — the queen is five blocks wide and hittable in
-     * one — but Infestadas has been played and verified as it stands, and correcting every spider's
-     * hitbox is a change to how that floor fights, not a floor-1 detail.</p>
+     * <p>A hitbox is one square column doing three jobs — hit target, collision, door clearance — so
+     * it only approximates a non-square model. Height is the model's top; width is the trunk's
+     * left-right breadth (x-extent of non-appendage bones), not its front-to-back depth. A wider box
+     * connects on empty air beside the body, the fault a person-shaped column gave the short slime;
+     * under-covering a long body (an abdomen, a nose) is the safe direction and what elongated
+     * vanilla mobs do. Numbers come from {@code tools/preview_rig.py} and are held to this rule by
+     * {@code RigGeometryTest}. The long spiders would under-cover badly here, so they carry extra
+     * hit boxes down the body — see {@link EnemyHitboxParts}.</p>
      */
     private static final Map<String, float[]> RIG_FOOTPRINT = Map.ofEntries(
+            Map.entry("geo/dungeon_guardian.geo.json", new float[] {1.00f, 2.00f}),
+            Map.entry("geo/dungeon_raider.geo.json", new float[] {0.55f, 1.75f}),
+            Map.entry("geo/dungeon_mastin.geo.json", new float[] {0.50f, 0.95f}),
+            // A bat is a fist with wings; the wingspan is not the hitbox.
+            Map.entry("geo/dungeon_murcielago.geo.json", new float[] {0.30f, 0.70f}),
+            Map.entry("geo/dungeon_escarabajo.geo.json", new float[] {0.45f, 0.55f}),
+            Map.entry("geo/dungeon_lepisma.geo.json", new float[] {0.30f, 0.30f}),
+            Map.entry("geo/dungeon_hongo.geo.json", new float[] {0.60f, 0.90f}),
+            Map.entry("geo/dungeon_musgo.geo.json", new float[] {0.75f, 0.55f}),
+            Map.entry("geo/dungeon_golem.geo.json", new float[] {1.00f, 1.70f}),
             Map.entry("geo/dungeon_limo.geo.json", new float[] {0.75f, 0.70f}),
-            Map.entry("geo/dungeon_gran_limo.geo.json", new float[] {1.5f, 1.35f}),
-            Map.entry("geo/dungeon_golem.geo.json", new float[] {1.0f, 1.7f}),
-            // The wingspan is not the hitbox: a bat is a fist with wings on it, and a two-block-wide
-            // box around one would be hit by everything swung anywhere near it.
-            Map.entry("geo/dungeon_murcielago.geo.json", new float[] {0.5f, 0.6f}),
-            Map.entry("geo/dungeon_escarabajo.geo.json", new float[] {0.9f, 0.6f}),
-            Map.entry("geo/dungeon_hongo.geo.json", new float[] {0.65f, 0.9f}),
-            Map.entry("geo/dungeon_musgo.geo.json", new float[] {0.8f, 0.6f}),
-            Map.entry("geo/dungeon_mastin.geo.json", new float[] {0.7f, 1.0f}));
+            Map.entry("geo/dungeon_gran_limo.geo.json", new float[] {1.85f, 1.45f}),
+            Map.entry("geo/dungeon_spider_cria.geo.json", new float[] {0.45f, 0.70f}),
+            Map.entry("geo/dungeon_spider_tejedora.geo.json", new float[] {0.60f, 0.85f}),
+            Map.entry("geo/dungeon_cazadora.geo.json", new float[] {0.50f, 0.95f}),
+            Map.entry("geo/dungeon_reina.geo.json", new float[] {0.80f, 1.00f}));
 
-    /** The shape {@code EntityInit} sizes the type for: a person. */
+    /** Fallback for a model with no entry: the shape the entity type is sized for. */
     private static final float[] HUMANOID = {0.6f, 1.95f};
+
+    /** No scaled side smaller than this, or the silverfish and bat are unhittable. */
+    private static final float MIN_SIDE = 0.4f;
 
     public float hitboxWidth() {
         return RIG_FOOTPRINT.getOrDefault(model, HUMANOID)[0];
@@ -113,6 +115,16 @@ public record GeoEnemyVariant(
 
     public float hitboxHeight() {
         return RIG_FOOTPRINT.getOrDefault(model, HUMANOID)[1];
+    }
+
+    /** Width the entity is sized to: rig breadth × scale, floored. */
+    public float scaledWidth() {
+        return Math.max(MIN_SIDE, hitboxWidth() * scale);
+    }
+
+    /** Height the entity is sized to: rig top × scale, floored. */
+    public float scaledHeight() {
+        return Math.max(MIN_SIDE, hitboxHeight() * scale);
     }
 
     public boolean has(Behaviour behaviour) {

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -165,6 +166,174 @@ class RigGeometryTest {
             }
         }
         assertTrue(problems.isEmpty(), "rig symmetry:\n" + String.join("\n", problems));
+    }
+
+    /**
+     * The shipped hitbox is the rig's own trunk breadth and full height, recomputed from the loaded
+     * geometry so a moved cube fails the build. A rig with no footprint entry falls back to the
+     * humanoid default, which won't match its geometry — so this is the coverage check too.
+     */
+    @Test
+    void hitboxesMatchTheRig() {
+        List<String> problems = new ArrayList<>();
+        for (String model : new TreeSet<>(models())) {
+            Map<String, double[][]> extents = extents(model);
+            if (extents.isEmpty()) {
+                continue;   // BestiaryAuditTest owns the missing-file case
+            }
+            double minX = 1e9, maxX = -1e9, top = -1e9;
+            for (Map.Entry<String, double[][]> e : extents.entrySet()) {
+                top = Math.max(top, e.getValue()[1][1]);
+                if (isAppendage(e.getKey())) {
+                    continue;   // width is the body, not the reach
+                }
+                minX = Math.min(minX, e.getValue()[0][0]);
+                maxX = Math.max(maxX, e.getValue()[1][0]);
+            }
+            double wantW = (maxX - minX) / 16.0;
+            double wantH = top / 16.0;
+            GeoEnemyVariant v = anyWith(model);
+            if (Math.abs(v.hitboxWidth() - wantW) > FOOTPRINT_TOLERANCE) {
+                problems.add(String.format("%s: hitbox width %.2f, but the trunk is %.2f wide"
+                        + " (missing or stale RIG_FOOTPRINT entry?)", model, v.hitboxWidth(), wantW));
+            }
+            if (Math.abs(v.hitboxHeight() - wantH) > FOOTPRINT_TOLERANCE) {
+                problems.add(String.format("%s: hitbox height %.2f, but the model tops out at %.2f",
+                        model, v.hitboxHeight(), wantH));
+            }
+        }
+        assertTrue(problems.isEmpty(), "hitboxes vs rigs:\n" + String.join("\n", problems));
+    }
+
+    /**
+     * A hitbox is also the collision volume, so an enemy bigger than a doorway cannot follow the
+     * party out of its room. That is intended for an arena boss and a bug for anything else, so the
+     * exempt list is by hand and each entry must genuinely exceed a door — it can't grow to hide a
+     * fixable enemy.
+     */
+    @Test
+    void everythingFitsAPart() {
+        double door = 3.0;   // anchoPuerta / altoPuerta default
+        for (GeoEnemyVariant v : GeoEnemyVariant.all()) {
+            boolean fits = v.scaledWidth() < door && v.scaledHeight() < door;
+            if (ARENA_BOSSES.contains(v.id())) {
+                assertTrue(!fits, v.id() + " is exempted as an arena boss but fits through a door —"
+                        + " it does not need the exemption");
+            } else {
+                assertTrue(fits, String.format("%s is %.2f×%.2f and cannot follow the party through"
+                        + " a %.0f-wide door", v.id(), v.scaledWidth(), v.scaledHeight(), door));
+            }
+        }
+    }
+
+    /**
+     * A multipart enemy's boxes, plus its main box, cover the length of its body.
+     *
+     * <p>The whole reason parts exist is the long spiders, whose abdomen reaches past a square box.
+     * This walks the trunk's depth from the geometry and asserts the boxes leave no real gap along
+     * it — a hole here is a stretch of visible body a swing passes through.</p>
+     */
+    @Test
+    void multipartBoxesCoverTheBody() {
+        List<String> problems = new ArrayList<>();
+        for (Map.Entry<String, List<EnemyHitboxParts>> entry : EnemyHitboxParts.all().entrySet()) {
+            GeoEnemyVariant variant = GeoEnemyVariant.of(entry.getKey());
+            Map<String, double[][]> extents = extents(variant.model());
+            if (extents.isEmpty()) {
+                continue;
+            }
+            double zMin = 1e9, zMax = -1e9;
+            for (Map.Entry<String, double[][]> e : extents.entrySet()) {
+                if (isAppendage(e.getKey())) {
+                    continue;
+                }
+                zMin = Math.min(zMin, e.getValue()[0][2]);
+                zMax = Math.max(zMax, e.getValue()[1][2]);
+            }
+            // forward = −z, so the body runs [−zMax, −zMin] along the facing axis.
+            double bodyLo = -zMax / 16.0, bodyHi = -zMin / 16.0;
+            List<double[]> boxes = new ArrayList<>();
+            boxes.add(new double[]{-variant.hitboxWidth() / 2, variant.hitboxWidth() / 2});
+            for (EnemyHitboxParts s : entry.getValue()) {
+                boxes.add(new double[]{s.forward() - s.width() / 2, s.forward() + s.width() / 2});
+            }
+            double gap = largestGap(boxes, bodyLo, bodyHi);
+            if (gap > COVERAGE_TOLERANCE) {
+                problems.add(String.format("%s: %.2f blocks of body between forward %.2f and %.2f"
+                        + " are inside no box", entry.getKey(), gap, bodyLo, bodyHi));
+            }
+        }
+        assertTrue(problems.isEmpty(), "multipart coverage:\n" + String.join("\n", problems));
+    }
+
+    /** A box's world offset follows the body's facing: forward at yaw 0, to the side at yaw 90. */
+    @Test
+    void partsRotateWithTheBody() {
+        EnemyHitboxParts head = EnemyHitboxParts.forVariant("reina_madre").get(0);
+        double[] south = head.worldOffset(1.0, 0f);
+        assertEquals(0.0, south[0], 1e-6, "facing +z, the head is straight ahead");
+        assertEquals(head.forward(), south[1], 1e-6);
+
+        double[] turned = head.worldOffset(1.0, 90f);
+        assertEquals(-head.forward(), turned[0], 1e-6, "turned 90°, forward becomes a side offset");
+        assertEquals(0.0, turned[1], 1e-6);
+
+        assertEquals(head.forward() * 2.0, head.worldOffset(2.0, 0f)[1], 1e-6, "scale multiplies");
+    }
+
+    /** The widest stretch of [lo, hi] that no interval in {@code boxes} covers. */
+    private static double largestGap(List<double[]> boxes, double lo, double hi) {
+        List<double[]> sorted = new ArrayList<>(boxes);
+        sorted.sort((a, b) -> Double.compare(a[0], b[0]));
+        double worst = 0, cursor = lo;
+        for (double[] box : sorted) {
+            if (box[0] > cursor) {
+                worst = Math.max(worst, Math.min(box[0], hi) - cursor);
+            }
+            cursor = Math.max(cursor, box[1]);
+            if (cursor >= hi) {
+                break;
+            }
+        }
+        return Math.max(worst, hi - cursor);
+    }
+
+    /** A body-length gap this small is a seam between overlapping boxes, not a hole. */
+    private static final double COVERAGE_TOLERANCE = 0.08;
+
+    /** A hit lands on the body; these hang outside it and are not part of the width. */
+    private static boolean isAppendage(String bone) {
+        for (String prefix : new String[]{"leg", "arm", "wing", "tail", "antenna", "filament",
+                "palp", "ear"}) {
+            if (bone.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Bosses that fight in an arena and are allowed to be larger than a doorway. */
+    private static final java.util.Set<String> ARENA_BOSSES =
+            java.util.Set.of("warden_colossus", "coloso_guardian");
+
+    /** Rounding of the shipped 0.05-step numbers plus any small re-author, but not a doubled box. */
+    private static final double FOOTPRINT_TOLERANCE = 0.15;
+
+    private static java.util.Set<String> models() {
+        java.util.Set<String> models = new java.util.HashSet<>();
+        for (GeoEnemyVariant v : GeoEnemyVariant.all()) {
+            models.add(v.model());
+        }
+        return models;
+    }
+
+    private static GeoEnemyVariant anyWith(String model) {
+        for (GeoEnemyVariant v : GeoEnemyVariant.all()) {
+            if (v.model().equals(model)) {
+                return v;
+            }
+        }
+        throw new IllegalStateException("no variant for " + model);
     }
 
     /** The bone on the other flank, or null for one on the centre line. */

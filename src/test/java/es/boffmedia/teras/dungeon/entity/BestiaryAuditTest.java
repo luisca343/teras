@@ -317,28 +317,24 @@ class BestiaryAuditTest {
     }
 
     /**
-     * A hitbox is the rig's footprint, not a person's.
-     *
-     * <p>The entity type is sized for a humanoid and every variant used to be that column times its
-     * scale, so a slime two thirds of a block tall was hittable to nearly two: a swing over empty
-     * floor connected, and one at the slime often did not. The upright rigs keep the default because
-     * for them it is correct.</p>
+     * A hitbox is the rig's footprint, not a person's. RigGeometryTest holds the numbers to the
+     * geometry; this guards the shape relationships a re-authored model must keep.
      */
     @Test
     void hitboxesFollowTheRigRatherThanTheEntityType() {
         GeoEnemyVariant slime = GeoEnemyVariant.of("limo_cueva");
         assertTrue(slime.hitboxHeight() < 1.0f,
                 "a knee-high blob must not carry a person's hitbox: " + slime.hitboxHeight());
-        assertTrue(slime.hitboxWidth() > slime.hitboxHeight(),
-                "a blob is wider than it is tall, and its hitbox should say so");
+        assertTrue(slime.hitboxWidth() >= slime.hitboxHeight(),
+                "a blob is at least as wide as it is tall");
 
+        assertTrue(GeoEnemyVariant.of("lepisma_cueva").hitboxHeight() < 0.5f,
+                "the swarm is ankle-high and its hitbox must not be a column");
+
+        // The guardian and golem share a slab build; both are wider than a person's 0.6 column.
         GeoEnemyVariant guardian = GeoEnemyVariant.of("husk_guardian");
-        assertEquals(1.95f, guardian.hitboxHeight(), 0.001f,
-                "the upright rigs are the shape the entity type is sized for; leave them alone");
-
-        // The golem is the wide one: its trunk, not its reach — arms that hang outside the body are
-        // not what a hit lands on.
-        assertTrue(GeoEnemyVariant.of("golem_geoda").hitboxWidth() > guardian.hitboxWidth());
+        assertTrue(guardian.hitboxWidth() > 0.6f, "the guardian is a slab, not a 0.6 column");
+        assertTrue(GeoEnemyVariant.of("golem_geoda").hitboxWidth() >= guardian.hitboxWidth());
     }
 
     /**
