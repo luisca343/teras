@@ -55,6 +55,9 @@ public final class DungeonRunManager {
 
     private static final Map<Integer, DungeonRun> RUNS = new LinkedHashMap<>();
     private static final BitSet SLOTS = new BitSet();
+    /** How often the watchdog looks; a second is far below either timeout and costs nothing. */
+    private static final int WATCH_INTERVAL_TICKS = 20;
+    private static RunWatchdog watchdog = new RunWatchdog(180 * 20, 60 * 20);
     private static Map<UUID, DungeonRun.ReturnPoint> pendingReturns = new LinkedHashMap<>();
     /** Members who walked out on a run, so the report can tell them from those who saw it through. */
     private static final Set<UUID> abandoned = new java.util.HashSet<>();
@@ -154,7 +157,7 @@ public final class DungeonRunManager {
             }
             RunEngine.register(run, built, level);
             teleportPartyIn(server, run, built);
-        });
+        }, () -> failStuck(server, run, "la construcción falló"));
         return new StartOutcome(run, null);
     }
 
@@ -284,7 +287,7 @@ public final class DungeonRunManager {
                                 DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(),
                                 cellOrigins(newLayout, newOrigin), run.party()));
             }
-        });
+        }, () -> failStuck(server, run, "no se pudo construir el piso " + next));
     }
 
     private static void completeRun(MinecraftServer server, DungeonRun run) {
@@ -341,25 +344,119 @@ public final class DungeonRunManager {
             return false;
         }
         RUNS.remove(runId);
+        watchdog.forget(runId);
         // Not completed: completeRun already reported before handing over, and markReported keeps
         // this from posting the same run a second time.
         report(run, false);
         RunEngine.unregister(runId);
         sendPartyHome(server, run);
+        sweepFloor(server, run);
+        return true;
+    }
 
+    /**
+     * Clears the floor a run was standing on and only then forgets it.
+     *
+     * <p><b>The journal is never deleted by a path that did not clear anything.</b> This used to
+     * delete it whenever {@code enqueueDiscard} came back false — no {@code BuiltDungeon} for that
+     * id, or the dungeon dimension missing — which threw away the one record of where the floor was.
+     * Anything left standing at that point was then unreachable by every mechanism there is: the run
+     * was gone from memory, the journal was gone from disk, and the boot sweep had nothing to read.
+     * A false discard is exactly when the record matters most.</p>
+     */
+    private static void sweepFloor(MinecraftServer server, DungeonRun run) {
         ServerLevel level = dungeonLevel(server);
-        boolean discarding = level != null
-                && DungeonMaterializer.enqueueDiscard(run.builtId(), level, () -> {
-                    RunJournal.delete(run.id());
-                    SLOTS.clear(run.slot());
-                });
-        if (!discarding) {
-            Teras.LOGGER.warn("Dungeons: run {} had no floor to discard; freeing slot {}",
-                    run.id(), run.slot());
+        if (level == null) {
+            // The slot is freed anyway — holding it changes nothing when there is no dimension to
+            // build in — but the journal stays for a boot that has the dimension back.
+            Teras.LOGGER.error("Dungeons: dimension {} is missing; run {}'s floor is left to the "
+                    + "boot sweep", DungeonsConfig.dimension(), run.id());
+            SLOTS.clear(run.slot());
+            return;
+        }
+        Runnable done = () -> {
             RunJournal.delete(run.id());
             SLOTS.clear(run.slot());
+        };
+        if (DungeonMaterializer.enqueueDiscard(run.builtId(), level, done)) {
+            return;
         }
-        return true;
+        Teras.LOGGER.warn("Dungeons: run {} has no built floor {}; clearing its pad from the "
+                + "layout instead", run.id(), run.builtId());
+        DungeonMaterializer.enqueueClear(level,
+                cellOrigins(run.layout(), padOrigin(run.slot(), run.padIndex())),
+                DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(), done);
+    }
+
+    /**
+     * A run that will never become ACTIVE: its build died, or it has been waiting on one for longer
+     * than any build takes. {@link #end} cannot help — it only ends ACTIVE runs — so this is the
+     * only path that frees the slot and clears whatever was written before the failure.
+     *
+     * <p>Both pads, at full generator size, because there is no {@link BuiltDungeon} to ask what was
+     * actually pasted and a stage advance has rooms on both. Wasteful and certain, which is the
+     * right trade for a path that only runs when something has already gone wrong.</p>
+     */
+    private static void failStuck(MinecraftServer server, DungeonRun run, String why) {
+        if (RUNS.remove(run.id()) == null) {
+            return;
+        }
+        Teras.LOGGER.error("Dungeons: run {} failed ({}) — clearing slot {}", run.id(), why,
+                run.slot());
+        watchdog.forget(run.id());
+        RunEngine.unregister(run.id());
+        message(server, run, "§cLa mazmorra ha fallado; volvéis a casa.");
+        sendPartyHome(server, run);
+        ServerLevel level = dungeonLevel(server);
+        if (level == null) {
+            SLOTS.clear(run.slot());
+            return;
+        }
+        int grid = GenConfig.defaults().gridSize();
+        DungeonMaterializer.enqueuePadClear(level, padOrigin(run.slot(), 0), grid, () -> { });
+        DungeonMaterializer.enqueuePadClear(level, padOrigin(run.slot(), 1), grid, () -> {
+            RunJournal.delete(run.id());
+            SLOTS.clear(run.slot());
+        });
+    }
+
+    /**
+     * The safety net for every way a party can stop being in a dungeon without saying so.
+     *
+     * <p>Nothing listened for a disconnect, so a run whose party dropped out stayed ACTIVE forever:
+     * its slot held, its floor standing, its shop displays and reward pedestals in the world, and no
+     * player left who could ever end it. Polling the state — is anyone online? — rather than
+     * listening for an event catches kicks, client crashes and timeouts too, and cannot be bypassed
+     * by a future way of leaving that fires no event.</p>
+     */
+    @SubscribeEvent
+    public static void onServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
+        MinecraftServer server = event.getServer();
+        if (RUNS.isEmpty() || server.getTickCount() % WATCH_INTERVAL_TICKS != 0) {
+            return;
+        }
+        long tick = server.getTickCount();
+        for (DungeonRun run : List.copyOf(RUNS.values())) {
+            boolean building = run.state() != DungeonRun.State.ACTIVE;
+            switch (watchdog.check(run.id(), building, anyOnline(server, run), tick)) {
+                case END_DESERTED -> {
+                    Teras.LOGGER.info("Dungeons: run {} has had nobody online for {}s — ending it",
+                            run.id(), DungeonsConfig.desertionGraceSeconds());
+                    end(server, run.id());
+                }
+                case FAIL_STUCK -> failStuck(server, run, "la construcción nunca terminó");
+                case HEALTHY -> { }
+            }
+        }
+    }
+
+    private static boolean anyOnline(MinecraftServer server, DungeonRun run) {
+        for (UUID member : run.party().keySet()) {
+            if (server.getPlayerList().getPlayer(member) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -402,6 +499,9 @@ public final class DungeonRunManager {
 
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
+        // Built here rather than at class load: the config is only read once the server exists.
+        watchdog = new RunWatchdog(DungeonsConfig.desertionGraceSeconds() * 20L,
+                DungeonsConfig.buildTimeoutSeconds() * 20L);
         pendingReturns = RunJournal.loadReturns();
         List<RunJournal.SweptRun> stale = RunJournal.readAll();
         for (RunJournal.SweptRun swept : stale) {
@@ -453,10 +553,37 @@ public final class DungeonRunManager {
         }
     }
 
-    @SubscribeEvent
+    /**
+     * A clean shutdown leaves a clean world.
+     *
+     * <p>This used to drop the run table on the floor: the dungeons stayed built, their shops and
+     * pedestals stayed standing, and the world was saved that way. It survived only because the run
+     * journal made the <i>next</i> boot sweep them — a restart's worth of orphan geometry that
+     * happened to be cleaned up later. Ending every run properly here means the shutdown itself
+     * despawns the displays, sends the party home, and queues the floors; the materializer then
+     * finishes those discards synchronously at {@link net.neoforged.bus.api.EventPriority#LOWEST}.
+     * The journal stays as it was: the net for a <b>crash</b>, which never reaches this event.</p>
+     *
+     * <p>Fires at {@link net.neoforged.bus.api.EventPriority#HIGHEST} so the runs are ended before
+     * anything else tears its own state down. Safe because NeoForge posts this from the tick loop,
+     * before {@code stopServer()} saves the players and the chunks.</p>
+     */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.HIGHEST)
     public static void onServerStopping(ServerStoppingEvent event) {
+        for (DungeonRun run : List.copyOf(RUNS.values())) {
+            if (run.state() == DungeonRun.State.ACTIVE) {
+                end(event.getServer(), run.id());
+            } else {
+                // Mid-build: nothing to discard that the journal does not already cover, but the
+                // party of a run caught mid-descent is standing on the floor below and has to be
+                // put somewhere real before the world is saved.
+                RunEngine.unregister(run.id());
+                sendPartyHome(event.getServer(), run);
+            }
+        }
         RUNS.clear();
         SLOTS.clear();
+        watchdog.clear();
     }
 
     // --- helpers -------------------------------------------------------------------------------
@@ -570,9 +697,9 @@ public final class DungeonRunManager {
                 // Blessings are a floor's purchase, not a run's: carrying them down would stack
                 // three shops' worth of buffs onto the stages that are supposed to be hardest.
                 es.boffmedia.teras.dungeon.run.DungeonShop.clearBlessings(player);
-                // The hearts a devil deal took are a run-long debt, so they follow the party down.
-                es.boffmedia.teras.dungeon.run.DungeonHealth.applyHpDebt(player,
-                        run.stateOf(member).hpDebt());
+                // The hearts a devil deal took, and any Pulso débil accepted at a curse room, are
+                // a run-long debt: they follow the party down.
+                es.boffmedia.teras.dungeon.run.Afflictions.apply(run, player);
                 // Seed and stage to chat only. This used to also send a title, which fired after
                 // announceFloor and overwrote "Cuevas I" with "Piso 1 / semilla" — the floor's own
                 // name is the title, the seed is a chat aside.

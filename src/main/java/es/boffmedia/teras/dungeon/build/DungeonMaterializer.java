@@ -19,6 +19,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -59,6 +60,13 @@ public final class DungeonMaterializer {
     private interface Job {
         /** One tick of work; true when the job is finished. */
         boolean step();
+
+        /**
+         * The job died and was dropped. A build that dies leaves a run that can never activate and
+         * a pad with rooms already pasted into it, so somebody has to be told; a discard that dies
+         * leaves the journal in place for the boot sweep and needs nobody.
+         */
+        default void onFailed() {}
     }
 
     /**
@@ -69,8 +77,19 @@ public final class DungeonMaterializer {
     public static int enqueueBuild(ServerLevel level, DungeonLayout layout,
                                    es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
                                    Consumer<BuiltDungeon> onComplete) {
+        return enqueueBuild(level, layout, plan, origin, onComplete, () -> { });
+    }
+
+    /**
+     * @param onFailed run when the build dies and is dropped. Without it a caller waits forever on
+     *                 a completion that is never coming — which is how a failed build used to leave
+     *                 a run stuck mid-construction, holding its slot with rooms already on the pad
+     */
+    public static int enqueueBuild(ServerLevel level, DungeonLayout layout,
+                                   es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
+                                   Consumer<BuiltDungeon> onComplete, Runnable onFailed) {
         int id = nextId++;
-        JOBS.add(new BuildJob(id, level, layout, plan, origin, onComplete));
+        JOBS.add(new BuildJob(id, level, layout, plan, origin, onComplete, onFailed));
         return id;
     }
 
@@ -122,13 +141,74 @@ public final class DungeonMaterializer {
         } catch (Throwable t) {
             JOBS.poll();
             Teras.LOGGER.error("Dungeons: build/discard job failed and was dropped", t);
+            try {
+                job.onFailed();
+            } catch (Throwable inner) {
+                Teras.LOGGER.error("Dungeons: cleanup for the failed job also failed", inner);
+            }
         }
     }
 
-    @SubscribeEvent
+    /**
+     * Shutdown finishes the tearing-down and abandons the building-up.
+     *
+     * <p>This used to be {@code JOBS.clear()}, which dropped discards that were halfway through a
+     * floor: the blocks stayed, the shop displays and reward pedestals stayed, and the world was
+     * saved that way. It only ever looked fine because the run journal made the next boot sweep it.
+     * A server that is stopped cleanly should not need a boot sweep to be clean.</p>
+     *
+     * <p>Draining synchronously is safe and is the whole point of doing it here: NeoForge fires this
+     * event from the tick loop, <b>before</b> {@code stopServer()} saves players and chunks, so the
+     * cleared cells are what gets written to disk. Builds are dropped rather than finished — nobody
+     * is going to play that floor, and its cells are journalled either way.</p>
+     *
+     * <p>Runs at {@link EventPriority#LOWEST} so {@code DungeonRunManager} has already ended every
+     * live run and queued its discard by the time this drains.</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onServerStopping(ServerStoppingEvent event) {
+        int drained = 0;
+        for (Job job : List.copyOf(JOBS)) {
+            if (!(job instanceof DiscardJob)) {
+                continue;
+            }
+            try {
+                while (!job.step()) {
+                    // one cell per step, bounded by the floor's own footprint
+                }
+                drained++;
+            } catch (Throwable t) {
+                Teras.LOGGER.error("Dungeons: could not finish a discard at shutdown; the run "
+                        + "journal will have the boot sweep clear it", t);
+            }
+        }
+        if (drained > 0) {
+            Teras.LOGGER.info("Dungeons: cleared {} pending floor(s) before shutdown", drained);
+        }
         JOBS.clear();
         BUILT.clear();
+    }
+
+    /**
+     * Air-fills a whole run pad, whether or not anything is known to be there.
+     *
+     * <p>The last resort behind the journal: an orphan whose journal was lost, hand-built geometry,
+     * anything from before the journal existed. Sized to the largest floor the generator can produce
+     * rather than to a layout, because by definition there is no layout to ask.</p>
+     *
+     * @return how many cell boxes were queued
+     */
+    public static int enqueuePadClear(ServerLevel level, BlockPos padOrigin, int gridSize,
+                                      Runnable onComplete) {
+        int roomSize = DungeonsConfig.roomSize();
+        List<BlockPos> cells = new ArrayList<>();
+        for (int x = 0; x < gridSize; x++) {
+            for (int z = 0; z < gridSize; z++) {
+                cells.add(padOrigin.offset(x * roomSize, 0, z * roomSize));
+            }
+        }
+        enqueueClear(level, cells, roomSize, DungeonsConfig.roomHeight(), onComplete);
+        return cells.size();
     }
 
     private static final class BuildJob implements Job {
@@ -137,6 +217,7 @@ public final class DungeonMaterializer {
         private final DungeonLayout layout;
         private final BlockPos origin;
         private final Consumer<BuiltDungeon> onComplete;
+        private final Runnable onFailed;
         private final List<Room> rooms;
         private final es.boffmedia.teras.dungeon.piso.FloorPlan plan;
         private final Map<Room, List<TemplateMarkers.Marker>> markers = new HashMap<>();
@@ -148,14 +229,23 @@ public final class DungeonMaterializer {
 
         BuildJob(int id, ServerLevel level, DungeonLayout layout,
                  es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
-                 Consumer<BuiltDungeon> onComplete) {
+                 Consumer<BuiltDungeon> onComplete, Runnable onFailed) {
             this.id = id;
             this.level = level;
             this.layout = layout;
             this.plan = plan;
             this.origin = origin;
             this.onComplete = onComplete;
+            this.onFailed = onFailed;
             this.rooms = layout.rooms();
+        }
+
+        @Override
+        public void onFailed() {
+            // Whatever was pasted before the failure is still standing, and BUILT never learned
+            // about it — so the caller's cleanup is the only thing that can reach those cells.
+            BUILT.remove(id);
+            onFailed.run();
         }
 
         @Override
@@ -368,6 +458,16 @@ public final class DungeonMaterializer {
                     case DEVIL -> DoorCarver.fillDoorway(level, origin, door,
                             sealState(), roomSize,
                             DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                    // Open, then fanged. The curse room charges blood to enter, and a price you
+                    // cannot see before you pay it is an ambush; the spikes are the warning, which
+                    // is the whole reason this is a door kind and not a rule hidden in the run loop.
+                    case CURSE -> {
+                        DoorCarver.fillDoorway(level, origin, door,
+                                Blocks.AIR.defaultBlockState(), roomSize,
+                                DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                        DoorCarver.fillDoorwayRow(level, origin, door, DoorCarver.spikeState(),
+                                roomSize, DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                    }
                     case HIDDEN -> { }
                 }
             }
@@ -411,16 +511,24 @@ public final class DungeonMaterializer {
                 onComplete.run();
                 return true;
             }
-            // Entities before blocks: a lingering mob — or a hidden CustomNPCs corpse waiting to
-            // respawn — must go with the floor it stood in, or it turns up inside the next one.
-            // Loaded, because the pad this is clearing is one the party has already left.
-            sweepLoadedEntities(level, cell, roomSize, roomHeight);
-            for (int x = 0; x < roomSize; x++) {
-                for (int y = 0; y < roomHeight; y++) {
-                    for (int z = 0; z < roomSize; z++) {
-                        level.setBlock(cell.offset(x, y, z), Blocks.AIR.defaultBlockState(), 2);
+            // Per cell, so one bad box cannot abandon the rest of the floor. The queue drops a job
+            // that throws, and a discard that dies at its third cell out of forty used to leave the
+            // other thirty-seven standing — with the pedestals and shop displays inside them.
+            try {
+                // Entities before blocks: a lingering mob — or a hidden CustomNPCs corpse waiting to
+                // respawn — must go with the floor it stood in, or it turns up inside the next one.
+                // Loaded, because the pad this is clearing is one the party has already left.
+                sweepLoadedEntities(level, cell, roomSize, roomHeight);
+                for (int x = 0; x < roomSize; x++) {
+                    for (int y = 0; y < roomHeight; y++) {
+                        for (int z = 0; z < roomSize; z++) {
+                            level.setBlock(cell.offset(x, y, z), Blocks.AIR.defaultBlockState(), 2);
+                        }
                     }
                 }
+            } catch (Throwable t) {
+                Teras.LOGGER.error("Dungeons: could not clear cell {}; continuing with the rest of "
+                        + "the floor", cell, t);
             }
             return false;
         }

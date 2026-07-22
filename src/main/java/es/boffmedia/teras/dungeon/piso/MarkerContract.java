@@ -59,7 +59,7 @@ public final class MarkerContract {
      * <p>An enum rather than a config string so the mapping to a table is an exhaustive switch at
      * the one place that reads it: adding a source without giving it a table stops compiling.</p>
      */
-    public enum LootSource { TESORO, SECRETA, SUPERSECRETA, MALDICION }
+    public enum LootSource { TESORO, SECRETA, SUPERSECRETA }
 
     private static final Map<String, Use> VOCABULARY = new LinkedHashMap<>();
     private static final Map<RoomType, LootSource> LOOT = new LinkedHashMap<>();
@@ -74,6 +74,8 @@ public final class MarkerContract {
         runtime("sacrifice");      // SacrificePlate
         runtime("arcade");         // ArcadeMachine
         runtime("deal");           // DevilDeal — the pedestal
+        runtime("oferta");         // CurseMarket — one affliction offered for coins
+        runtime("purga");          // CurseMarket — the stand that buys one back
         runtime("nido");           // Nests, when the piso runs the infestation
         runtime("ambiente");       // EnemySpawner, when the piso declares `ambientales`
         runtime("inicio");         // BuiltDungeon.partySpawn — where the party lands
@@ -87,7 +89,6 @@ public final class MarkerContract {
         loot(RoomType.TREASURE, LootSource.TESORO);
         loot(RoomType.SECRET, LootSource.SECRETA);
         loot(RoomType.SUPER_SECRET, LootSource.SUPERSECRETA);
-        loot(RoomType.CURSE, LootSource.MALDICION);
     }
 
     private static void runtime(String marker) {

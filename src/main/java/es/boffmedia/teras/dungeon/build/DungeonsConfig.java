@@ -33,17 +33,22 @@ public final class DungeonsConfig {
     private static int slotY;
     private static int slotSpacing;
     private static int maxSlots;
+    private static int desertionGraceSeconds;
+    private static int buildTimeoutSeconds;
     private static String sealBlock;
     private static long clearReward;
-    private static long curseToll;
     private static int deathPenaltyPct;
     private static String treasureLootTable;
     private static String secretLootTable;
     private static String superSecretLootTable;
-    private static String curseLootTable;
     private static String devilLootTable;
     private static String bossLootTable;
     private static String crackBlock;
+    private static String spikeBlock;
+    private static int curseDoorTollHearts;
+    private static int marketSlots;
+    private static int marketReward;
+    private static int purgePrice;
     private static int maxParty;
     private static int entranceRadius;
     private static final Map<String, String> sounds = new LinkedHashMap<>();
@@ -67,7 +72,6 @@ public final class DungeonsConfig {
     private static double coinPickupRadius;
     private static int coinDeathPenaltyPct;
     private static int coinToPesos;
-    private static int curseCoinToll;
 
     // Shop: per-kind weight and price. Prices scale per floor like income does.
     private static final Map<String, Integer> shopWeights = new LinkedHashMap<>();
@@ -193,17 +197,22 @@ public final class DungeonsConfig {
             slotY = yaml.integer("slotY", slotY);
             slotSpacing = yaml.integer("separacionSlots", slotSpacing);
             maxSlots = yaml.integer("maxSlots", maxSlots);
+            desertionGraceSeconds = yaml.integer("graciaAbandonoSegundos", desertionGraceSeconds);
+            buildTimeoutSeconds = yaml.integer("timeoutConstruccionSegundos", buildTimeoutSeconds);
             sealBlock = yaml.string("bloqueSello", sealBlock);
             clearReward = yaml.longValue("recompensaSala", clearReward);
-            curseToll = yaml.longValue("peajeMaldicion", curseToll);
             deathPenaltyPct = yaml.integer("penalizacionMuertePct", deathPenaltyPct);
             treasureLootTable = yaml.string("lootTesoro", treasureLootTable);
             secretLootTable = yaml.string("lootSecreta", secretLootTable);
             superSecretLootTable = yaml.string("lootSupersecreta", superSecretLootTable);
-            curseLootTable = yaml.string("lootMaldicion", curseLootTable);
             devilLootTable = yaml.string("lootTrato", devilLootTable);
             bossLootTable = yaml.string("lootJefe", bossLootTable);
             crackBlock = yaml.string("bloqueGrieta", crackBlock);
+            spikeBlock = yaml.string("bloquePinchos", spikeBlock);
+            curseDoorTollHearts = yaml.integer("peajePuertaCorazones", curseDoorTollHearts);
+            marketSlots = yaml.integer("ofertasMaldicion", marketSlots);
+            marketReward = yaml.integer("pagoAfliccion", marketReward);
+            purgePrice = yaml.integer("precioPurga", purgePrice);
             maxParty = Math.max(1, yaml.integer("maxGrupo", maxParty));
             entranceRadius = Math.max(1, yaml.integer("radioEntrada", entranceRadius));
             backendPostEnabled = yaml.bool("enviarResultados", backendPostEnabled);
@@ -229,7 +238,6 @@ public final class DungeonsConfig {
                     (int) Math.round(coinPickupRadius)));
             coinDeathPenaltyPct = coins.integer("muertePct", coinDeathPenaltyPct);
             coinToPesos = coins.integer("cambioPesos", coinToPesos);
-            curseCoinToll = coins.integer("peajeMaldicion", curseCoinToll);
 
             YamlConfig shop = yaml.section("tienda");
             YamlConfig shopWeightBlock = shop.section("pesos");
@@ -280,21 +288,34 @@ public final class DungeonsConfig {
         slotY = 64;
         slotSpacing = 4096;
         maxSlots = 64;
+        // Long enough to survive a router blip or a client restart, short enough that a party that
+        // is not coming back stops holding a slot and a floor.
+        desertionGraceSeconds = 180;
+        // Generous on purpose. A build that actually fails is reported the moment it does, so this
+        // only ever catches a completion that never arrives at all — and the job queue is one
+        // shared line, so a floor can legitimately sit behind a dozen other builds and discards.
+        // Too tight a timeout here would fail healthy runs on a busy server.
+        buildTimeoutSeconds = 300;
         sealBlock = "minecraft:iron_bars";
         // Both zero by default: a run's income is coins now, converted in one lump when it is
         // completed. The ₽ knobs stay wired for servers that want to pay per room anyway.
         clearReward = 0;
-        curseToll = 0;
         deathPenaltyPct = 0;
         treasureLootTable = "teras:dungeon/treasure";
         // A secret costs a wall charge the party bought, so it pays the treasure table: breaking in
         // has to be worth at least what getting in cost. The super secret is rarer and pays better.
         secretLootTable = "teras:dungeon/treasure";
         superSecretLootTable = "teras:dungeon/boss";
-        curseLootTable = "teras:dungeon/curse";
         devilLootTable = "teras:dungeon/devil";
         bossLootTable = "teras:dungeon/boss";
         crackBlock = "teras:muro_agrietado";
+        spikeBlock = "minecraft:pointed_dripstone";
+        // One heart to cross, floored so it can never kill. Real under the health lockdown,
+        // where the only healing left is a potion somebody paid for.
+        curseDoorTollHearts = 1;
+        marketSlots = 3;
+        marketReward = 40;
+        purgePrice = 30;
         maxParty = 4;
         entranceRadius = 16;
         backendPostEnabled = true;
@@ -309,7 +330,6 @@ public final class DungeonsConfig {
         coinPickupRadius = 2;
         coinDeathPenaltyPct = 20;
         coinToPesos = 10;
-        curseCoinToll = 15;
 
         shopWeights.clear();
         shopWeights.putAll(DEFAULT_SHOP_WEIGHTS);
@@ -361,19 +381,33 @@ public final class DungeonsConfig {
                 slotY: 64
                 separacionSlots: 4096
                 maxSlots: 64
+                # Teardown safety net. A run whose party has been entirely offline for this long is
+                # ended and its floor swept — otherwise a party that disconnects holds a slot, a
+                # floor, its shop and its pedestals until the next restart. A run that has been
+                # waiting on a build job for longer than the timeout is failed and cleared: it
+                # would never become ACTIVE, and only ACTIVE runs can be ended.
+                graciaAbandonoSegundos: 180
+                timeoutConstruccionSegundos: 300
                 # Run loop: what seals doors in combat, and the wall a secret room hides behind.
                 bloqueSello: minecraft:iron_bars
                 bloqueGrieta: teras:muro_agrietado
+                # The curse room is a market, not a tax: its doorway is framed in these spikes
+                # so the toll is visible from a room away, and crossing costs each player this
+                # many hearts once per floor (floored so it can never kill). Inside, offers
+                # trade an affliction for coins, and the purge pedestal buys one back.
+                bloquePinchos: minecraft:pointed_dripstone
+                peajePuertaCorazones: 1
+                ofertasMaldicion: 3
+                pagoAfliccion: 40
+                precioPurga: 30
                 # ₽ knobs, through the Teras bank. All zero by default: a run earns coins and they
                 # are converted in one lump when it is completed (see monedas.cambioPesos). Raise
                 # these only if you also want per-room bank payouts on top.
                 recompensaSala: 0
-                peajeMaldicion: 0
                 penalizacionMuertePct: 0
                 lootTesoro: teras:dungeon/treasure
                 lootSecreta: teras:dungeon/treasure
                 lootSupersecreta: teras:dungeon/boss
-                lootMaldicion: teras:dungeon/curse
                 lootTrato: teras:dungeon/devil
                 lootJefe: teras:dungeon/boss
                 # Party play: group size cap, and how close to a marked entrance NPC a player must
@@ -402,7 +436,6 @@ public final class DungeonsConfig {
                   # Slice of the shared purse lost on any member's death.
                   muertePct: 20
                   cambioPesos: 10
-                  peajeMaldicion: 15
                 # --- Shop -------------------------------------------------------------------
                 # One pedestal per shopslot marker. The first slot is always a wall-breaker charge
                 # so secret rooms are never locked out; the rest roll from these weights, without
@@ -526,6 +559,14 @@ public final class DungeonsConfig {
         return maxSlots;
     }
 
+    public static int desertionGraceSeconds() {
+        return desertionGraceSeconds;
+    }
+
+    public static int buildTimeoutSeconds() {
+        return buildTimeoutSeconds;
+    }
+
     public static String sealBlock() {
         return sealBlock;
     }
@@ -534,9 +575,6 @@ public final class DungeonsConfig {
         return clearReward;
     }
 
-    public static long curseToll() {
-        return curseToll;
-    }
 
     public static int deathPenaltyPct() {
         return deathPenaltyPct;
@@ -554,9 +592,6 @@ public final class DungeonsConfig {
         return superSecretLootTable;
     }
 
-    public static String curseLootTable() {
-        return curseLootTable;
-    }
 
     public static String bossLootTable() {
         return bossLootTable;
@@ -568,6 +603,26 @@ public final class DungeonsConfig {
 
     public static String crackBlock() {
         return crackBlock;
+    }
+
+    public static String spikeBlock() {
+        return spikeBlock;
+    }
+
+    public static int curseDoorTollHearts() {
+        return curseDoorTollHearts;
+    }
+
+    public static int marketSlots() {
+        return marketSlots;
+    }
+
+    public static int marketReward() {
+        return marketReward;
+    }
+
+    public static int purgePrice() {
+        return purgePrice;
     }
 
     public static boolean backendPostEnabled() {
@@ -614,9 +669,6 @@ public final class DungeonsConfig {
         return coinToPesos;
     }
 
-    public static int curseCoinToll() {
-        return curseCoinToll;
-    }
 
     /** Roll weight of a shop stock kind; 0 keeps it out of the pool entirely. */
     public static int shopWeight(String kind) {

@@ -295,6 +295,12 @@ public final class DungeonCommand {
                         .then(Commands.literal("descartar")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(1))
                                         .executes(DungeonCommand::discard)))
+                        .then(Commands.literal("purgar")
+                                .then(Commands.literal("todos")
+                                        .executes(ctx -> purge(ctx, -1)))
+                                .then(Commands.argument("slot", IntegerArgumentType.integer(0))
+                                        .executes(ctx -> purge(ctx,
+                                                IntegerArgumentType.getInteger(ctx, "slot")))))
                         .then(Commands.literal("gear")
                                 .executes(DungeonCommand::gearInfo)
                                 .then(Commands.literal("dar")
@@ -653,6 +659,66 @@ public final class DungeonCommand {
             return 0;
         }
         ctx.getSource().sendSuccess(() -> Component.literal("Retirando mazmorra " + id + "…"), false);
+        return 1;
+    }
+
+    /**
+     * Air-fills run pads outright, whether or not anything is known to be on them.
+     *
+     * <p>The bottom of the teardown stack. Above it a run ends and sweeps its own floor, a deserted
+     * or failed one is swept by the watchdog, a clean shutdown finishes its discards, and a crash
+     * leaves a journal for the boot sweep. This is for what escapes all of that: a journal that was
+     * lost or hand-deleted, geometry from a version before the journal existed, an experiment left
+     * on a pad. There is no record to read, so it clears the largest floor the generator can make
+     * and takes whatever is there with it.</p>
+     *
+     * <p>Slots with a live run are refused rather than cleared — pulling the floor out from under a
+     * party is not a repair. Queued a cell per tick, so purging everything is slow and harmless
+     * rather than a shutdown-length freeze.</p>
+     *
+     * @param slot the slot to clear, or -1 for every one up to {@code maxSlots}
+     */
+    private static int purge(CommandContext<CommandSourceStack> ctx, int slot) {
+        ServerLevel level = ctx.getSource().getServer().getLevel(
+                net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.DIMENSION,
+                        net.minecraft.resources.ResourceLocation.parse(DungeonsConfig.dimension())));
+        if (level == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "La dimensión " + DungeonsConfig.dimension() + " no existe."));
+            return 0;
+        }
+        // Refused outright while anything is being played, not just for the slots in use. Jobs drain
+        // one cell per tick from a single shared queue, and a full purge is tens of thousands of
+        // cells: a floor queued behind it would take longer to build than the watchdog waits, and
+        // healthy runs would start failing. Maintenance work waits for a quiet server.
+        java.util.Set<Integer> live = new java.util.HashSet<>();
+        for (var run : es.boffmedia.teras.dungeon.instance.DungeonRunManager.runs()) {
+            live.add(run.slot());
+        }
+        if (!live.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("Hay " + live.size()
+                    + " partida(s) en curso; purgar las bloquearía. Ciérralas primero con "
+                    + "/teras dungeon terminar."));
+            return 0;
+        }
+        int first = slot < 0 ? 0 : slot;
+        int last = slot < 0 ? DungeonsConfig.maxSlots() - 1 : slot;
+        int grid = es.boffmedia.teras.dungeon.gen.GenConfig.defaults().gridSize();
+        int slots = 0;
+        int cells = 0;
+        for (int s = first; s <= last; s++) {
+            for (int pad = 0; pad < 2; pad++) {
+                cells += DungeonMaterializer.enqueuePadClear(level,
+                        es.boffmedia.teras.world.VoidZones.dungeonRunPad(s, pad), grid, () -> { });
+            }
+            slots++;
+        }
+        int purgedSlots = slots;
+        int purgedCells = cells;
+        ctx.getSource().sendSuccess(() -> Component.literal("§ePurgando " + purgedSlots
+                + " slot(s), " + purgedCells + " celdas — una por tick, ~"
+                + (purgedCells / 20) + "s."), true);
         return 1;
     }
 

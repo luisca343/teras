@@ -295,6 +295,15 @@ public final class DungeonMapOverlay {
                     screenWidth - MARGIN - mc.font.width(charges), y, 0xFFFFFF, true);
             y += 11;
         }
+        // What the party sold itself for coins. Listed rather than counted: "3 afflictions" tells
+        // you nothing you can play around, and these are chosen drawbacks — you should be able to
+        // see which ones you are living with at any moment, or the trade was not an informed one.
+        for (String afliccion : wallet.afflictions()) {
+            Component line = Component.literal("§d☠ " + afliccion);
+            graphics.drawString(mc.font, line,
+                    screenWidth - MARGIN - mc.font.width(line), y, 0xFFFFFF, true);
+            y += 10;
+        }
         return y;
     }
 

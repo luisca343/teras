@@ -39,6 +39,31 @@ public final class DoorCarver {
     }
 
     /**
+     * Writes only the top row of a doorway — the lintel course.
+     *
+     * <p>For the curse door's spikes: the opening has to stay walkable, so they hang from the
+     * header rather than filling the tunnel. With the default three-block height that leaves two
+     * to duck through, which is what makes it read as a mouth instead of a wall.</p>
+     */
+    public static void fillDoorwayRow(ServerLevel level, BlockPos origin, DoorEdge door,
+                                      BlockState state, int roomSize, int doorWidth, int doorHeight) {
+        GridPos cell = door.cell();
+        int inset = (roomSize - doorWidth) / 2;
+        int baseX = origin.getX() + cell.x() * roomSize;
+        int baseZ = origin.getZ() + cell.y() * roomSize;
+        for (int w = 0; w < doorWidth; w++) {
+            for (int depth = 0; depth < 2; depth++) {
+                BlockPos pos = door.dir() == GridDir.EAST
+                        ? new BlockPos(baseX + roomSize - 1 + depth,
+                                origin.getY() + doorHeight, baseZ + inset + w)
+                        : new BlockPos(baseX + inset + w,
+                                origin.getY() + doorHeight, baseZ + roomSize - 1 + depth);
+                level.setBlock(pos, state, 2);
+            }
+        }
+    }
+
+    /**
      * Whether {@code pos} lies in the exact block volume {@link #fillDoorway} writes for
      * {@code door} — the test the secret-wall interaction uses, so what opens is precisely what
      * was filled, never a lookalike block elsewhere in the wall.
@@ -67,10 +92,42 @@ public final class DoorCarver {
      */
     public static void setRoomDoors(ServerLevel level, BuiltDungeon built, Room room, BlockState state) {
         for (DoorEdge door : built.layout().doorsOf(room)) {
-            if (door.kind() == DoorKind.OPEN || door.kind() == DoorKind.BOSS) {
-                fillDoorway(level, built.origin(), door, state,
-                        built.roomSize(), DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+            if (!door.kind().walkable()) {
+                continue;
+            }
+            fillDoorway(level, built.origin(), door, state,
+                    built.roomSize(), DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+            if (door.kind() == DoorKind.CURSE && state.isAir()) {
+                // Reopening a curse door writes air over the whole tunnel, fangs included. Without
+                // this the spikes survive exactly until the first fight next door — and a warning
+                // that quietly disappears is worse than never having been there.
+                fillDoorwayRow(level, built.origin(), door, spikeState(), built.roomSize(),
+                        DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
             }
         }
+    }
+
+    /**
+     * The fangs over a curse doorway.
+     *
+     * <p>Dripstone has its tip pointed down explicitly: its default state hangs <i>upward</i>, so
+     * the lintel would sprout stalagmites growing into the ceiling. Any other configured block is
+     * used as it comes.</p>
+     */
+    public static BlockState spikeState() {
+        var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                .get(net.minecraft.resources.ResourceLocation.parse(DungeonsConfig.spikeBlock()));
+        if (block == null || block == net.minecraft.world.level.block.Blocks.AIR) {
+            block = net.minecraft.world.level.block.Blocks.POINTED_DRIPSTONE;
+        }
+        BlockState state = block.defaultBlockState();
+        if (block instanceof net.minecraft.world.level.block.PointedDripstoneBlock) {
+            state = state
+                    .setValue(net.minecraft.world.level.block.PointedDripstoneBlock.TIP_DIRECTION,
+                            net.minecraft.core.Direction.DOWN)
+                    .setValue(net.minecraft.world.level.block.PointedDripstoneBlock.THICKNESS,
+                            net.minecraft.world.level.block.state.properties.DripstoneThickness.TIP);
+        }
+        return state;
     }
 }

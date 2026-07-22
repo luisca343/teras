@@ -24,9 +24,10 @@ super_secret: loot
 
 shop:         shopslot
 
-# The curse room pays out where its loot marker stands; without one the reward lands in the middle
-# of the room, which works but reads like a bug.
-curse:        loot
+# The curse room is a market, not a payout: its offers stand on `oferta` and the stand that buys an
+# affliction back on `purga`. It owes no `loot` — everything inside it is traded for, and the price
+# of entry is a heart taken at the spiked doorway.
+curse:        oferta, purga
 
 sacrifice:    sacrifice
 arcade:       arcade

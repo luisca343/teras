@@ -50,7 +50,23 @@ public final class EnemySpawner {
     /** Spawns the room's encounter; the returned entities are the room's kill ledger. */
     public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex,
                                      int partySize) {
-        return spawn(level, built, room, roomIndex, 1.0f, partySize);
+        return spawn(level, built, room, roomIndex, 1.0f, partySize, WaveModifier.NONE);
+    }
+
+    /**
+     * What an affliction does to a wave, as one value the spawner can be handed.
+     *
+     * <p>A record rather than two loose doubles because the two halves only make sense together:
+     * Enjambre is "more of them, each frailer", and shipping the count without the discount would
+     * be a straight difficulty increase — which the affliction catalog's own rule forbids.</p>
+     */
+    public record WaveModifier(double count, double stats) {
+        public static final WaveModifier NONE = new WaveModifier(1.0, 1.0);
+    }
+
+    public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex,
+                                     float sizeFactor, int partySize) {
+        return spawn(level, built, room, roomIndex, sizeFactor, partySize, WaveModifier.NONE);
     }
 
     /**
@@ -61,7 +77,7 @@ public final class EnemySpawner {
      *                   boss whatever the party.
      */
     public static List<Entity> spawn(ServerLevel level, BuiltDungeon built, Room room, int roomIndex,
-                                     float sizeFactor, int partySize) {
+                                     float sizeFactor, int partySize, WaveModifier modifier) {
         // A challenge's later waves spawn into a room that still holds the previous one's corpses
         // and any stragglers; purging is what keeps the ledger and the floor in agreement.
         purgeLeftovers(level, built, room);
@@ -71,7 +87,7 @@ public final class EnemySpawner {
                     CoinDrops.TIER_BOSS_TAG, partySize);
             case MINI_BOSS -> spawnFromPool(level, built, room, miniBossPool(built), "boss", rng,
                     CoinDrops.TIER_MINIBOSS_TAG, partySize);
-            default -> spawnWave(level, built, room, rng, sizeFactor, partySize);
+            default -> spawnWave(level, built, room, rng, sizeFactor, partySize, modifier);
         };
         if (spawned.isEmpty()) {
             Teras.LOGGER.warn("Dungeons: {} spawned no enemies — the room clears itself on entry. "
@@ -186,7 +202,8 @@ public final class EnemySpawner {
      * with archers is never broken by a room without ledges.</p>
      */
     private static List<Entity> spawnWave(ServerLevel level, BuiltDungeon built, Room room,
-                                          SeededRng rng, float sizeFactor, int partySize) {
+                                          SeededRng rng, float sizeFactor, int partySize,
+                                          WaveModifier modifier) {
         double dificultad = built.dificultad();
         es.boffmedia.teras.dungeon.piso.EnemyTable table = tableOf(built);
         List<es.boffmedia.teras.dungeon.piso.SpawnRef> roster = table.rosterAt(dificultad);
@@ -203,7 +220,9 @@ public final class EnemySpawner {
         // The party is the second axis, kept off damage entirely: joining a friend must never make
         // the floor hit harder. Count carries it, health moves a little, and PartyScaling caps the
         // product so a wave still fits the markers the room was authored with.
-        count = Math.max(1, Math.round(count * sizeFactor * (float) es.boffmedia.teras.dungeon.piso.PartyScaling.count(partySize)));
+        count = Math.max(1, Math.round(count * sizeFactor
+                * (float) es.boffmedia.teras.dungeon.piso.PartyScaling.count(partySize)
+                * (float) modifier.count()));
 
         List<Entity> spawned = new ArrayList<>();
         int floorIndex = 0;
@@ -221,8 +240,10 @@ public final class EnemySpawner {
             }
             EnemyScaling.apply(enemy,
                     ref.vida() * es.boffmedia.teras.dungeon.piso.Dificultad.health(dificultad)
-                            * es.boffmedia.teras.dungeon.piso.PartyScaling.health(partySize),
-                    ref.dano() * es.boffmedia.teras.dungeon.piso.Dificultad.damage(dificultad),
+                            * es.boffmedia.teras.dungeon.piso.PartyScaling.health(partySize)
+                            * modifier.stats(),
+                    ref.dano() * es.boffmedia.teras.dungeon.piso.Dificultad.damage(dificultad)
+                            * modifier.stats(),
                     ref.escala());
             spawned.add(enemy);
         }

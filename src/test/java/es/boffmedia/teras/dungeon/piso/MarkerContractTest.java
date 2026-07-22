@@ -80,11 +80,13 @@ class MarkerContractTest {
     /** The four that pay out, held to the list so removing one is a deliberate act. */
     @Test
     void theLootRoomsAreTheOnesExpected() {
-        assertEquals(java.util.Set.of(RoomType.TREASURE, RoomType.SECRET,
-                        RoomType.SUPER_SECRET, RoomType.CURSE),
+        assertEquals(java.util.Set.of(RoomType.TREASURE, RoomType.SECRET, RoomType.SUPER_SECRET),
                 MarkerContract.lootRooms());
         assertNull(MarkerContract.lootSource(RoomType.NORMAL), "a normal room pays out nothing");
         assertNull(MarkerContract.lootSource(RoomType.SHOP), "the shop sells, it does not give");
+        assertNull(MarkerContract.lootSource(RoomType.CURSE),
+                "the curse room trades, it does not pay: its rewards come off the market's own "
+                        + "pedestals, and the price of entry is taken at the spiked doorway");
     }
 
     /** A qualified marker is still its base kind: {@code decoracion:techo} is {@code decoracion}. */

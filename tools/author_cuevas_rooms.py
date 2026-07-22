@@ -1261,12 +1261,19 @@ def build_curse():
         for y in range(1, 5):
             r.set(px, y, pz, r.block('minecraft:basalt', axis='y'))
         r.set(px, 5, pz, r.block('minecraft:polished_basalt', axis='y'))
+    # The shrine is the purge stand: coins back for an affliction shed. It keeps the centre of the
+    # room because undoing a bargain is the thing you walk in staring at.
     r.set(10, 1, 14, r.block('minecraft:chiseled_polished_blackstone'))
-    r.mark('loot', 10, 2, 14)
+    r.mark('purga', 10, 2, 14)
     r.set(9, 1, 14, r.block('minecraft:crying_obsidian'))
     r.set(11, 1, 14, r.block('minecraft:crying_obsidian'))
     r.set(9, 2, 14, r.block('minecraft:redstone_torch'))
     r.set(11, 2, 14, r.block('minecraft:redstone_torch'))
+    # Three offers in a forecourt facing the shrine, far enough apart that a click can only ever
+    # match one of them (CurseMarket matches within a block).
+    for ox in (6, 10, 14):
+        r.set(ox, 1, 11, r.block('minecraft:polished_blackstone'))
+        r.mark('oferta', ox, 2, 11)
     r.stalactite(5, 5, 3)
     r.stalactite(15, 6, 2)
     r.enforce_aprons()
