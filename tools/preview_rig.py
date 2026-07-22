@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""Renders a GeckoLib rig to a PNG so a model can be looked at without starting Minecraft.
+
+    python3 tools/preview_rig.py                          # every rig, rest pose
+    python3 tools/preview_rig.py dungeon_spider_tejedora  # one rig
+    python3 tools/preview_rig.py dungeon_reina walk 0.5   # posed by a clip, at a time in seconds
+
+Writes `build/rig-preview/<rig>.png`: front, side, top and a three-quarter view side by side, plus
+whatever the audit found printed to stdout.
+
+## Why this exists
+
+Two bugs shipped that were only visible in game, and both were the same kind: geometry that is
+correct in the JSON and wrong on screen. A rig is a few hundred numbers describing where boxes go,
+and nothing between authoring it and standing in front of it in a dungeon ever draws it. The unit
+tests can check that a bone exists and that a clip is named — they cannot see that a leg is pointing
+at the sky.
+
+## The transform, which is the part worth getting right
+
+Taken from GeckoLib 4.9.2's own bytecode (`BakedModelFactory`), not from a wiki:
+
+  * a rotation's **X and Y are negated** and its **Z is not**, for bones and cubes alike;
+  * rotations compose Z, then Y, then X — the matrix is `Rz · Ry · Rx`, so X is applied to a vertex
+    first;
+  * a cube rotates about its own `pivot`, then inherits every bone above it, each rotating about
+    the bone's own pivot.
+
+That sign rule is exactly what this tool exists to keep honest. Nothing else in the repo depends on
+it, and getting it wrong silently produces a rig that reads fine in a diff.
+"""
+import json
+import math
+import os
+import struct
+import sys
+import zlib
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+ASSETS = os.path.join(ROOT, 'src/main/resources/assets/teras')
+OUT = os.path.join(ROOT, 'build/rig-preview')
+
+
+# ---------------------------------------------------------------------------- maths
+
+def mat_mul(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def rot_x(t):
+    c, s = math.cos(t), math.sin(t)
+    return [[1, 0, 0], [0, c, -s], [0, s, c]]
+
+
+def rot_y(t):
+    c, s = math.cos(t), math.sin(t)
+    return [[c, 0, s], [0, 1, 0], [-s, 0, c]]
+
+
+def rot_z(t):
+    c, s = math.cos(t), math.sin(t)
+    return [[c, -s, 0], [s, c, 0], [0, 0, 1]]
+
+
+def rotation_matrix(deg):
+    """GeckoLib's convention, verbatim: X and Y negated, Z as authored, composed Rz·Ry·Rx.
+
+    Read out of `BakedModelFactory` in geckolib-neoforge-1.21.1-4.9.2, because the difference
+    between this and the obvious guess is a rig that looks right in every JSON diff and stands in a
+    dungeon with its legs in the air.
+    """
+    rx, ry, rz = (math.radians(d) for d in deg)
+    return mat_mul(rot_z(rz), mat_mul(rot_y(-ry), rot_x(-rx)))
+
+
+def mirror_point(p):
+    """Model space is X-mirrored on load: `pivot.multiply(-1, 1, 1)`."""
+    return [-p[0], p[1], p[2]]
+
+
+def mirror_cube(origin, size):
+    """A cube's min corner after the mirror: `-(origin.x + size.x)`, y and z untouched."""
+    return [-(origin[0] + size[0]), origin[1], origin[2]]
+
+
+def apply(m, v):
+    return [sum(m[i][j] * v[j] for j in range(3)) for i in range(3)]
+
+
+# An affine transform as (matrix, translation): a point goes to `matrix · p + translation`. Carrying
+# the pair rather than a pivot is what makes composition associative — a pivot-and-rotation pair
+# only composes correctly one level deep, which is exactly the bug that made the first version of
+# this tool disagree with the game about a three-deep rig.
+IDENTITY = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, 0, 0])
+
+
+def about(matrix, pivot, offset=(0, 0, 0)):
+    """The affine that rotates about `pivot` by `matrix` and then translates by `offset`."""
+    moved = apply(matrix, pivot)
+    return matrix, [pivot[i] + offset[i] - moved[i] for i in range(3)]
+
+
+def compose(outer, inner):
+    """`outer` applied after `inner`."""
+    m_o, t_o = outer
+    m_i, t_i = inner
+    return mat_mul(m_o, m_i), [apply(m_o, t_i)[i] + t_o[i] for i in range(3)]
+
+
+def put(affine, point):
+    m, t = affine
+    return [apply(m, point)[i] + t[i] for i in range(3)]
+
+
+# ---------------------------------------------------------------------------- animation
+
+def track_value(track, time, default):
+    """Linearly interpolated value of one keyed channel, the way GeckoLib reads a clip."""
+    if track is None:
+        return list(default)
+    if not isinstance(track, dict):
+        return list(track)
+    keys = sorted(track.keys(), key=float)
+    if not keys:
+        return list(default)
+
+    def value_at(k):
+        v = track[k]
+        if isinstance(v, dict):
+            v = v.get('post') or v.get('vector') or v.get('pre') or default
+        return list(v)
+
+    if time <= float(keys[0]):
+        return value_at(keys[0])
+    if time >= float(keys[-1]):
+        return value_at(keys[-1])
+    for i in range(len(keys) - 1):
+        a, b = float(keys[i]), float(keys[i + 1])
+        if a <= time <= b:
+            va, vb = value_at(keys[i]), value_at(keys[i + 1])
+            f = 0.0 if b == a else (time - a) / (b - a)
+            return [va[j] + (vb[j] - va[j]) * f for j in range(3)]
+    return value_at(keys[-1])
+
+
+def pose_of(clip, bone, time):
+    """(rotation, position, scale) a clip asks of one bone at `time`."""
+    channels = (clip or {}).get('bones', {}).get(bone, {})
+    return (track_value(channels.get('rotation'), time, [0, 0, 0]),
+            track_value(channels.get('position'), time, [0, 0, 0]),
+            track_value(channels.get('scale'), time, [1, 1, 1]))
+
+
+# ---------------------------------------------------------------------------- rig
+
+def load(name):
+    with open(os.path.join(ASSETS, 'geo', name + '.geo.json')) as f:
+        geo = json.load(f)['minecraft:geometry'][0]
+    bones = {b['name']: b for b in geo['bones']}
+    return geo, bones
+
+
+def cube_corners(cube):
+    """The eight corners, already mirrored into the space GeckoLib rotates them in."""
+    ox, oy, oz = cube['origin']
+    sx, sy, sz = cube['size']
+    inflate = cube.get('inflate', 0) or 0
+    ox, oy, oz = ox - inflate, oy - inflate, oz - inflate
+    sx, sy, sz = sx + 2 * inflate, sy + 2 * inflate, sz + 2 * inflate
+    ox, oy, oz = mirror_cube([ox, oy, oz], [sx, sy, sz])
+    return [[ox + dx * sx, oy + dy * sy, oz + dz * sz]
+            for dx in (0, 1) for dy in (0, 1) for dz in (0, 1)]
+
+
+FACES = [
+    ((0, 1, 3, 2), (-1, 0, 0)), ((4, 6, 7, 5), (1, 0, 0)),
+    ((0, 4, 5, 1), (0, -1, 0)), ((2, 3, 7, 6), (0, 1, 0)),
+    ((0, 2, 6, 4), (0, 0, -1)), ((1, 5, 7, 3), (0, 0, 1)),
+]
+
+
+def build(name, clip=None, time=0.0):
+    """Every cube's eight world-space corners, with the bone it came from."""
+    geo, bones = load(name)
+    built = []
+
+    def walk(bone_name, parent):
+        bone = bones[bone_name]
+        pivot = mirror_point(bone.get('pivot', [0, 0, 0]))
+        rest = bone.get('rotation', [0, 0, 0])
+        anim_rot, anim_pos, _ = pose_of(clip, bone_name, time)
+        # A clip's rotation is added to the rest pose, not substituted for it — which is why the
+        # splay can live on the bone and the gait still work. Its position is mirrored the same way
+        # the geometry is, or an animated slide would run the wrong way along X.
+        total = [rest[i] + anim_rot[i] for i in range(3)]
+        world = compose(parent, about(rotation_matrix(total), pivot,
+                                      [-anim_pos[0], anim_pos[1], anim_pos[2]]))
+
+        for cube in bone.get('cubes', []):
+            corners = cube_corners(cube)
+            if 'rotation' in cube:
+                local = about(rotation_matrix(cube['rotation']),
+                              mirror_point(cube.get('pivot', [0, 0, 0])))
+                corners = [put(local, c) for c in corners]
+            built.append({'bone': bone_name, 'corners': [put(world, c) for c in corners]})
+
+        for child in geo['bones']:
+            if child.get('parent') == bone_name:
+                walk(child['name'], world)
+
+    for bone in geo['bones']:
+        if not bone.get('parent'):
+            walk(bone['name'], IDENTITY)
+    return geo, built
+
+
+# ---------------------------------------------------------------------------- raster
+
+VIEWS = [('front', (0, 2)), ('side', (2, 1)), ('top', (0, 2)), ('3/4', None)]
+
+
+def project(corner, view):
+    x, y, z = corner
+    if view == 'front':
+        return x, -y, z
+    if view == 'side':
+        return -z, -y, x
+    if view == 'top':
+        return x, z, -y
+    a = math.radians(35)
+    b = math.radians(24)
+    px = x * math.cos(a) + z * math.sin(a)
+    pz = -x * math.sin(a) + z * math.cos(a)
+    return px, -(y * math.cos(b) - pz * math.sin(b)), pz
+
+
+def draw(built, view, size, bounds, highlight):
+    """Painter's algorithm over cube faces, flat-shaded by normal. Good enough to see a rig."""
+    pixels = [[(24, 24, 28, 255)] * size for _ in range(size)]
+    depth = [[1e9] * size for _ in range(size)]
+    lo, hi = bounds
+    span = max(hi[i] - lo[i] for i in range(3)) or 1
+    scale = (size - 12) / span
+
+    def to_screen(c):
+        px, py, pd = project(c, view)
+        cx = (lo[0] + hi[0]) / 2
+        cy = (lo[1] + hi[1]) / 2
+        cz = (lo[2] + hi[2]) / 2
+        ox, oy, _ = project([cx, cy, cz], view)
+        return (size / 2 + (px - ox) * scale, size / 2 + (py - oy) * scale, pd)
+
+    polys = []
+    for cube in built:
+        pts = [to_screen(c) for c in cube['corners']]
+        for idx, normal in FACES:
+            quad = [pts[i] for i in idx]
+            world = [cube['corners'][i] for i in idx]
+            centre = sum(p[2] for p in quad) / 4
+            shade = 0.55 + 0.45 * abs(normal[1]) + 0.2 * abs(normal[0])
+            polys.append((centre, quad, shade, cube['bone'], world))
+    polys.sort(key=lambda p: -p[0])
+
+    for centre, quad, shade, bone, _ in polys:
+        base = (232, 96, 96) if bone in highlight else (150, 160, 190)
+        colour = tuple(min(255, int(c * min(shade, 1.35))) for c in base)
+        xs = [p[0] for p in quad]
+        ys = [p[1] for p in quad]
+        x0, x1 = max(0, int(min(xs))), min(size - 1, int(max(xs)) + 1)
+        y0, y1 = max(0, int(min(ys))), min(size - 1, int(max(ys)) + 1)
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                if inside(quad, x + 0.5, y + 0.5) and centre < depth[y][x]:
+                    depth[y][x] = centre
+                    pixels[y][x] = colour + (255,)
+    # A floor line, so "this leg is above the body" is answerable at a glance.
+    if view in ('front', 'side', '3/4'):
+        _, gy, _ = to_screen([0, 0, 0])
+        gy = int(gy)
+        if 0 <= gy < size:
+            for x in range(size):
+                if pixels[gy][x][:3] == (24, 24, 28):
+                    pixels[gy][x] = (70, 74, 86, 255)
+    return pixels
+
+
+def inside(quad, x, y):
+    sign = None
+    for i in range(4):
+        ax, ay = quad[i][0], quad[i][1]
+        bx, by = quad[(i + 1) % 4][0], quad[(i + 1) % 4][1]
+        cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+        if abs(cross) < 1e-9:
+            continue
+        s = cross > 0
+        if sign is None:
+            sign = s
+        elif s != sign:
+            return False
+    return True
+
+
+def write_png(path, rows):
+    h = len(rows)
+    w = len(rows[0])
+    raw = b''.join(b'\x00' + b''.join(bytes(p[:4]) for p in row) for row in rows)
+
+    def chunk(tag, data):
+        c = struct.pack('>I', len(data)) + tag + data
+        return c + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n'
+                + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(raw, 6))
+                + chunk(b'IEND', b''))
+
+
+# ---------------------------------------------------------------------------- audit
+
+def audit(name, geo, built, posed=False):
+    """What a person would notice immediately, stated as numbers.
+
+    Everything here was a real bug at least once: a leg segment pointing at the sky, a chain whose
+    third cube started somewhere its second one did not end, geometry outside the bounds the entity
+    declares. None of them fail a build today; all of them are obvious in one line here.
+    """
+    problems = []
+    body = [c for c in built if c['bone'] in ('body', 'root', 'thorax')]
+    body_top = max((max(p[1] for p in c['corners']) for c in body), default=0)
+    body_bottom = min((min(p[1] for p in c['corners']) for c in body), default=0)
+
+    # A leg holds the animal up, so its lowest point is below the body and its highest is not far
+    # above it. Stated as physics rather than as numbers off this particular rig, because the check
+    # has to survive an artist replacing the rig with a different-sized animal.
+    # Grouped per leg, not per segment: a coxa is meant to stay up by the body and only the last
+    # segment reaches the floor, so asking each bone individually to hold the animal up is a check
+    # that fails on a correct rig.
+    legs = {}
+    for cube in built:
+        if cube['bone'].startswith('leg') and cube['bone'] != 'legs':
+            chain = cube['bone'].split('_femur')[0].split('_tibia')[0]
+            legs.setdefault(chain, []).extend(cube['corners'])
+    torso_top = max((max(p[1] for p in c['corners']) for c in built
+                     if not c['bone'].startswith('leg')), default=0)
+    # Only in the rest pose. A leg in the swing half of a stride is meant to be off the floor, a
+    # climber's legs are on a wall, and a pounce is airborne by definition — asking a posed frame to
+    # stand on the ground flags the clips that are working.
+    for name, corners in ([] if posed else sorted(legs.items())):
+        low = min(p[1] for p in corners)
+        high = max(p[1] for p in corners)
+        if low >= body_bottom:
+            problems.append(f'{name}: never reaches below the body — lowest point y{low:.1f} '
+                            f'against a body bottom of y{body_bottom:.1f}. It is holding nothing up')
+        # A spider's knees ride above its back, so being above the body is not the fault. Being the
+        # tallest thing on the animal is: that only happens when a segment has swung past vertical.
+        if high > torso_top:
+            problems.append(f'{name}: rises to y{high:.1f}, higher than anything on the body '
+                            f'(y{torso_top:.1f}). A knee may ride above the back; a leg that is the '
+                            f'tallest part of the animal is pointing at the sky')
+        # Floating reads exactly as wrong as sinking, and neither shows up in a diff.
+        if abs(low) > 1.5:
+            problems.append(f'{name}: foot rests at y{low:.1f} rather than on the floor at y0 — '
+                            f'the model will look {"sunk into" if low < 0 else "hovering over"} '
+                            f'the ground')
+
+    # Chain continuity: consecutive cubes of one bone should touch.
+    by_bone = {}
+    for cube in built:
+        by_bone.setdefault(cube['bone'], []).append(cube)
+    for bone, cubes in by_bone.items():
+        if not bone.startswith('leg') or len(cubes) < 2:
+            continue
+        for i in range(len(cubes) - 1):
+            a = [sum(p[j] for p in cubes[i]['corners']) / 8 for j in range(3)]
+            b = [sum(p[j] for p in cubes[i + 1]['corners']) / 8 for j in range(3)]
+            gap = math.dist(a, b)
+            reach = max(math.dist(a, p) for p in cubes[i]['corners']) \
+                + max(math.dist(b, p) for p in cubes[i + 1]['corners'])
+            if gap > reach:
+                problems.append(f'{bone}: segment {i} and {i + 1} do not touch '
+                                f'(centres {gap:.1f} apart, reach {reach:.1f})')
+
+    lo = [min(p[i] for c in built for p in c['corners']) for i in range(3)]
+    hi = [max(p[i] for c in built for p in c['corners']) for i in range(3)]
+    desc = geo['description']
+    vb_w = desc.get('visible_bounds_width', 0) * 16
+    vb_h = desc.get('visible_bounds_height', 0) * 16
+    if max(hi[0] - lo[0], hi[2] - lo[2]) > vb_w + 1e-6:
+        problems.append(f'visible_bounds_width {desc.get("visible_bounds_width")} is too small for '
+                        f'{max(hi[0] - lo[0], hi[2] - lo[2]) / 16:.2f}; the model will be culled '
+                        f'when its centre leaves the screen')
+    if hi[1] - lo[1] > vb_h + 1e-6:
+        problems.append(f'visible_bounds_height {desc.get("visible_bounds_height")} is too small '
+                        f'for {(hi[1] - lo[1]) / 16:.2f}')
+    return problems, (lo, hi)
+
+
+# ---------------------------------------------------------------------------- main
+
+def render(name, clip_name=None, time=0.0):
+    clip = None
+    if clip_name:
+        anim_path = os.path.join(ASSETS, 'animations', animation_for(name))
+        with open(anim_path) as f:
+            clip = json.load(f)['animations'][clip_name]
+    geo, built = build(name, clip, time)
+    problems, bounds = audit(name, geo, built, posed=clip is not None)
+
+    size = 300
+    highlight = {c['bone'] for c in built
+                 if any(p in ' '.join(problems) for p in [c['bone']])} if problems else set()
+    panels = [draw(built, v, size, bounds, highlight) for v, _ in VIEWS]
+    rows = []
+    for y in range(size):
+        row = []
+        for i, panel in enumerate(panels):
+            row += panel[y]
+            if i < len(panels) - 1:
+                row.append((90, 90, 100, 255))
+        rows.append(row)
+
+    label = name + ('' if not clip_name else f'-{clip_name}-{time}')
+    path = os.path.join(OUT, label + '.png')
+    write_png(path, rows)
+    print(f'{label}: {len(built)} cubes  bounds x{bounds[0][0]:.1f}..{bounds[1][0]:.1f} '
+          f'y{bounds[0][1]:.1f}..{bounds[1][1]:.1f} z{bounds[0][2]:.1f}..{bounds[1][2]:.1f}')
+    print(f'  -> {os.path.relpath(path, ROOT)}   [front | side | top | 3/4]')
+    for p in problems:
+        print(f'  ! {p}')
+    return problems
+
+
+def animation_for(rig):
+    """Which clip file a rig plays from. The two arachnid builds share one; everything else is
+    named after itself. Spelled out rather than derived by trimming the rig name, because
+    `'dungeon_reina'.replace('geo', '')` quietly eats the middle of the word "dungeon"."""
+    if rig.startswith('dungeon_spider'):
+        return 'dungeon_spider.animation.json'
+    return rig + '.animation.json'
+
+
+def main():
+    args = sys.argv[1:]
+    if args:
+        render(args[0], args[1] if len(args) > 1 else None,
+               float(args[2]) if len(args) > 2 else 0.0)
+        return
+    bad = 0
+    for f in sorted(os.listdir(os.path.join(ASSETS, 'geo'))):
+        if f.endswith('.geo.json'):
+            bad += len(render(f[:-len('.geo.json')]))
+            print()
+    print('no problems found' if not bad else f'{bad} problems')
+
+
+if __name__ == '__main__':
+    main()

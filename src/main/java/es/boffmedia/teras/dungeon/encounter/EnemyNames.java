@@ -5,7 +5,7 @@ import net.minecraft.network.chat.Component;
 /**
  * What a dungeon enemy is called on screen.
  *
- * <p>Enemies are identified by id — {@code saqueador_cuevas}, {@code reina_cria} — and nothing has
+ * <p>Enemies are identified by id — {@code saqueador_cuevas}, {@code reina_madre} — and nothing has
  * ever turned one into a name, because until elites wore nametags and bosses had bars, nothing
  * needed to. There are no lang entries for them either, and there are more enemy ids than anyone
  * will keep translated.</p>

@@ -59,7 +59,7 @@ class BehaviourTest {
     /** All three spiders climb — the one field that makes Infestadas' ledges contested. */
     @Test
     void everySpiderClimbs() {
-        for (String id : List.of("cria", "tejedora", "reina_cria")) {
+        for (String id : List.of("cria", "tejedora", "reina_madre")) {
             assertEquals(Movement.CLIMBER, GeoEnemyVariant.of(id).movement(), id);
         }
     }
@@ -75,7 +75,7 @@ class BehaviourTest {
     /** The queen is the composition case: melee and a leap and webbing, not one archetype. */
     @Test
     void theQueenCombinesBehaviours() {
-        GeoEnemyVariant queen = GeoEnemyVariant.of("reina_cria");
+        GeoEnemyVariant queen = GeoEnemyVariant.of("reina_madre");
         assertTrue(queen.has(Behaviour.MELEE));
         assertTrue(queen.has(Behaviour.LEAP));
         // She webs from overhead (CEILING_WEB), not from range (WEB_SHOT) — which is why she closes

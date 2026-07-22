@@ -894,7 +894,7 @@ public final class PisoCatalog {
                 EnumSet.allOf(ShapeFamily.class), 4,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave",
                 new MechanicDef("infestacion", Map.of()),
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of("reina_cria"), List.of(),
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of("reina_madre"), List.of(),
                 Map.of(ShapeFamily.LARGE, 0.7, ShapeFamily.L, 0.6, ShapeFamily.BIG, 0.3),
                 infestadasEnemies(), infestadasDecor()));
 

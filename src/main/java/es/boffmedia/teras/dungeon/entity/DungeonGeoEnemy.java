@@ -230,6 +230,15 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         entityData.set(ATTACK_TICKS, ticks);
     }
 
+    /**
+     * Whether an action clip is running. Client-safe, because the field behind it is synched for the
+     * animation controller already — which is what lets the glow layer brighten on the same signal
+     * the clip plays on, rather than needing a telegraph of its own.
+     */
+    public boolean isActing() {
+        return entityData.get(ATTACK_TICKS) > 0;
+    }
+
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
@@ -310,9 +319,9 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
             entityData.set(ATTACK_TICKS, ticks - 1);
         }
         if (!level().isClientSide) {
-            // A climber pressed against a wall is climbing it; the flag drives the climb loop and,
-            // synched, reaches the client that draws it. Cheap enough to test every tick.
-            boolean climbing = variant().movement() == Movement.CLIMBER && horizontalCollision;
+            // A climber gripping a wall or hanging from a ceiling; the flag drives the climb loop
+            // and, synched, both reaches the client that draws it and is what onClimbable reads.
+            boolean climbing = updateClimbing();
             if (entityData.get(CLIMBING) != climbing) {
                 entityData.set(CLIMBING, climbing);
             }
@@ -320,6 +329,143 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
             // fights something with phases rather than a health bar that walks at you.
             AbilityEngine.tick(this);
         }
+    }
+
+    /**
+     * What actually makes a climber climb.
+     *
+     * <p>{@link Movement#CLIMBER} gave the entity a {@code WallClimberNavigation}, which is only
+     * half of it: that decides where the mob <i>wants</i> to go and will happily drive it straight
+     * into a wall, but the wall is climbed by {@link net.minecraft.world.entity.LivingEntity},
+     * which forces {@code deltaMovement.y} to 0.2 when the mob is in horizontal contact and this
+     * method says yes. Without the override a spider walked into the wall, played its climb loop
+     * because the flag above only ever described what it was attempting, and stayed on the floor.
+     * Vanilla's own spider is exactly this pair and nothing more.</p>
+     *
+     * <p>Falls through to {@code super} rather than replacing it, so a ground enemy keeps the
+     * ladders and vines every mob can use.</p>
+     */
+    @Override
+    public boolean onClimbable() {
+        if (variant().movement() == Movement.CLIMBER && entityData.get(CLIMBING)) {
+            return true;
+        }
+        return super.onClimbable();
+    }
+
+    /**
+     * Webbing does not hold the things that make it.
+     *
+     * <p>Infestadas scatters {@code minecraft:cobweb} across its floors and ceilings as decoration,
+     * and the tejedora and the queen add {@link es.boffmedia.teras.dungeon.mecanica.TelaranaBlock}
+     * on top of that — so without this the floor's own dressing halves the speed of everything that
+     * lives on it, and a weaver that walls a room off has walled itself in. Vanilla's spider makes
+     * the same exception for the same reason.</p>
+     *
+     * <p>Gated on {@code CLIMBER} because that is what the arachnids are and the silverfish and
+     * slimes are not: they are prey in the same rooms, and webbing should still catch them.</p>
+     */
+    @Override
+    public void makeStuckInBlock(net.minecraft.world.level.block.state.BlockState state,
+                                 net.minecraft.world.phys.Vec3 slowdown) {
+        if (variant().movement() == Movement.CLIMBER && isWebbing(state)) {
+            return;
+        }
+        super.makeStuckInBlock(state, slowdown);
+    }
+
+    private static boolean isWebbing(net.minecraft.world.level.block.state.BlockState state) {
+        return state.is(net.minecraft.world.level.block.Blocks.COBWEB)
+                || state.getBlock() instanceof es.boffmedia.teras.dungeon.mecanica.TelaranaBlock;
+    }
+
+    /** Ticks a climber has spent aloft — gripping or hanging — without touching the floor. */
+    private int climbTicks;
+    /** Ticks left before a climber that let go may grip again. */
+    private int climbRest;
+    /**
+     * Set while {@link es.boffmedia.teras.dungeon.entity.goal.SpiderCeilingWebGoal} drives the
+     * queen's ascent by hand. Both it and the cling below own gravity, and two owners means one of
+     * them switching it back on mid-move.
+     */
+    private boolean scriptedFlight;
+
+    public void setScriptedFlight(boolean scripted) {
+        this.scriptedFlight = scripted;
+    }
+
+    /**
+     * Whether a climber is gripping right now — a wall, or a ceiling it has reached.
+     *
+     * <p>Wall-climbing itself is vanilla's and needs no help beyond {@link #onClimbable()}. Two
+     * things do need help.</p>
+     *
+     * <p><b>Hanging</b>, because gravity still applies the moment a mob runs out of wall.
+     * Suspending it lets the move control walk the spider along the underside toward whatever it is
+     * chasing, instead of the ceiling being somewhere it touches on the way back down.</p>
+     *
+     * <p><b>Letting go</b>, which is the part that was missing and the reason a spider could pin
+     * itself to a wall forever. {@code LivingEntity} forces {@code deltaMovement.y} to 0.2 on every
+     * tick the mob is in horizontal contact and {@code onClimbable()} agrees — so while it is
+     * touching a wall it <em>cannot descend at all</em>. It rides up to the ceiling and stays there,
+     * because nothing in that loop ever stops being true. A climber therefore has stamina: after
+     * {@value #MAX_CLIMB_TICKS} ticks aloft it releases, and for {@value #CLIMB_REST_TICKS} ticks
+     * afterwards it is an ordinary falling mob. Six seconds is far more than the second or two a
+     * real ascent takes, so nothing legitimate is interrupted — it is a floor under the failure,
+     * not a budget.</p>
+     */
+    private boolean updateClimbing() {
+        // Early, and without touching gravity, for two different reasons. Nothing that is not a
+        // climber should have its gravity written here at all; and the queen's scripted ascent owns
+        // hers outright — this method runs after super.tick() has already ticked the goals, so
+        // clearing the flag here would switch gravity back on in the same tick the goal set it.
+        // Returning false also keeps onClimbable quiet, so LivingEntity's upward push cannot fight
+        // the velocity the goal is setting by hand.
+        if (variant().movement() != Movement.CLIMBER || scriptedFlight) {
+            return false;
+        }
+        if (onGround()) {
+            climbTicks = 0;
+        }
+        if (climbRest > 0) {
+            climbRest--;
+            releaseGravity();
+            return false;
+        }
+        boolean cling = !onGround() && getTarget() != null && underCeiling();
+        boolean gripping = horizontalCollision || cling;
+        if (gripping && !onGround() && ++climbTicks > MAX_CLIMB_TICKS) {
+            climbTicks = 0;
+            climbRest = CLIMB_REST_TICKS;
+            releaseGravity();
+            return false;
+        }
+        if (cling) {
+            // Vertical drift is the move control trying to path through the ceiling; horizontal is
+            // the part that carries it toward the target, so only y is cancelled.
+            setDeltaMovement(getDeltaMovement().x, 0, getDeltaMovement().z);
+            resetFallDistance();
+        }
+        if (isNoGravity() != cling) {
+            setNoGravity(cling);
+        }
+        return gripping;
+    }
+
+    private void releaseGravity() {
+        if (isNoGravity()) {
+            setNoGravity(false);
+        }
+    }
+
+    private static final int MAX_CLIMB_TICKS = 120;
+    private static final int CLIMB_REST_TICKS = 40;
+
+    private boolean underCeiling() {
+        net.minecraft.core.BlockPos above = net.minecraft.core.BlockPos.containing(
+                getX(), getBoundingBox().maxY + 0.25, getZ());
+        return level().getBlockState(above)
+                .isFaceSturdy(level(), above, net.minecraft.core.Direction.DOWN);
     }
 
     /** Larger variants get a proportionally larger hitbox, so what you see is what you hit. */

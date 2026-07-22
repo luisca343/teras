@@ -15,7 +15,7 @@ class NamesTest {
 
     @Test
     void anIdBecomesWords() {
-        assertEquals("Reina Cria", Names.fromId("reina_cria"));
+        assertEquals("Reina Madre", Names.fromId("reina_madre"));
         assertEquals("Saqueador Cuevas", Names.fromId("saqueador_cuevas"));
         assertEquals("Escudo Hyliano", Names.fromId("escudo_hyliano"));
         assertEquals("Lepisma", Names.fromId("lepisma"));

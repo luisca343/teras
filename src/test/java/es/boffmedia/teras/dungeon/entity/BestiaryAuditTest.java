@@ -85,8 +85,191 @@ class BestiaryAuditTest {
                     missing.add(variant.id() + " -> " + path);
                 }
             }
+            // The emissive sheet is the one asset with no fallback worth having: RenderType.eyes on
+            // a texture that is not there draws the missing-texture checker at full brightness, so
+            // an enemy meant to be readable in the dark becomes the brightest thing in the room.
+            if (variant.glows() && read("assets/teras/" + variant.glowTexture()) == null) {
+                missing.add(variant.id() + " -> " + variant.glowTexture() + " (glow)");
+            }
         }
         assertTrue(missing.isEmpty(), "missing assets:\n" + String.join("\n", missing));
+    }
+
+    /**
+     * A summoner has to have the clip its summon plays. {@code AbilityEngine.summon} fires
+     * {@code Action.CAST} on any animated enemy, and abilities are data — they are attached by id
+     * in {@code enemies.json}, not declared on the variant — so {@link BestiaryAudit} cannot derive
+     * this the way it derives the rest. The shipped table is what gets checked, which is the same
+     * bargain the rest of the bestiary makes.
+     */
+    @Test
+    void everySummonerHasACastClip() {
+        Set<String> missing = new TreeSet<>();
+        es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities().forEach((id, defs) -> {
+            if (!GeoEnemyVariant.exists(id)) {
+                return;   // a CustomNPCs clone; it has no rig to drive
+            }
+            boolean summons = defs.stream().anyMatch(
+                    d -> d.kind() == es.boffmedia.teras.dungeon.ability.AbilityKind.SUMMON);
+            if (!summons) {
+                return;
+            }
+            String json = read("assets/teras/" + GeoEnemyVariant.of(id).animation());
+            if (json == null || !json.contains("\"cast\"")) {
+                missing.add(id + " summons but its rig has no 'cast' clip");
+            }
+        });
+        assertTrue(missing.isEmpty(), String.join("\n", missing));
+    }
+
+    /**
+     * A clip may only animate bones its rig actually has, and no keyframe may sit past the end of
+     * the clip it belongs to.
+     *
+     * <p>Both are silent in play. GeckoLib drops an animation targeting a bone that is not in the
+     * model without a word, so the part simply does not move; and a key past the end of a looping
+     * clip is never reached, which shows up as a hitch at the seam once per loop and looks like
+     * stutter rather than like data. The generator gets both right by construction — one bone list
+     * writes the geometry and the clips — but the whole point of the rigs being plain files is that
+     * an artist can replace one, and replacing one is exactly when the two drift apart.</p>
+     */
+    @Test
+    void everyAnimatedBoneExistsOnTheRigItPlaysOn() {
+        Set<String> problems = new TreeSet<>();
+        for (GeoEnemyVariant variant : GeoEnemyVariant.all()) {
+            String geoJson = read("assets/teras/" + variant.model());
+            String animJson = read("assets/teras/" + variant.animation());
+            if (geoJson == null || animJson == null) {
+                continue;   // everyVariantsAssetsExist owns the missing-file case
+            }
+            Set<String> bones = new TreeSet<>();
+            com.google.gson.JsonParser.parseString(geoJson).getAsJsonObject()
+                    .getAsJsonArray("minecraft:geometry").get(0).getAsJsonObject()
+                    .getAsJsonArray("bones")
+                    .forEach(b -> bones.add(b.getAsJsonObject().get("name").getAsString()));
+
+            com.google.gson.JsonParser.parseString(animJson).getAsJsonObject()
+                    .getAsJsonObject("animations").asMap().forEach((clip, node) -> {
+                        com.google.gson.JsonObject body = node.getAsJsonObject();
+                        double length = body.get("animation_length").getAsDouble();
+                        if (!body.has("bones")) {
+                            return;
+                        }
+                        body.getAsJsonObject("bones").asMap().forEach((bone, tracks) -> {
+                            if (!bones.contains(bone)) {
+                                problems.add(variant.id() + ": " + clip + " animates '" + bone
+                                        + "', which " + variant.model() + " does not have");
+                            }
+                            tracks.getAsJsonObject().asMap().forEach((kind, track) -> {
+                                if (!track.isJsonObject()) {
+                                    return;   // a single static value, not a keyed track
+                                }
+                                for (String at : track.getAsJsonObject().keySet()) {
+                                    if (Double.parseDouble(at) > length + 1e-6) {
+                                        problems.add(variant.id() + ": " + clip + "." + bone + "."
+                                                + kind + " has a key at " + at
+                                                + ", past the clip end " + length);
+                                    }
+                                }
+                            });
+                        });
+                    });
+        }
+        assertTrue(problems.isEmpty(), String.join("\n", problems));
+    }
+
+    /**
+     * An emissive sheet may light almost nothing.
+     *
+     * <p>{@code RenderType.eyes} draws at full brightness through walls and weather, so every lit
+     * texel is a shape floating in a dark room. A handful is a pair of eyes; a face's worth is a
+     * glowing box, and a glowing box is indistinguishable from a bug — the queen's spinneret glowed
+     * for one revision and became the automatic suspect for every stray light anyone saw near a
+     * spider. The cap is deliberately far above the eight eye-cubes this ships (48 texels) and far
+     * below one face of anything larger.</p>
+     */
+    @Test
+    void emissiveSheetsLightOnlyPinpricks() {
+        Set<String> problems = new TreeSet<>();
+        for (GeoEnemyVariant variant : GeoEnemyVariant.all()) {
+            if (!variant.glows()) {
+                continue;
+            }
+            byte[] png = readBytes("assets/teras/" + variant.glowTexture());
+            if (png == null) {
+                continue;   // everyVariantsAssetsExist owns the missing-file case
+            }
+            long opaque = countOpaque(png);
+            if (opaque > 120) {
+                problems.add(variant.id() + ": " + variant.glowTexture() + " lights " + opaque
+                        + " texels. That is a glowing surface, not a pair of eyes");
+            }
+            if (opaque == 0) {
+                problems.add(variant.id() + ": " + variant.glowTexture()
+                        + " is fully transparent — the layer draws nothing at all");
+            }
+        }
+        assertTrue(problems.isEmpty(), String.join("\n", problems));
+    }
+
+    /** Opaque pixel count of an 8-bit RGBA PNG, decoded far enough to read the alpha channel. */
+    private static long countOpaque(byte[] png) {
+        try {
+            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(png));
+            long opaque = 0;
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    if ((image.getRGB(x, y) >>> 24) != 0) {
+                        opaque++;
+                    }
+                }
+            }
+            return opaque;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private static byte[] readBytes(String resource) {
+        try (InputStream in = BestiaryAuditTest.class.getClassLoader()
+                .getResourceAsStream(resource)) {
+            return in == null ? null : in.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * The infestation must not be one mesh at four scales. That is what it was, and the cost was a
+     * floor whose chaff, elite, boss and swarm were the same silhouette — so nothing could be
+     * identified before it acted, and the silverfish read as a small spider.
+     */
+    @Test
+    void theInfestationDoesNotShareOneMesh() {
+        Set<String> models = new TreeSet<>();
+        for (String id : List.of("cria", "tejedora", "reina_madre", "lepisma_cueva")) {
+            models.add(GeoEnemyVariant.of(id).model());
+        }
+        assertEquals(4, models.size(),
+                "Infestadas' four enemies share a model file: " + models);
+        // The silverfish is the one that is not even the same animal, so it shares no clips either.
+        assertFalse(GeoEnemyVariant.of("lepisma_cueva").animation()
+                        .equals(GeoEnemyVariant.of("cria").animation()),
+                "the silverfish is on the arachnid animation set");
+    }
+
+    /** The boss carries a boss's kit; she was the only one in the bestiary carrying none. */
+    @Test
+    void theQueenHasAbilities() {
+        List<es.boffmedia.teras.dungeon.ability.AbilityDef> defs =
+                es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities()
+                        .get("reina_madre");
+        assertTrue(defs != null && !defs.isEmpty(), "reina_madre has no abilities");
+        assertTrue(defs.stream().anyMatch(
+                        d -> d.kind() == es.boffmedia.teras.dungeon.ability.AbilityKind.SUMMON
+                                && d.arg().equals("geo:cria")),
+                "the broodmother should summon the hatchlings her floor is already full of");
     }
 
     // --- the cave chaff, which is the reason this pass happened -----------------------------------
@@ -135,6 +318,20 @@ class BestiaryAuditTest {
         assertTrue(Behaviour.VOLLEY.isRanged());
         assertEquals("cast", Behaviour.VOLLEY.clip());
         assertEquals("", Behaviour.BLINK.clip(), "blinking plays no clip; it is a reposition");
+    }
+
+    /**
+     * The ceiling web names the clip it actually plays. {@code SpiderCeilingWebGoal} fires
+     * {@code Action.SHOOT} for every strand it drops, so this used to declare "jump" — a clip the
+     * move never plays — and left the clip it does play out of the required set entirely. It only
+     * escaped notice because the one rig carrying the behaviour happened to have both.
+     */
+    @Test
+    void theCeilingWebDeclaresTheClipItPlays() {
+        assertEquals("shoot", Behaviour.CEILING_WEB.clip());
+        assertEquals("jump", Behaviour.LEAP.clip());
+        assertTrue(BestiaryAudit.requiredClips(GeoEnemyVariant.of("reina_madre")).contains("shoot"),
+                "the queen webs from overhead, so her rig owes a shoot clip");
     }
 
     private static String join(List<BestiaryAudit.Finding> findings) {

@@ -64,9 +64,13 @@ public enum Behaviour {
      */
     public String clip() {
         return switch (this) {
-            case RANGED, WEB_SHOT -> "shoot";
+            // CEILING_WEB sits here and not with LEAP: what SpiderCeilingWebGoal actually fires for
+            // each strand is Action.SHOOT, so "jump" named a clip the move never plays and left the
+            // one it does play unchecked. It only ever worked because the rig that carried the
+            // behaviour happened to have both.
+            case RANGED, WEB_SHOT, CEILING_WEB -> "shoot";
             case VOLLEY -> "cast";
-            case LEAP, CEILING_WEB -> "jump";
+            case LEAP -> "jump";
             case MELEE -> "attack";
             case BLINK -> "";
         };

@@ -160,6 +160,21 @@ public final class DungeonEnemyPacks {
                 new AbilityDef(AbilityKind.ENRAGE, "",
                         Map.of("healthPct", 0.25, "speedMult", 0.4, "damageMult", 0.6))));
 
+        // Infestadas' boss, on the same three-ability shape the other two floor bosses use. She was
+        // the only boss in the bestiary carrying none, which left the fight a health bar that walks
+        // at you and webs the ceiling on a cooldown.
+        //
+        // SUMMON spawns `geo:cria` — the hatchlings the floor is already full of and the ones its
+        // nests crack open, so the adds need no new enemy and read immediately as hers. Adds enter
+        // the room's kill ledger, so the room cannot clear while they live.
+        table.put("reina_madre", List.of(
+                new AbilityDef(AbilityKind.SUMMON, "geo:cria",
+                        Map.of("healthPct", 0.6, "count", 3.0, "spread", 3.5)),
+                new AbilityDef(AbilityKind.ON_HIT, "minecraft:poison",
+                        Map.of("duration", 80.0, "amplifier", 0.0)),
+                new AbilityDef(AbilityKind.ENRAGE, "",
+                        Map.of("healthPct", 0.3, "speedMult", 0.3, "damageMult", 0.45))));
+
         // The animated enemies are reachable from enemies.json as `geo` entries, so they get the
         // same treatment; their ids are GeoEnemyVariant's, not clone names.
         table.put("bone_sentinel", List.of(

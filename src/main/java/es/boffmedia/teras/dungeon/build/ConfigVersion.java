@@ -50,9 +50,14 @@ public final class ConfigVersion {
      *       {@code pesosFormas} keeping its big shapes rare instead of impossible</li>
      *   <li>{@code mecanica} accepts {@code {id, params}} (§37) so a mechanic's tuning stops being
      *       compiled, and secret rooms roll loot at a marker that had never been read</li>
+     *   <li>the infestation's rigs and its boss id (§38): {@code reina_cria} is now
+     *       {@code reina_madre}, so a {@code pisos/cuevas_infestadas.json} written before this
+     *       names a boss that no longer exists and the floor draws <b>no boss at all</b> — the
+     *       trapdoor is behind a fight that never spawns. {@code lepisma_cueva} moved onto its own
+     *       silverfish rig, and the arachnids onto per-build ones</li>
      * </ol>
      */
-    public static final int CURRENT = 5;
+    public static final int CURRENT = 6;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

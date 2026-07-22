@@ -273,11 +273,11 @@ class FloorSelectorTest {
     void pisoOverridesTheTramoBossPool() {
         FloorDef queenPiso = new FloorDef("infestadas", "Cuevas Infestadas", "", TIGHT, 4,
                 "", "", "infestacion", EnumSet.of(Curse.LOST),
-                List.of("reina_cria"), List.of());
+                List.of("reina_madre"), List.of());
         FloorPlan plan = FloorSelector.select(
                 new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
                 catalog(queenPiso), 1, "s", Map.of());
-        assertEquals(List.of("reina_cria"), plan.jefes(),
+        assertEquals(List.of("reina_madre"), plan.jefes(),
                 "the queen's piso must override, or she never appears");
         assertEquals(List.of("minijefe"), plan.minijefes(),
                 "an unset mini-boss pool still inherits the tramo's");

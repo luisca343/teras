@@ -65,6 +65,10 @@ public class SpiderCeilingWebGoal extends Goal {
     public void start() {
         phase = Phase.ASCEND;
         phaseTicks = 0;
+        // Claim gravity before switching it off. DungeonGeoEnemy suspends it too, for the ordinary
+        // ceiling cling every climber has, and it restores gravity on any tick it decides it is not
+        // hanging — which mid-ascent would drop the queen out of her own set-piece.
+        spider.setScriptedFlight(true);
         spider.setNoGravity(true);
     }
 
@@ -123,6 +127,7 @@ public class SpiderCeilingWebGoal extends Goal {
         phase = null;
         phaseTicks = 0;
         spider.setNoGravity(false);
+        spider.setScriptedFlight(false);
         cooldown = 240 + spider.getRandom().nextInt(120);
     }
 }

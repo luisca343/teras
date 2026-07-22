@@ -199,6 +199,12 @@ public final class AbilityEngine {
             Teras.LOGGER.warn("Dungeons: SUMMON ability has an unusable spec '{}'", def.arg());
             return;
         }
+        // Adds appearing out of a boss that did not visibly do anything reads as a bug rather than
+        // as a mechanic. An animated summoner plays its cast clip; a CustomNPCs clone has no rig to
+        // drive, so it simply does not get one.
+        if (self instanceof es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy geo) {
+            geo.triggerAction(es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy.Action.CAST, 28);
+        }
         int count = def.intParam("count", 2);
         double spread = def.param("spread", 2.0);
         for (int i = 0; i < count; i++) {

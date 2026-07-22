@@ -3,7 +3,7 @@ package es.boffmedia.teras.dungeon.model;
 /**
  * Turning an id into something a player can read.
  *
- * <p>Ids are the mod's identifiers everywhere — {@code escudo_hyliano}, {@code reina_cria} — and
+ * <p>Ids are the mod's identifiers everywhere — {@code escudo_hyliano}, {@code reina_madre} — and
  * three separate places now need a name for one: an item with no lang entry, an elite's nameplate,
  * and a boss bar. Lang entries only ever exist for what shipped in code, and gear proved what
  * happens without a floor under that: a piece defined in config rendered as
@@ -16,7 +16,7 @@ package es.boffmedia.teras.dungeon.model;
 public final class Names {
     private Names() {}
 
-    /** {@code reina_cria} reads as "Reina Cria". Not a translation; far better than an id. */
+    /** {@code reina_madre} reads as "Reina Madre". Not a translation; far better than an id. */
     public static String fromId(String id) {
         if (id == null || id.isBlank()) {
             return "?";
