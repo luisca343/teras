@@ -144,7 +144,7 @@ public final class RewardPedestals {
                 ? pedestal.reserved
                 : RunEngine.rollLoot(floor, pedestal.lootTable);
         for (ItemStack stack : reward) {
-            RunEngine.giveOrDrop(player, stack.copy());
+            RunEngine.ejectTo(floor, player, pedestal.pos, stack.copy());
         }
         RunEngine.playAt(floor, pedestal.pos, DungeonSound.PURCHASE, 1.0f);
         if (pedestal.policy.kind() == ClaimPolicy.Kind.ONE_OF_N) {

@@ -5,61 +5,26 @@
       "rolls": 1,
       "entries": [
         {
-          "type": "minecraft:empty",
-          "weight": 55
-        },
-        {
           "type": "minecraft:item",
           "name": "teras:gear_espada",
-          "weight": 12,
           "functions": [
             {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "espada_abisal"
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "teras:gear_coraza",
-          "weight": 12,
-          "functions": [
-            {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "coraza_abisal"
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "teras:gear_hacha",
-          "weight": 10,
-          "functions": [
-            {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "martillo_rompemuros"
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "teras:gear_yelmo",
-          "weight": 8,
-          "functions": [
-            {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "corona_jefe"
-              }
+              "function": "teras:gear_aleatorio",
+              "comun": 15,
+              "raro": 50,
+              "epico": 35
             }
           ]
         }
+      ]
+    },
+    {
+      "rolls": 1,
+      "entries": [
+        { "type": "minecraft:empty", "weight": 40 },
+        { "type": "minecraft:item", "name": "minecraft:enchanted_golden_apple", "weight": 20 },
+        { "type": "minecraft:item", "name": "teras:pocion_vital_mayor", "weight": 25 },
+        { "type": "minecraft:item", "name": "minecraft:enchanted_book", "weight": 15 }
       ]
     }
   ]

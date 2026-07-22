@@ -30,8 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class GearDefsTest {
 
-    private static final List<String> LOOT_TABLES =
-            List.of("treasure", "curse", "devil", "boss");
+    private static final List<String> LOOT_TABLES = List.of("treasure", "devil", "boss");
 
     @Test
     void catalogIsComplete() {
@@ -70,16 +69,25 @@ class GearDefsTest {
                 : def.abilities().get(0).magnitude(abilityOf(def).defaultMagnitude());
     }
 
-    /** A piece no table lists is a piece no player can ever hold. */
+    /**
+     * A piece no player can ever hold used to be a piece no table listed, and this asserted that
+     * every one of them appeared somewhere by name. Tables no longer name pieces — they ask
+     * {@code teras:gear_aleatorio} for a rarity and the catalog answers — so "does it drop" is now
+     * "is it in a rarity bucket", which is
+     * {@link GearRollTest#everyShippedPieceIsReachableFromSomeRoll}. What is still worth checking
+     * here is that a piece cannot carry a rarity the draw does not know about.
+     */
     @Test
-    void everyPieceDropsSomewhere() {
-        Set<String> dropped = new HashSet<>();
-        for (String table : LOOT_TABLES) {
-            dropped.addAll(terasItemsIn(table));
+    void everyPieceHasADrawableRarity() {
+        Set<String> undrawable = new TreeSet<>();
+        Map<GearDef.Rarity, List<String>> buckets = GearRoll.byRarity(GearDefs.defaults());
+        for (Map.Entry<String, GearDef> entry : GearDefs.defaults().entrySet()) {
+            List<String> bucket = buckets.get(entry.getValue().rarity());
+            if (bucket == null || !bucket.contains(entry.getKey())) {
+                undrawable.add(entry.getKey());
+            }
         }
-        Set<String> missing = new TreeSet<>(GearDefs.defaults().keySet());
-        missing.removeAll(dropped);
-        assertTrue(missing.isEmpty(), "gear that drops from no loot table: " + missing);
+        assertTrue(undrawable.isEmpty(), "gear no rarity roll can reach: " + undrawable);
     }
 
     /** And a table naming gear that does not exist is a loot roll that fails at runtime. */

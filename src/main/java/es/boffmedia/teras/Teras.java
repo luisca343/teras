@@ -48,6 +48,7 @@ public class Teras {
         ItemInit.CREATIVE_TABS.register(modBus);
         ComponentInit.COMPONENTS.register(modBus);
         es.boffmedia.teras.init.EntityInit.ENTITY_TYPES.register(modBus);
+        es.boffmedia.teras.dungeon.gear.LootInit.LOOT_FUNCTIONS.register(modBus);
 
         // Config belongs to whoever runs the server, so it loads at server start (TerasConfig), not
         // here: a client connected to a remote server has no business reading its own copy.

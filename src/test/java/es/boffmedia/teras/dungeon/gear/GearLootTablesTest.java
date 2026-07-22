@@ -14,24 +14,27 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The loot tables against the catalog.
+ * The loot tables, now that they no longer name gear.
  *
- * <p>A gear drop is an item plus a {@code teras:gear_id} component, and the two have to agree: the
- * item must be the one that piece's {@link GearKind} is built on. They can disagree silently —
- * migration rebuilds a mismatched stack the moment a player picks it up, so the game looks correct
- * and the table is simply wrong. Same shape as every other "authored and never noticed" bug here,
- * and cheap to close because both halves are readable without a server.</p>
+ * <h2>What this test used to be</h2>
  *
- * <p>It caught one the day it was written: {@code martillo_rompemuros} is a hammer that rode on a
- * netherite axe while its definition said {@code SWORD}, because SWORD was the only melee kind that
- * existed when it was authored.</p>
+ * <p>Tables named pieces outright — an item plus a {@code teras:gear_id} component — and the two had
+ * to agree, because migration silently rebuilds a mismatched stack on pickup: the game looked
+ * correct while the table was wrong. This test existed to catch that, and did on the day it was
+ * written ({@code martillo_rompemuros} was a hammer riding a netherite axe while its definition said
+ * SWORD, because SWORD was the only melee kind that existed when it was authored).</p>
+ *
+ * <h2>What it is now</h2>
+ *
+ * <p>That whole bug class is gone, because the tables no longer name pieces at all: they ask
+ * {@code teras:gear_aleatorio} for a rarity and the catalog answers with a piece. So the job flipped
+ * from "do the two catalogs agree" to <b>"is there still only one catalog"</b>. A hardcoded
+ * {@code gear_id} reintroduced anywhere brings the second one back, and with it a piece
+ * {@code gear.json} can never change and a rarity that means nothing.</p>
  */
 class GearLootTablesTest {
 
-    private static final List<String> TABLES = List.of("treasure", "boss", "curse", "devil");
-
-    /** Every loot entry in a table, as its own chunk of json. */
-    private record Entry(String table, String item, String gearId) {}
+    private static final List<String> TABLES = List.of("treasure", "boss", "devil");
 
     private static String read(String table) {
         String path = "data/teras/loot_table/dungeon/" + table + ".json";
@@ -44,63 +47,71 @@ class GearLootTablesTest {
         }
     }
 
-    /**
-     * Splits on the entry marker rather than matching name and id in one pattern. A single regex
-     * spanning both happily pairs one entry's item with the next entry's gear id, which is how the
-     * first version of this test reported four failures that were not real.
-     */
-    private static List<Entry> entriesOf(String table) {
-        String json = read(table);
-        List<Entry> entries = new ArrayList<>();
-        Matcher starts = Pattern.compile("\"type\"\\s*:\\s*\"minecraft:item\"").matcher(json);
-        List<Integer> offsets = new ArrayList<>();
-        while (starts.find()) {
-            offsets.add(starts.start());
-        }
-        for (int i = 0; i < offsets.size(); i++) {
-            int from = offsets.get(i);
-            int to = i + 1 < offsets.size() ? offsets.get(i + 1) : json.length();
-            String chunk = json.substring(from, to);
-            Matcher name = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"").matcher(chunk);
-            Matcher gear = Pattern.compile("\"teras:gear_id\"\\s*:\\s*\"([^\"]+)\"").matcher(chunk);
-            if (name.find() && gear.find()) {
-                entries.add(new Entry(table, name.group(1), gear.group(1)));
+    @Test
+    void noTableNamesAPieceOfGear() {
+        List<String> offenders = new ArrayList<>();
+        for (String table : TABLES) {
+            if (read(table).contains("teras:gear_id")) {
+                offenders.add(table);
             }
         }
-        return entries;
+        assertEquals(List.of(), offenders,
+                "a hardcoded gear_id makes the table a second catalog: the piece it names can no "
+                        + "longer be retuned from gear.json, and a piece added there can never drop");
     }
 
     @Test
-    void everyGearDropUsesTheItemItsKindIsBuiltOn() {
-        List<String> wrong = new ArrayList<>();
+    void gearComesFromTheCatalogFunction() {
+        int functions = 0;
+        for (String table : TABLES) {
+            Matcher uses = Pattern.compile("teras:gear_aleatorio").matcher(read(table));
+            while (uses.find()) {
+                functions++;
+            }
+        }
+        assertTrue(functions >= TABLES.size(),
+                "only " + functions + " gear_aleatorio uses across " + TABLES.size()
+                        + " tables — a dungeon table that drops no gear at all is probably a mistake");
+    }
+
+    /**
+     * A function whose weights sum to zero draws nothing, and an empty stack is indistinguishable
+     * from a table that meant to give nothing — the silent-blank shape that made the boss pedestal
+     * look broken in the first place.
+     */
+    @Test
+    void everyGearFunctionCanActuallyDrawSomething() {
+        Pattern block = Pattern.compile("\"function\"\\s*:\\s*\"teras:gear_aleatorio\"(.*?)\\}");
         int checked = 0;
         for (String table : TABLES) {
-            for (Entry entry : entriesOf(table)) {
-                GearDef def = GearDefs.defaults().get(entry.gearId());
-                if (def == null) {
-                    continue;
-                }
+            Matcher found = block.matcher(read(table));
+            while (found.find()) {
                 checked++;
-                String expected = "teras:" + def.kind().itemPath();
-                if (!expected.equals(entry.item())) {
-                    wrong.add(entry.table() + ": " + entry.gearId() + " (" + def.kind()
-                            + ") drops as " + entry.item() + ", should be " + expected);
-                }
+                int total = weight(found.group(1), "comun", 50)
+                        + weight(found.group(1), "raro", 35)
+                        + weight(found.group(1), "epico", 15);
+                assertTrue(total > 0, table + " has a gear_aleatorio with every weight at zero");
             }
         }
-        assertEquals(List.of(), wrong);
-        assertTrue(checked >= 10, "only matched " + checked + " gear entries — the test is not "
-                + "reading the tables properly");
+        assertTrue(checked > 0, "the test found no gear_aleatorio block to check");
     }
 
-    /** An id the tables name but the catalog does not have is a component pointing at nothing. */
+    private static int weight(String json, String key, int fallback) {
+        Matcher found = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)").matcher(json);
+        return found.find() ? Integer.parseInt(found.group(1)) : fallback;
+    }
+
+    /** The boss is the floor's payoff, and it must not be able to hand over nothing. */
     @Test
-    void everyGearIdInATableIsInTheCatalog() {
-        for (String table : TABLES) {
-            for (Entry entry : entriesOf(table)) {
-                assertNotNull(GearDefs.defaults().get(entry.gearId()),
-                        table + " drops unknown gear id '" + entry.gearId() + "'");
-            }
-        }
+    void theBossAlwaysDropsAPiece() {
+        String boss = read("boss");
+        int firstPool = boss.indexOf("\"entries\"");
+        int secondPool = boss.indexOf("\"entries\"", firstPool + 1);
+        String pool = boss.substring(firstPool, secondPool < 0 ? boss.length() : secondPool);
+        assertTrue(pool.contains("teras:gear_aleatorio"),
+                "the boss table's first pool should be the guaranteed gear drop");
+        assertTrue(!pool.contains("minecraft:empty"),
+                "the boss's gear pool must not roll empty — it was 57% empty, which is what made "
+                        + "killing a floor boss give nothing more than half the time");
     }
 }

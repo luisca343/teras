@@ -6,89 +6,25 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "teras:gear_coraza",
-          "weight": 2,
-          "functions": [
-            {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "alas_fenix"
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "teras:gear_amuleto",
-          "weight": 2,
-          "functions": [
-            {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "talisman_sangre"
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "minecraft:enchanted_golden_apple",
-          "weight": 5,
-          "functions": [
-            {
-              "function": "minecraft:set_count",
-              "count": {
-                "type": "minecraft:uniform",
-                "min": 1,
-                "max": 2
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
           "name": "teras:gear_espada",
-          "weight": 3,
+          "weight": 12,
           "functions": [
             {
-              "function": "minecraft:set_components",
-              "components": {
-                "teras:gear_id": "colmillo_diablo"
-              }
+              "function": "teras:gear_aleatorio",
+              "comun": 5,
+              "raro": 40,
+              "epico": 55
             }
           ]
         },
-        {
-          "type": "minecraft:item",
-          "name": "minecraft:enchanted_book",
-          "weight": 4,
-          "functions": [
-            {
-              "function": "minecraft:enchant_randomly",
-              "options": "#minecraft:on_random_loot"
-            }
-          ]
-        }
+        { "type": "minecraft:item", "name": "minecraft:enchanted_golden_apple", "weight": 5 },
+        { "type": "minecraft:item", "name": "minecraft:enchanted_book", "weight": 4 }
       ]
     },
     {
       "rolls": 1,
       "entries": [
-        {
-          "type": "minecraft:item",
-          "name": "teras:pocion_vital_mayor",
-          "weight": 1,
-          "functions": [
-            {
-              "function": "minecraft:set_count",
-              "count": {
-                "type": "minecraft:uniform",
-                "min": 1,
-                "max": 2
-              }
-            }
-          ]
-        }
+        { "type": "minecraft:item", "name": "teras:pocion_vital_mayor", "weight": 1 }
       ]
     }
   ]

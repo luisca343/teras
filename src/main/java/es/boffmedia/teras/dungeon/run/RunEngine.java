@@ -748,6 +748,45 @@ public final class RunEngine {
         }
     }
 
+    /**
+     * Throws a claimed reward out of a pedestal instead of teleporting it into a bag.
+     *
+     * <p>The pedestal rework moved rewards off the floor to fix four real problems — a latecomer
+     * arriving to a bare stand, one player hoovering the pile, five-minute despawns, and stage
+     * advance sweeping what was left. Putting the item straight into the inventory fixed all four
+     * and cost the moment: a piece of gear appeared as a line of chat.</p>
+     *
+     * <p>This gets it back without giving any of it up. The stack arcs out of the stand as a real
+     * {@link ItemEntity} with {@code setTarget}, which vanilla checks in {@code playerTouch} — so
+     * <b>only the claimer can pick it up</b> and the anti-race properties are untouched. It also
+     * gives a rarity-coloured beam something to stand over for servers running Loot Beams, which
+     * reads the same {@code RARITY} component the tooltip does.</p>
+     *
+     * <p>Coins and charges keep their own spawners: they have magnet behaviour the run already
+     * owns, and a beam over every coin would be noise rather than an event.</p>
+     */
+    static void ejectTo(ActiveFloor floor, ServerPlayer player, BlockPos from, ItemStack stack) {
+        if (stack.isEmpty()) {
+            return;
+        }
+        if (stack.is(es.boffmedia.teras.init.ItemInit.MONEDA_MAZMORRA.get())
+                || stack.is(es.boffmedia.teras.init.ItemInit.CARGA_ROMPEMUROS.get())) {
+            giveOrDrop(player, stack);
+            return;
+        }
+        ItemEntity item = new ItemEntity(floor.level,
+                from.getX() + 0.5, from.getY() + 1.1, from.getZ() + 0.5, stack);
+        Vec3 away = new Vec3(player.getX() - from.getX() - 0.5, 0, player.getZ() - from.getZ() - 0.5);
+        Vec3 push = away.lengthSqr() < 1.0e-4 ? new Vec3(0, 0.3, 0)
+                : away.normalize().scale(0.18).add(0, 0.28, 0);
+        item.setDeltaMovement(push);
+        item.setTarget(player.getUUID());
+        item.setThrower(player);
+        // Long enough for the arc to read as a throw, short enough that walking into it works.
+        item.setPickUpDelay(10);
+        floor.level.addFreshEntity(item);
+    }
+
     /** Where a reward lands in a room that has no {@code loot} marker to stand it on. */
     static BlockPos fallbackLootPos(ActiveFloor floor, Room room) {
         return floor.built.partySpawn(room);
