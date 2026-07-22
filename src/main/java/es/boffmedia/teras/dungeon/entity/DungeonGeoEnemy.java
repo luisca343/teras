@@ -631,6 +631,15 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     }
 
     @Override
+    public net.minecraft.world.phys.AABB getBoundingBoxForCulling() {
+        // The collision box is only the trunk; legs, abdomen and glow reach well past it, so culling
+        // on it drops the whole model the moment the trunk leaves the frustum — with the body still
+        // on screen. Margin scales with the enemy and is generous: over-drawing a hidden mob is free.
+        float scale = variant().scale();
+        return getBoundingBox().inflate(1.5 * scale, 1.0 * scale, 1.5 * scale);
+    }
+
+    @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         controllers.add(new AnimationController<>(this, "main", 4, state -> {
             if (entityData.get(ATTACK_TICKS) > 0) {
