@@ -43,7 +43,18 @@ public final class GearCurios {
 
     public static final String MOD_ID = "curios";
 
-    /** The slot charms go in, declared in {@code data/curios/slots/amuleto.json}. */
+    /**
+     * The slot charms go in.
+     *
+     * <p>Declared in {@code data/teras/curios/slots/amuleto.json} and given to players by
+     * {@code data/teras/curios/entities/amuleto.json}. <b>The namespace is ours, the subdirectory is
+     * Curios'</b> — the loader scans {@code data/&lt;any namespace&gt;/curios/slots/}, which is why
+     * these first shipped at {@code data/curios/slots/} and were read by nothing at all: the slot
+     * simply never existed and the inventory had no tab to show.</p>
+     *
+     * <p>The slot validates with {@code curios:tag}, so an item belongs in it by being in the
+     * {@code curios:amuleto} item tag rather than by anyone's say-so.</p>
+     */
     public static final String SLOT = "amuleto";
 
     private static Boolean available;

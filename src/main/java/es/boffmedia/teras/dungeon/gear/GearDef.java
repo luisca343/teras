@@ -73,22 +73,13 @@ public record GearDef(
     }
 
     /**
-     * The name to show when no lang entry and no {@code nombre} exist: the id, split on underscores
-     * and capitalised. {@code escudo_hyliano} reads as "Escudo Hyliano" — not a translation, but a
-     * long way better than showing {@code item.teras.escudo_hyliano} to a player.
+     * The name to show when no lang entry and no {@code nombre} exist: the id as words.
+     *
+     * <p>Delegates rather than implements — an elite's nameplate and a boss bar need exactly the
+     * same thing, and the second copy of this was written within an hour of the first.</p>
      */
     public String derivedName() {
-        StringBuilder out = new StringBuilder();
-        for (String word : id.split("_")) {
-            if (word.isEmpty()) {
-                continue;
-            }
-            if (out.length() > 0) {
-                out.append(' ');
-            }
-            out.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
-        }
-        return out.length() == 0 ? id : out.toString();
+        return es.boffmedia.teras.dungeon.model.Names.fromId(id);
     }
 
     public GearDef withNombre(String value) {

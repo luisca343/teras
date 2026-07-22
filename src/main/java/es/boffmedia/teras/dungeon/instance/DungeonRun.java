@@ -161,6 +161,17 @@ public final class DungeonRun {
     }
 
     /** The party's shared coin purse. */
+    /**
+     * What the whole party is carrying. One player accepts an offer and everyone lives with it,
+     * which is what makes taking one a conversation rather than a click.
+     */
+    private final es.boffmedia.teras.dungeon.run.AfflictionSet afflictions =
+            new es.boffmedia.teras.dungeon.run.AfflictionSet();
+
+    public es.boffmedia.teras.dungeon.run.AfflictionSet afflictions() {
+        return afflictions;
+    }
+
     public DungeonWallet wallet() {
         return wallet;
     }

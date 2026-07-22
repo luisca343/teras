@@ -284,7 +284,7 @@ public final class EnemySpawner {
             Teras.LOGGER.warn("Dungeons: '{}' is not a known enemy variant — spawning the fallback. "
                     + "Check the piso's enemigos table.", ref.id());
         }
-        return new SpawnTables.SpawnEntry(resolved, ref.id(), ref.tab(), ref.peso());
+        return new SpawnTables.SpawnEntry(resolved, ref.id(), ref.tab(), ref.peso(), ref.elite());
     }
 
     /**
@@ -364,7 +364,8 @@ public final class EnemySpawner {
             Teras.LOGGER.warn("Dungeons: {} has no '{}' marker — spawning at the room center. "
                     + "Add one to its template with the room editor.", room, markerKind);
         }
-        Entity boss = spawnOne(level, SpawnTables.pickWeighted(pool, rng), pos);
+        SpawnTables.SpawnEntry drawn = SpawnTables.pickWeighted(pool, rng);
+        Entity boss = spawnOne(level, drawn, pos);
         if (boss == null) {
             return List.of();
         }
@@ -377,7 +378,22 @@ public final class EnemySpawner {
                         * es.boffmedia.teras.dungeon.piso.PartyScaling.health(partySize),
                 es.boffmedia.teras.dungeon.piso.Dificultad.damage(built.dificultad()), 1.0);
         boss.addTag(tierTag);
+        // Bosses are named unconditionally: the bar carries the name, and the nameplate is what a
+        // player reads when the bar is not on screen yet.
+        boss.setCustomName(EnemyNames.of(drawn.id()).copy()
+                .withStyle(net.minecraft.ChatFormatting.RED));
+        boss.setCustomNameVisible(true);
         return List.of(boss);
+    }
+
+    /** The authored enemy id an entity was spawned from, read back off its tag. */
+    public static String authoredIdOf(Entity entity) {
+        for (String tag : entity.getTags()) {
+            if (tag.startsWith(Abilities.TAG_PREFIX)) {
+                return tag.substring(Abilities.TAG_PREFIX.length());
+            }
+        }
+        return "";
     }
 
     private static Entity spawnOne(ServerLevel level, SpawnTables.SpawnEntry entry, BlockPos pos) {
@@ -390,6 +406,15 @@ public final class EnemySpawner {
             // Which authored enemy this is, for the ability layer. A tag rather than the NPC's
             // display name because installed clones are meant to be renamed in the CNPC editor.
             entity.addTag(Abilities.TAG_PREFIX + entry.id());
+            if (entry.elite()) {
+                // An elite is the one mob in a wave worth reacting to differently, and it looked
+                // exactly like the chaff around it. A floating name is the cheapest way to say
+                // "this one is not like the others" — a clone's own CNPC name is overwritten here
+                // on purpose, because the wave decides what is elite, not the editor.
+                entity.setCustomName(EnemyNames.of(entry.id()).copy()
+                        .withStyle(net.minecraft.ChatFormatting.GOLD));
+                entity.setCustomNameVisible(true);
+            }
         }
         return entity;
     }

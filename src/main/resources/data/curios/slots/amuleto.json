@@ -1,8 +1,0 @@
-{
-  "size": 1,
-  "operation": "SET",
-  "order": 100,
-  "drop_rule": "DEFAULT",
-  "replaceable": false,
-  "icon": "teras:slot/amuleto"
-}

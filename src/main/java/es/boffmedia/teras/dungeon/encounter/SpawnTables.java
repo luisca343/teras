@@ -32,7 +32,16 @@ public final class SpawnTables {
 
     public enum Kind { ENTITY, CNPC, GEO }
 
-    public record SpawnEntry(Kind kind, String id, int tab, int weight) {}
+    /**
+     * @param elite whether this draw is one of the piso's elites. Carried through to the spawn so
+     *              the mob can wear its name — the flag existed on {@code SpawnRef} and stopped at
+     *              the table, so nothing downstream could tell an elite from chaff
+     */
+    public record SpawnEntry(Kind kind, String id, int tab, int weight, boolean elite) {
+        public SpawnEntry(Kind kind, String id, int tab, int weight) {
+            this(kind, id, tab, weight, false);
+        }
+    }
 
     public record StageTable(int countMin, int countMax, List<SpawnEntry> wave) {}
 

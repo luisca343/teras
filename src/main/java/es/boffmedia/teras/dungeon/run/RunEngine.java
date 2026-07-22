@@ -102,6 +102,10 @@ public final class RunEngine {
         final Map<UUID, GridPos> lastCell = new HashMap<>();
         final java.util.Set<DoorEdge> openedSecrets = new java.util.HashSet<>();
         final DungeonShop shop = new DungeonShop();
+        /** Rewards you take off a stand, rather than items dropped on the floor. */
+        final RewardPedestals pedestals = new RewardPedestals();
+        /** The bar over a live boss or mini-boss. */
+        final DungeonBossBars bossBars = new DungeonBossBars();
         /** Bought at the shop: reveal the floor's layout / its special rooms on the minimap. */
         boolean mapRevealed;
         boolean compassRevealed;
@@ -160,6 +164,8 @@ public final class RunEngine {
             // The floor's own teardown sweeps these with everything else, but a stage advance
             // discards the old pad a moment after this: clearing them here closes that window.
             floor.shop.despawnDisplays(floor);
+            floor.pedestals.despawn(floor);
+            floor.bossBars.clear();
             for (UUID member : floor.run.party().keySet()) {
                 ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
                 if (player != null) {
@@ -366,6 +372,10 @@ public final class RunEngine {
             try {
                 if (scan) {
                     scanPlayers(floor);
+                    // On the existing scan rather than a tick of its own: the bar follows a health
+                    // value that changes on somebody else's schedule, and a player who walks in
+                    // halfway has to be added to it.
+                    floor.bossBars.tick(floor);
                 }
                 if (sweep) {
                     abandonDeserted(floor);
@@ -518,6 +528,10 @@ public final class RunEngine {
             event.setCanceled(true);
             return;
         }
+        if (floor.pedestals.tryClaim(floor, player, pos)) {
+            event.setCanceled(true);
+            return;
+        }
         if (tryOpenSecret(floor, player, pos)) {
             event.setCanceled(true);
         }
@@ -656,6 +670,51 @@ public final class RunEngine {
      * never-pickup entities the magnet sweep understands, so a reward roll credits the shared purse
      * instead of putting currency in someone's backpack.
      */
+    /**
+     * The stacks a table rolls, without placing them anywhere.
+     *
+     * <p>Split out of {@link #rollLootAt} for the reward pedestals: a claimed reward goes into the
+     * claimant's hands, not onto the floor, and coins and charges still have to divert to the shared
+     * systems rather than becoming inventory items.</p>
+     */
+    static List<ItemStack> rollLoot(ActiveFloor floor, String tableId) {
+        LootTable table = floor.level.getServer().reloadableRegistries().getLootTable(
+                ResourceKey.create(Registries.LOOT_TABLE, ResourceLocation.parse(tableId)));
+        LootParams params = new LootParams.Builder(floor.level)
+                .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(floor.built.origin()))
+                .create(LootContextParamSets.CHEST);
+        List<ItemStack> out = new java.util.ArrayList<>();
+        for (ItemStack stack : table.getRandomItems(params)) {
+            es.boffmedia.teras.dungeon.gear.GearStamp.decorate(stack);
+            out.add(stack);
+        }
+        return out;
+    }
+
+    /** Into the claimant's inventory, or at their feet when it is full. Never lost. */
+    static void giveOrDrop(ServerPlayer player, ItemStack stack) {
+        if (stack.isEmpty()) {
+            return;
+        }
+        if (stack.is(es.boffmedia.teras.init.ItemInit.MONEDA_MAZMORRA.get())) {
+            CoinDrops.spawnCoins(player.serverLevel(), player.blockPosition(), stack.getCount());
+            return;
+        }
+        if (stack.is(es.boffmedia.teras.init.ItemInit.CARGA_ROMPEMUROS.get())) {
+            CoinDrops.spawnCharges(player.serverLevel(),
+                    Vec3.atCenterOf(player.blockPosition()), stack.getCount());
+            return;
+        }
+        if (!player.getInventory().add(stack)) {
+            player.drop(stack, false);
+        }
+    }
+
+    /** Where a reward lands in a room that has no {@code loot} marker to stand it on. */
+    static BlockPos fallbackLootPos(ActiveFloor floor, Room room) {
+        return floor.built.partySpawn(room);
+    }
+
     static void rollLootAt(ActiveFloor floor, BlockPos pos, String tableId) {
         LootTable table = floor.level.getServer().reloadableRegistries().getLootTable(
                 ResourceKey.create(Registries.LOOT_TABLE, ResourceLocation.parse(tableId)));
@@ -1110,7 +1169,13 @@ public final class RunEngine {
             // one present in it cannot be forgotten here.
             var loot = es.boffmedia.teras.dungeon.piso.MarkerContract.lootSource(room.type());
             if (loot != null) {
-                rollLootAt(floor, markerPos(floor, room, "loot"), lootTable(loot));
+                // Common rewards are per-player and rare ones are one-of-N: if it is shiny, there
+                // is one of it. The super secret costs a wall charge and is found, not given, so it
+                // is the one discovery-time reward worth arguing over.
+                floor.pedestals.arm(floor, room,
+                        room.type() == RoomType.SUPER_SECRET
+                                ? ClaimPolicy.Kind.ONE_OF_N : ClaimPolicy.Kind.PER_PLAYER,
+                        lootTable(loot));
             }
             if (room.type() == RoomType.CURSE && discoverer != null) {
                 chargeToll(room, discoverer);
@@ -1186,7 +1251,39 @@ public final class RunEngine {
             for (Entity enemy : spawned) {
                 floor.enemyRooms.put(enemy.getUUID(), room);
             }
+            raiseBossBar(room, spawned);
             return spawned.size();
+        }
+
+        /**
+         * A boss fight used to look exactly like an ordinary one — same seal, same sound, and a mob
+         * you had no way to read. The bar is what makes it a fight with an arc.
+         */
+        private void raiseBossBar(Room room, List<Entity> spawned) {
+            boolean boss = room.type() == RoomType.BOSS;
+            boolean mini = room.type() == RoomType.MINI_BOSS;
+            if (!boss && !mini) {
+                return;
+            }
+            for (Entity entity : spawned) {
+                if (entity instanceof net.minecraft.world.entity.LivingEntity living) {
+                    floor.bossBars.add(floor, living,
+                            EnemySpawner.authoredIdOf(entity), mini);
+                }
+            }
+            if (boss) {
+                // The title lands with the doors, which is the moment the room stops being a room.
+                for (UUID member : floor.run.party().keySet()) {
+                    ServerPlayer player =
+                            floor.level.getServer().getPlayerList().getPlayer(member);
+                    if (player != null && player.serverLevel() == floor.level) {
+                        DungeonTitles.send(player, "§4§l¡JEFE!", spawned.isEmpty() ? ""
+                                : "§7" + es.boffmedia.teras.dungeon.encounter.EnemyNames
+                                        .of(EnemySpawner.authoredIdOf(spawned.get(0)))
+                                        .getString());
+                    }
+                }
+            }
         }
 
         /**
@@ -1262,10 +1359,12 @@ public final class RunEngine {
                 }
             }
             sound(DungeonSound.TRAPDOOR_OPEN, bossRoom);
-            // The boss' own drop, beside the hole rather than in it — gear that fell down the
-            // trapdoor would be gear the party never saw.
-            rollLootAt(floor, floor.built.clampInside(bossRoom, hole.offset(3, 0, 0), 3),
-                    DungeonsConfig.bossLootTable());
+            // The boss' own drop, on a stand beside the hole rather than thrown on the ground:
+            // one reward, and the party decides who takes it. Gear that fell down the trapdoor was
+            // gear nobody saw, and gear on the floor was gear whoever ran fastest got.
+            floor.pedestals.armAt(floor, bossRoom, ClaimPolicy.Kind.ONE_OF_N,
+                    DungeonsConfig.bossLootTable(),
+                    floor.built.clampInside(bossRoom, hole.offset(3, 0, 0), 3));
             for (UUID member : floor.run.party().keySet()) {
                 ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
                 if (player != null) {

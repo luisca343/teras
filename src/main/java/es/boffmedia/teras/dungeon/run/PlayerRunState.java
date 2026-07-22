@@ -7,6 +7,13 @@ package es.boffmedia.teras.dungeon.run;
  */
 public final class PlayerRunState {
 
+    /** Afflictions this member took on their own behalf, rather than the party's. */
+    private final AfflictionSet afflictions = new AfflictionSet();
+
+    public AfflictionSet afflictions() {
+        return afflictions;
+    }
+
     private int hpDebt;
     private boolean phoenix;
     private int deaths;
