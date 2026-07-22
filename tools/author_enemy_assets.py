@@ -90,25 +90,56 @@ def noise(seed):
 
 
 def blob_texture(path, base, dark, light, size=64):
-    """A mottled blob sheet: flat colour with per-pixel dapple and a lighter top band."""
+    """The small slimes' sheet: dappled jelly with suspended bubbles and painted eyes.
+
+    Painted at SCALE (defined with `paint` below) like every other sheet. The whole image is one
+    material because the whole animal is one material — but jelly is not cloth: bubbles hang in it,
+    the mass darkens toward the ground it sits on, and the eyes are the one place the blob has an
+    inside worth looking at. The eye rects are `limo_geo`'s two hard-coded `uv` slots, restated
+    here because that rig predates the packer and carries no region list to walk.
+    """
+    px = size * 2
     rows = []
-    for y in range(size):
+    for y in range(px):
         row = []
-        for x in range(size):
+        for x in range(px):
             n = noise(x * 7919 + y * 104729)
-            if y < size // 3:
-                r, g, b = light
-            elif n < 0.18:
-                r, g, b = dark
+            blot = noise((x // 3) * 7919 + (y // 3) * 104729)
+            if y < px // 3:
+                c = light
+            elif blot < 0.16:
+                c = dark
             else:
-                r, g, b = base
-            jitter = int((n - 0.5) * 18)
-            row.append((max(0, min(255, r + jitter)),
-                        max(0, min(255, g + jitter)),
-                        max(0, min(255, b + jitter)),
+                c = base
+            # Settling: jelly reads as heavier toward whatever it is resting on.
+            c = tuple(v - int(14 * y / px) for v in c)
+            # Bubbles: sparse cells, each a small pale ring around a clearer centre.
+            cell = 8
+            cn = noise((x // cell) * 131 + (y // cell) * 313)
+            if cn > 0.78:
+                d = abs(x % cell - cell / 2) + abs(y % cell - cell / 2)
+                if d < 1.5:
+                    c = tuple(v + 6 for v in c)
+                elif d < 3:
+                    c = tuple(v + 16 for v in c)
+            jitter = int((n - 0.5) * 12)
+            row.append((max(0, min(255, c[0] + jitter)),
+                        max(0, min(255, c[1] + jitter)),
+                        max(0, min(255, c[2] + jitter)),
                         255))
         rows.append(row)
-    write_png(path, rows, size, size)
+    # The eyes: each 2x2x1 cube unwraps to a 6x3 net. Amber on both slimes — the one colour the
+    # green jelly around it cannot swallow — inside a dark ring so the face reads at swarm size.
+    for (u, v) in ((32, 40), (32, 44)):
+        for y in range(v * 2, (v + 3) * 2):
+            for x in range(u * 2, (u + 6) * 2):
+                on_edge = x in (u * 2, (u + 6) * 2 - 1) or y in (v * 2, (v + 3) * 2 - 1)
+                rows[y][x] = (28, 26, 18, 255) if on_edge else (238, 222, 128, 255)
+        # The pupil, on the north face of the net (one cube in from the left edge).
+        for y in range((v + 1) * 2, (v + 3) * 2):
+            for x in range((u + 1) * 2 + 1, (u + 3) * 2 - 1):
+                rows[y][x] = (34, 30, 20, 255)
+    write_png(path, rows, px, px)
 
 # ---------------------------------------------------------------------------- UV packing
 
@@ -1087,9 +1118,16 @@ BIPEDS = {
         'arm': (3, 11, 3), 'leg': (3, 11, 3),
         'head': (6, 6, 6), 'brow': (7, 2, 7),
         'plate': (9, 2, 5),
+        # The trim that stops the figure being seven boxes: a scarf under the skull, a belt with
+        # somewhere for the silhouette to change direction, fists and boots that end the limbs with
+        # a shape instead of a cut, and the pack every one of these is here to fill.
+        'jaw': (7, 2, 7), 'belt': (8, 2, 5),
+        'hand': (4, 3, 4), 'boot': (4, 3, 4), 'pack': (6, 7, 3),
         'hunch': 12.0, 'head_lift': -9.0, 'stance': 2, 'arm_gap': 0,
         'shards': (),
-        'sheet': 64,
+        # 96, not 64: the trim cubes above did not fit the old shelf. UV capacity only — box UV
+        # keeps one texel per model unit whatever the sheet measures.
+        'sheet': 96,
         'walk_frames': 20, 'leg_swing': 42.0, 'arm_swing': 34.0, 'bob': 0.6,
     },
     'guardian': {
@@ -1100,6 +1138,10 @@ BIPEDS = {
         'arm': (5, 13, 5), 'leg': (5, 11, 6),
         'head': (8, 7, 7), 'brow': (11, 3, 10),
         'plate': (16, 4, 9),
+        # A gorget rather than a scarf, and sabatons rather than boots — same cubes, armour's
+        # proportions. No pack: a guardian holds ground, it does not carry things away.
+        'jaw': (9, 2, 8), 'belt': (13, 3, 8),
+        'hand': (6, 3, 6), 'boot': (6, 3, 7), 'pack': (),
         'hunch': 4.0, 'head_lift': -2.0, 'stance': 3.5, 'arm_gap': 1,
         'shards': (),
         'sheet': 128,
@@ -1112,6 +1154,10 @@ BIPEDS = {
         'arm': (6, 16, 6), 'leg': (5, 8, 7),
         'head': (6, 5, 6), 'brow': (8, 2, 8),
         'plate': (16, 4, 12),
+        # Fists wider than the forearm, reaching the floor the arms already almost touch. No scarf,
+        # no belt, no pack — rock does not dress.
+        'jaw': (), 'belt': (),
+        'hand': (8, 4, 8), 'boot': (6, 3, 8), 'pack': (),
         'hunch': 8.0, 'head_lift': -4.0, 'stance': 4, 'arm_gap': 1,
         # Crystal seams: (centre x, y above the hip, centre z, then the cube's own w, h, d). Each
         # sits flush in a face of the torso — half a block proud of it — rather than near it: a
@@ -1150,6 +1196,18 @@ def biped_geo(name, build):
         {'origin': [-pw / 2, shoulder - ph, -pd / 2], 'size': [pw, ph, pd],
          'uv': sheet.slot((pw, ph, pd), 'plate')},
     ]
+    if build['belt']:
+        ew, eh, ed = build['belt']
+        # At the torso's bottom edge, a shade wider than the chest: the waist is where a standing
+        # figure's outline changes direction, and a box has nowhere for that to happen.
+        torso.append({'origin': [-ew / 2, hip, -ed / 2], 'size': [ew, eh, ed],
+                      'uv': sheet.slot((ew, eh, ed), 'belt')})
+    if build['pack']:
+        kw, kh, kd = build['pack']
+        # Flush against the back, high on the torso. On `body` rather than a bone of its own: it
+        # leans with the hunch, which is what makes it read as carried rather than bolted on.
+        torso.append({'origin': [-kw / 2, shoulder - kh - 1, td / 2], 'size': [kw, kh, kd],
+                      'uv': sheet.slot((kw, kh, kd), 'pack')})
     for (sx, sy, sz, cw, ch, cd) in build['shards']:
         torso.append({'origin': [sx - cw / 2, hip + sy, sz - cd / 2], 'size': [cw, ch, cd],
                       'uv': sheet.slot((cw, ch, cd), 'shard')})
@@ -1160,37 +1218,59 @@ def biped_geo(name, build):
         # re-state is a lean that disappears the moment a clip forgets it.
         {'name': 'body', 'parent': 'root', 'pivot': [0, hip, 0],
          'rotation': [build['hunch'], 0, 0], 'cubes': torso},
-        # `head_lift` takes back part of the hunch. A pitched torso carries the skull with it, so a
-        # leaning enemy without this walks looking at its own feet — which reads as defeated rather
-        # than as predatory, and is the difference between a stalker and a man who has dropped
-        # something.
-        {'name': 'head', 'parent': 'body', 'pivot': [0, shoulder, 0],
-         'rotation': [build['head_lift'], 0, 0], 'cubes': [
-            {'origin': [-hw / 2, shoulder, -hd / 2], 'size': [hw, hh, hd],
-             'uv': sheet.slot((hw, hh, hd), 'head')},
-            # A brow ridge, sitting proud of the skull. Faces are where a player looks first and a
-            # flat cube is where a generated humanoid looks most generated.
-            {'origin': [-bw / 2, shoulder + hh - 1, -bd / 2], 'size': [bw, bh, bd],
-             'uv': sheet.slot((bw, bh, bd), 'plate')},
-        ]},
     ]
 
+    # `head_lift` takes back part of the hunch. A pitched torso carries the skull with it, so a
+    # leaning enemy without this walks looking at its own feet — which reads as defeated rather
+    # than as predatory, and is the difference between a stalker and a man who has dropped
+    # something.
+    head_cubes = [
+        {'origin': [-hw / 2, shoulder, -hd / 2], 'size': [hw, hh, hd],
+         'uv': sheet.slot((hw, hh, hd), 'head')},
+        # A brow ridge, sitting proud of the skull. Faces are where a player looks first and a
+        # flat cube is where a generated humanoid looks most generated.
+        {'origin': [-bw / 2, shoulder + hh - 1, -bd / 2], 'size': [bw, bh, bd],
+         'uv': sheet.slot((bw, bh, bd), 'plate')},
+    ]
+    if build['jaw']:
+        jw, jh, jd = build['jaw']
+        # Wrapped around the base of the skull, mirroring the brow above: on the head bone, so it
+        # turns with the face it frames rather than staying on the shoulders under it.
+        head_cubes.append({'origin': [-jw / 2, shoulder - 1, -jd / 2], 'size': [jw, jh, jd],
+                           'uv': sheet.slot((jw, jh, jd), 'jaw')})
+    bones.append({'name': 'head', 'parent': 'body', 'pivot': [0, shoulder, 0],
+                  'rotation': [build['head_lift'], 0, 0], 'cubes': head_cubes})
+
+    gw, gh, gd = build['hand'] or (0, 0, 0)
+    ow, oh, od = build['boot'] or (0, 0, 0)
     for side, sx in (('left', 1), ('right', -1)):
         ax = sx * (tw / 2 + aw / 2 + build['arm_gap'])
+        arm_cubes = [{'origin': [ax - aw / 2, shoulder - ph - ah, -ad / 2],
+                      'size': [aw, ah, ad], 'uv': sheet.slot((aw, ah, ad), 'arm')}]
+        if build['hand']:
+            # A fist a shade wider than the forearm, hanging one unit past its end. Limbs that
+            # simply stop at a flat cut are the other place a generated body gives itself away.
+            arm_cubes.append({'origin': [ax - gw / 2, shoulder - ph - ah - 1, -gd / 2],
+                              'size': [gw, gh, gd], 'uv': sheet.slot((gw, gh, gd), 'hand')})
         bones.append({
             'name': f'arm_{side}', 'parent': 'body',
             'pivot': [ax, shoulder - ph, 0],
-            'cubes': [{'origin': [ax - aw / 2, shoulder - ph - ah, -ad / 2],
-                       'size': [aw, ah, ad], 'uv': sheet.slot((aw, ah, ad), 'arm')}],
+            'cubes': arm_cubes,
         })
         lx = sx * build['stance']
+        leg_cubes = [{'origin': [lx - lw / 2, hip - lh, -ld / 2],
+                      'size': [lw, lh, ld], 'uv': sheet.slot((lw, lh, ld), 'leg')}]
+        if build['boot']:
+            # Around the bottom of the shin, resting exactly on y0 — the floor contract the rig
+            # audit holds every biped to.
+            leg_cubes.append({'origin': [lx - ow / 2, hip - lh, -od / 2],
+                              'size': [ow, oh, od], 'uv': sheet.slot((ow, oh, od), 'boot')})
         bones.append({
             # Legs hang off `root`, not off `body`: the hunch is a property of the upper body, and
             # parenting them to a pitched torso would tip the feet off the floor by that angle.
             'name': f'leg_{side}', 'parent': 'root',
             'pivot': [lx, hip, 0],
-            'cubes': [{'origin': [lx - lw / 2, hip - lh, -ld / 2],
-                       'size': [lw, lh, ld], 'uv': sheet.slot((lw, lh, ld), 'leg')}],
+            'cubes': leg_cubes,
         })
 
     height = hip + th + hh + bh
@@ -1793,8 +1873,9 @@ def mastiff_geo():
         ]},
         {'name': 'head', 'parent': 'body', 'pivot': [0, 12, -8], 'cubes': [
             {'origin': [-3, 9, -13], 'size': [6, 5, 5], 'uv': sheet.slot((6, 5, 5), 'head')},
-            # The muzzle, and the reason it is a mastiff rather than a wolf: short and blunt.
-            {'origin': [-2, 9, -16], 'size': [4, 3, 3], 'uv': sheet.slot((4, 3, 3), 'head')},
+            # The muzzle, and the reason it is a mastiff rather than a wolf: short and blunt. Its
+            # own part, so the painter can put a nose on it and eyes on the skull behind it.
+            {'origin': [-2, 9, -16], 'size': [4, 3, 3], 'uv': sheet.slot((4, 3, 3), 'muzzle')},
         ]},
         {'name': 'tail', 'parent': 'body', 'pivot': [0, 13, 7], 'cubes': [
             {'origin': [-1, 12, 7], 'size': [2, 2, 5], 'uv': sheet.slot((2, 2, 5), 'leg')},
@@ -1900,24 +1981,50 @@ def shade(colour, amount):
     return tuple(max(0, min(255, int(c + amount))) for c in colour)
 
 
+# Texels per UV unit. Box UV pins a slot's size in UV units to the cube's size in model units, so a
+# 6-wide skull gets a 6-wide face — one texel per unit, which is why every sheet used to look
+# flat: there was no room on it for anything else. The sampler normalises by `texture_width`, not
+# by the PNG's measurements, so a PNG at twice the declared sheet size doubles every face's
+# resolution without moving a single UV. The glow sheets deliberately stay at 1x — the audit counts
+# their lit texels, and the cap is stated in UV-sized texels.
+SCALE = 2
+
+
 def paint(sheet, palette, seed, size):
     """Paints a sheet from the packed regions, so the texture matches the model it wraps.
 
     Per-part palettes rather than one noise field: an abdomen with a marking, plates that darken
     toward the underside, joints that read as joints. A generated sheet cannot be art, but it can
-    stop being random, and the difference is entirely that this walks `sheet.regions` instead of the
-    whole image.
+    stop being random — and at SCALE texels per unit it can afford a face on a skull and a buckle
+    on a belt, which is most of the distance between "generated" and "drawn".
+
+    Keys beginning with `_` are directives, not parts: `_face` puts eyes and a mouth on a biped's
+    head ('grim', 'skull', or 'masked'), `_chest` puts a strap or an emblem on its torso, `_motif`
+    picks an arachnid's abdomen marking ('spots', 'chevrons', 'racing', 'hourglass'), `_mask` and
+    `_accent` colour those details when the part colours should not.
     """
-    rows = [[(0, 0, 0, 0)] * size for _ in range(size)]
+    px = size * SCALE
+    rows = [[(0, 0, 0, 0)] * px for _ in range(px)]
+    style = palette.get('_face')
+    motif = palette.get('_motif')
+    accent = palette.get('_accent')
+    # Arachnid sheets are the ones with pedipalps; their legs taper and their shells grow bristles.
+    spider = 'palp' in palette
+    eye_col = (palette.get('eye') or ((0, 0, 0),) * 3)[2]
+
     for region in sheet.regions:
         part = region['part']
         base, dark, light = palette[part]
         for (fx, fy, fw, fh, face) in faces_of(region):
-            for y in range(fy, fy + fh):
-                for x in range(fx, fx + fw):
-                    if x >= size or y >= size:
-                        continue
+            X, Y = fx * SCALE, fy * SCALE
+            W, H = fw * SCALE, fh * SCALE
+            cx = X + W / 2
+            for y in range(Y, min(Y + H, px)):
+                for x in range(X, min(X + W, px)):
                     n = noise(x * 7919 + y * 104729 + seed)
+                    # Mottle at cloth-wear size rather than static's: per-pixel noise averages to
+                    # a flat grey at any distance, a three-texel blotch survives being small.
+                    blot = noise((x // 3) * 7919 + (y // 3) * 104729 + seed)
                     # Underside darker, top catching what little light a dungeon has.
                     if face == 'bottom':
                         c = shade(dark, -14)
@@ -1925,31 +2032,182 @@ def paint(sheet, palette, seed, size):
                         c = light
                     else:
                         c = base
+                    if blot < 0.14:
+                        c = shade(c, -9)
+                    elif blot > 0.90:
+                        c = shade(c, 7)
+                    # Cheap ambient occlusion: everything is lit from above and nothing here is
+                    # ever lit well, so a face darkens as it falls away from its own top edge.
+                    if face not in ('top', 'bottom') and H > SCALE:
+                        c = shade(c, int(7 - 16 * (y - Y) / (H - 1)))
                     # Chitin plating: a coarse band across the part, not per-pixel noise.
-                    if part in ('body', 'abdomen', 'segment', 'plate') and ((y - fy) // 2) % 2 == 0:
+                    if part in ('body', 'abdomen', 'segment', 'plate') \
+                            and ((y - Y) // (2 * SCALE)) % 2 == 0:
                         c = shade(c, -10)
                     if part == 'abdomen' and face in ('top', 'south'):
-                        # The marking. Centre stripe plus a pair of blotches — the part of a spider
-                        # anyone actually looks at.
-                        cx = fx + fw / 2
-                        if abs(x - cx) < max(1, fw // 8):
-                            c = shade(light, 26)
-                        elif abs(abs(x - cx) - fw / 3.2) < max(1, fw // 9) \
-                                and (y - fy) % max(3, fh // 3) < max(1, fh // 4):
-                            c = shade(dark, -18)
-                    if part in ('leg', 'arm') and (x - fx) % 4 == 3:
+                        c = abdomen_marking(motif, x, y, X, Y, W, H, cx,
+                                            base, dark, light, accent, seed, c)
+                    if part in ('leg', 'arm') and ((x - X) // SCALE) % 4 == 3:
                         c = shade(dark, -6)   # joint banding along the segment
+                    if spider and part in ('body', 'abdomen', 'leg') and n > 0.965:
+                        c = shade(light, 14)  # bristles: sparse single-texel ticks
+                    if part == 'fang' and H > SCALE:
+                        # Keratin lightens toward the point.
+                        c = shade(c, int(14 * (y - Y) / (H - 1)))
+                    if part == 'belt' and face == 'north' \
+                            and abs(x - cx) < max(2, W // 6) and (y - Y) >= H // 4 \
+                            and (y - Y) < H - H // 4 + 1:
+                        # The buckle. One bright square on the one face a player sees.
+                        c = shade(light, 34)
+                    if part == 'pack':
+                        if face in ('south', 'top') and \
+                                min(abs((x - X) - W * 0.28), abs((x - X) - W * 0.72)) < 1.1:
+                            c = shade(dark, -18)   # the straps holding it shut
+                        elif face == 'south' and abs((y - Y) - H * 0.38) < 1.1:
+                            c = shade(dark, -12)   # the flap's seam
+                    if part == 'boot' and (y - Y) < SCALE:
+                        c = shade(light, 10)       # the cuff where the trouser tucks in
+                    if part == 'hand' and (y - Y) < 1:
+                        c = shade(dark, -12)       # sleeve edge
+                    if part == 'rock' and blot < 0.07:
+                        c = shade(dark, -20)       # pitting, so a boulder is not a beach ball
+                    if part == 'cap' and face != 'bottom' \
+                            and noise((x // 4) * 131 + (y // 4) * 313 + seed) > 0.82:
+                        c = shade(light, 52)       # the classic toadstool spotting
+                    if part == 'wing' and face in ('north', 'south') \
+                            and (x - X) % max(6, W // 3) < 1:
+                        c = shade(dark, -16)       # finger bones raking through the membrane
+                    if palette.get('_coat') == 'brindle' and part == 'shell' \
+                            and face not in ('top', 'bottom') and ((x - X) // SCALE) % 5 < 1:
+                        c = shade(c, -14)          # the tiger-striping working dogs actually wear
+                    if style == 'muzzle':
+                        # A quadruped's face straddles two cubes: eyes high on the skull, where
+                        # they clear the muzzle in front of it, and the nose on the muzzle's blunt
+                        # end with the split lip under it.
+                        if part == 'head' and face == 'north' \
+                                and Y + SCALE <= y < Y + 2 * SCALE \
+                                and (X + SCALE <= x < X + 2 * SCALE
+                                     or X + W - 2 * SCALE <= x < X + W - SCALE):
+                            c = eye_col
+                        if part == 'muzzle' and face == 'north':
+                            if (y - Y) < SCALE + 1 and abs(x - cx) < SCALE:
+                                c = (24, 20, 18)
+                            elif abs(x - cx) < 1:
+                                c = shade(dark, -20)
                     if part in ('eye', 'shard'):
                         # Both are read through an emissive pass as well, so the base sheet has to
                         # agree with it: a dark crystal on the base and a bright one on the glow
-                        # sheet is a seam that changes colour when the light does.
+                        # sheet is a seam that changes colour when the light does. Only an eye too
+                        # large to pass for a glow pixel affords a pupil.
                         c = light
-                    jitter = int((n - 0.5) * 12)
+                        if part == 'eye' and W >= 3 * SCALE and face == 'north' \
+                                and abs(x - cx) < SCALE * 0.8 and (y - Y) >= H // 3:
+                            c = shade(dark, -30)
+                    if style in ('grim', 'skull', 'masked') and part == 'head' \
+                            and face == 'north':
+                        c = biped_face(style, x, y, X, Y, W, H,
+                                       palette, eye_col, c)
+                    if style and part == 'body' and face == 'north':
+                        c = biped_chest(palette.get('_chest'), x, y, X, Y, W, H,
+                                        dark, accent, c)
+                    # A one-texel rim on every face large enough to keep it: seams between parts
+                    # are what pixel art uses for form, and a generated sheet gets them for free.
+                    if part not in ('eye', 'shard') and W >= 3 * SCALE and H >= 3 * SCALE \
+                            and (x in (X, X + W - 1) or y in (Y, Y + H - 1)):
+                        c = shade(c, -16)
+                    jitter = int((n - 0.5) * 8)
                     rows[y][x] = (max(0, min(255, c[0] + jitter)),
                                   max(0, min(255, c[1] + jitter)),
                                   max(0, min(255, c[2] + jitter)),
                                   255)
     return rows
+
+
+def abdomen_marking(motif, x, y, X, Y, W, H, cx, base, dark, light, accent, seed, c):
+    """The dorsal marking — the one surface of a spider anyone actually looks at, so it is the one
+    surface that says which spider. Species are told apart by pattern before palette."""
+    if motif == 'spots':
+        # A juvenile's dappling: coarse cells, most empty.
+        cell = 3 * SCALE
+        if noise((x // cell) * 13 + (y // cell) * 89 + seed) > 0.72 \
+                and abs(x % cell - cell / 2) + abs(y % cell - cell / 2) < cell * 0.6:
+            return shade(dark, -16)
+    elif motif == 'chevrons':
+        # Nested Vs pointing at the spinneret, the weaver's zigzag.
+        if ((y - Y) - abs(x - cx)) % (4 * SCALE) < SCALE and (y - Y) > abs(x - cx) - SCALE:
+            return shade(light, 20)
+    elif motif == 'racing':
+        # Two pale flank stripes and a dark spine: a runner's markings, not a weaver's.
+        if abs(abs(x - cx) - W * 0.18) < SCALE * 0.8:
+            return shade(light, 26)
+        if abs(x - cx) < SCALE * 0.5:
+            return shade(dark, -14)
+    elif motif == 'hourglass':
+        # The warning shape, worn on the back where a floor full of players will see it.
+        my = Y + H / 2
+        if abs(y - my) <= H * 0.38:
+            halfw = abs(y - my) / (H * 0.38) * (W * 0.26) + 1
+            if abs(x - cx) <= halfw:
+                return accent or shade(light, 34)
+    else:
+        # The legacy marking: centre stripe plus a pair of blotches.
+        if abs(x - cx) < max(1, W // 8):
+            return shade(light, 26)
+        if abs(abs(x - cx) - W / 3.2) < max(1, W // 9) \
+                and (y - Y) % max(3, H // 3) < max(1, H // 4):
+            return shade(dark, -18)
+    return c
+
+
+def biped_face(style, x, y, X, Y, W, H, palette, eye_col, c):
+    """Eyes, and enough below them to say what kind of thing they belong to.
+
+    Painted, not modelled: at SCALE texels per unit a 6-unit skull has a 12-texel face, which is
+    enough for sockets, pupils and a mouth — and a humanoid with a face stops being furniture,
+    which was most of what was wrong with the old sheets.
+    """
+    ew = max(2, W // 6)
+    inset = max(2, round(W * 0.17))
+    ey = Y + round(H * 0.40)
+    eh = SCALE
+    in_left = X + inset <= x < X + inset + ew
+    in_right = X + W - inset - ew <= x < X + W - inset
+    if style == 'skull':
+        # Sockets a texel larger than living eyes and empty: absence read at a glance.
+        if ey - 1 <= y < ey + eh + 1 and (in_left or in_right):
+            return (16, 14, 12)
+        if ey + eh + 1 <= y < Y + round(H * 0.68) and abs(x - (X + W / 2)) < 1:
+            return (16, 14, 12)          # the nasal hollow
+        if y >= Y + round(H * 0.78):
+            # Teeth: alternate columns, jitter-free so the grin stays regular.
+            return shade(palette['head'][2], 18) if (x - X) % (2 * SCALE) < SCALE \
+                else (24, 20, 18)
+        return c
+    if style == 'masked' and y >= Y + round(H * 0.55):
+        # Cloth over the lower half; the eyes above it do the talking.
+        mask = palette.get('_mask') or palette['jaw'][0]
+        return shade(mask, -4 if (y - Y) % (2 * SCALE) < SCALE else 4)
+    if ey - 1 <= y < ey and (in_left or in_right):
+        return shade(palette['head'][1], -26)     # the brow's shadow
+    if ey <= y < ey + eh and (in_left or in_right):
+        return eye_col
+    if style == 'grim' and y == Y + round(H * 0.78) \
+            and X + round(W * 0.35) <= x < X + W - round(W * 0.35):
+        return shade(palette['head'][1], -24)     # a mouth that has never smiled
+    return c
+
+
+def biped_chest(chest, x, y, X, Y, W, H, dark, accent, c):
+    """What hangs on the torso's front: a scavenger's bandolier or a guardian's device."""
+    if chest == 'strap':
+        d = (x - X) / W + (y - Y) / H
+        if 0.92 <= d < 1.12:
+            return shade(dark, -20 if d < 1.08 else -4)
+    elif chest == 'emblem':
+        my = Y + H * 0.42
+        if abs(x - (X + W / 2)) + abs(y - my) * W / (H * 1.4) < W * 0.15:
+            return accent or shade(dark, -24)
+    return c
 
 
 def glow_rows(sheet, colour, size, parts=('eye',)):
@@ -1983,6 +2241,7 @@ PALETTES = {
         'fang': ((188, 176, 168), (120, 110, 104), (222, 212, 206)),
         'palp': ((70, 62, 74), (46, 40, 50), (94, 84, 98)),
         'leg': ((64, 57, 68), (40, 35, 44), (88, 79, 92)),
+        '_motif': 'spots',
     },
     'tejedora': {
         'body': ((54, 46, 62), (32, 27, 38), (76, 66, 86)),
@@ -1993,6 +2252,7 @@ PALETTES = {
         'fang': ((196, 186, 174), (124, 116, 108), (232, 224, 214)),
         'palp': ((48, 41, 55), (28, 24, 33), (70, 60, 78)),
         'leg': ((44, 38, 51), (26, 22, 30), (64, 55, 72)),
+        '_motif': 'chevrons',
     },
     'cazadora': {
         # Warm and dusty against the infestation's cold purples — she hunts the floor rather than
@@ -2007,6 +2267,7 @@ PALETTES = {
         'fang': ((214, 202, 186), (136, 128, 118), (244, 238, 228)),
         'palp': ((62, 46, 38), (38, 28, 23), (88, 66, 55)),
         'leg': ((58, 43, 36), (36, 26, 22), (82, 62, 52)),
+        '_motif': 'racing',
     },
     'reina': {
         'body': ((36, 28, 34), (20, 15, 19), (54, 43, 52)),
@@ -2017,6 +2278,7 @@ PALETTES = {
         'fang': ((206, 194, 180), (132, 122, 112), (240, 232, 222)),
         'palp': ((34, 25, 31), (18, 13, 17), (52, 39, 48)),
         'leg': ((30, 23, 28), (16, 12, 15), (46, 36, 44)),
+        '_motif': 'hourglass', '_accent': (172, 52, 56),
     },
 }
 
@@ -2029,6 +2291,13 @@ BIPED_PALETTES = {
         'head': ((132, 112, 92), (88, 74, 60), (166, 146, 124)),
         'arm': ((84, 68, 50), (52, 42, 30), (114, 94, 70)),
         'leg': ((70, 57, 42), (44, 35, 26), (96, 79, 60)),
+        'jaw': ((118, 64, 42), (74, 40, 27), (152, 90, 62)),
+        'belt': ((58, 44, 32), (36, 28, 20), (96, 76, 52)),
+        'hand': ((122, 102, 82), (80, 66, 52), (154, 134, 112)),
+        'boot': ((52, 40, 30), (32, 25, 18), (76, 60, 46)),
+        'pack': ((104, 82, 58), (66, 52, 36), (138, 112, 82)),
+        'eye': ((222, 176, 92), (138, 108, 54), (246, 208, 128)),
+        '_face': 'grim', '_chest': 'strap',
     },
     'raider_arquero': {
         'body': ((62, 78, 62), (38, 50, 39), (88, 108, 86)),
@@ -2036,6 +2305,14 @@ BIPED_PALETTES = {
         'head': ((126, 112, 96), (84, 74, 62), (158, 144, 126)),
         'arm': ((58, 72, 58), (35, 46, 36), (82, 100, 80)),
         'leg': ((48, 60, 48), (29, 38, 30), (68, 84, 68)),
+        'jaw': ((42, 60, 44), (26, 38, 28), (62, 84, 64)),
+        'belt': ((54, 46, 34), (34, 29, 21), (88, 74, 54)),
+        'hand': ((118, 104, 88), (78, 68, 58), (150, 136, 118)),
+        'boot': ((46, 40, 30), (28, 25, 18), (70, 60, 46)),
+        # The pack is the quiver: fletching-brown, against the moss the rest of him wears.
+        'pack': ((96, 72, 46), (60, 45, 29), (128, 98, 66)),
+        'eye': ((146, 208, 122), (88, 128, 74), (190, 240, 168)),
+        '_face': 'grim', '_chest': 'strap',
     },
     'guardian_husk': {
         'body': ((104, 96, 74), (66, 60, 45), (136, 126, 100)),
@@ -2043,6 +2320,12 @@ BIPED_PALETTES = {
         'head': ((118, 110, 86), (76, 70, 54), (150, 140, 112)),
         'arm': ((96, 89, 69), (60, 55, 42), (126, 117, 93)),
         'leg': ((82, 76, 59), (51, 47, 36), (108, 100, 79)),
+        'jaw': ((78, 72, 56), (48, 45, 34), (104, 96, 76)),
+        'belt': ((70, 64, 48), (44, 40, 30), (94, 86, 66)),
+        'hand': ((88, 82, 63), (55, 51, 39), (116, 108, 85)),
+        'boot': ((74, 68, 52), (46, 42, 32), (98, 90, 70)),
+        'eye': ((208, 172, 92), (128, 106, 56), (238, 204, 128)),
+        '_face': 'grim', '_chest': 'emblem', '_accent': (156, 130, 68),
     },
     'guardian_bone': {
         'body': ((196, 192, 178), (140, 136, 124), (228, 224, 212)),
@@ -2050,6 +2333,13 @@ BIPED_PALETTES = {
         'head': ((208, 204, 190), (150, 146, 134), (238, 234, 222)),
         'arm': ((186, 182, 168), (132, 128, 117), (218, 214, 200)),
         'leg': ((168, 164, 151), (118, 115, 105), (198, 194, 180)),
+        'jaw': ((182, 178, 164), (128, 125, 114), (212, 208, 194)),
+        'belt': ((148, 144, 132), (104, 101, 92), (176, 172, 158)),
+        'hand': ((192, 188, 174), (136, 133, 122), (222, 218, 204)),
+        'boot': ((158, 154, 142), (110, 108, 98), (186, 182, 168)),
+        # `_face: skull` paints its own sockets; the entry only tints the glint above the teeth.
+        'eye': ((224, 218, 202), (140, 136, 124), (244, 240, 226)),
+        '_face': 'skull',
     },
     'guardian_warden': {
         'body': ((52, 60, 74), (32, 37, 47), (76, 86, 104)),
@@ -2057,6 +2347,12 @@ BIPED_PALETTES = {
         'head': ((58, 66, 80), (36, 41, 51), (84, 94, 112)),
         'arm': ((48, 55, 69), (29, 34, 43), (70, 80, 97)),
         'leg': ((40, 47, 59), (24, 29, 37), (60, 69, 84)),
+        'jaw': ((38, 44, 56), (23, 27, 34), (58, 66, 82)),
+        'belt': ((34, 40, 50), (20, 24, 30), (52, 60, 74)),
+        'hand': ((44, 51, 64), (27, 31, 39), (66, 75, 92)),
+        'boot': ((36, 42, 53), (22, 26, 32), (54, 62, 78)),
+        'eye': ((146, 194, 232), (88, 120, 148), (192, 226, 252)),
+        '_face': 'grim', '_chest': 'emblem', '_accent': (104, 126, 160),
     },
     # The two humanoids the cave gains, both on the raider rig: the smugglers' outfit is a texture
     # set, not a rig set, which is the point of a shared bone contract.
@@ -2067,6 +2363,14 @@ BIPED_PALETTES = {
         'head': ((138, 118, 96), (92, 78, 63), (170, 150, 126)),
         'arm': ((88, 76, 56), (54, 47, 34), (118, 104, 78)),
         'leg': ((72, 62, 46), (44, 38, 28), (98, 86, 64)),
+        'jaw': ((104, 98, 88), (66, 62, 56), (134, 128, 116)),
+        'belt': ((60, 50, 38), (38, 32, 24), (94, 78, 58)),
+        'hand': ((128, 108, 88), (84, 72, 58), (160, 140, 118)),
+        'boot': ((54, 46, 34), (34, 29, 21), (80, 68, 52)),
+        'pack': ((112, 92, 64), (70, 58, 40), (146, 122, 88)),
+        'eye': ((206, 198, 168), (126, 120, 100), (236, 228, 198)),
+        # The mask of somebody whose work is best done unrecognised.
+        '_face': 'masked', '_mask': (104, 98, 88), '_chest': 'strap',
     },
     'raider_vigia': {
         # The one with the horn: darker cloth and a red sash, so the enemy you are meant to kill
@@ -2076,6 +2380,14 @@ BIPED_PALETTES = {
         'head': ((132, 112, 92), (88, 74, 60), (164, 144, 122)),
         'arm': ((66, 44, 44), (40, 26, 26), (94, 64, 64)),
         'leg': ((56, 38, 38), (34, 22, 22), (80, 56, 56)),
+        'jaw': ((140, 48, 44), (88, 30, 27), (178, 72, 64)),
+        'belt': ((52, 38, 32), (32, 24, 20), (82, 62, 50)),
+        'hand': ((124, 104, 84), (82, 68, 54), (156, 136, 114)),
+        'boot': ((46, 34, 30), (28, 21, 18), (70, 54, 46)),
+        'pack': ((94, 70, 50), (58, 44, 31), (124, 96, 70)),
+        'eye': ((240, 128, 84), (148, 78, 50), (255, 172, 124)),
+        # Bandana up over the nose, in the sash's red: the kill-first enemy wears its own flag.
+        '_face': 'masked', '_mask': (140, 48, 44), '_chest': 'strap',
     },
     'murcielago_gruta': {
         'shell': ((66, 54, 62), (40, 32, 38), (92, 76, 88)),
@@ -2105,9 +2417,15 @@ BIPED_PALETTES = {
         'tendril': ((78, 108, 60), (48, 66, 37), (108, 146, 84)),
     },
     'mastin_contrabandista': {
-        'shell': ((78, 62, 50), (48, 38, 30), (108, 86, 70)),
-        'head': ((70, 55, 44), (42, 33, 26), (98, 78, 62)),
-        'leg': ((62, 49, 39), (37, 29, 23), (88, 70, 56)),
+        # Lighter than the first pass: a dog the colour of the cave floor was a dog nobody saw
+        # arriving, which is the wrong kind of surprise for the enemy whose job is to be seen
+        # closing. Brindle-striped, because a flat tan coat at this scale is a pool table.
+        'shell': ((112, 88, 66), (70, 55, 42), (146, 118, 92)),
+        'head': ((100, 78, 58), (62, 48, 36), (132, 106, 82)),
+        'muzzle': ((66, 52, 42), (40, 32, 26), (92, 74, 60)),
+        'leg': ((90, 71, 54), (56, 44, 34), (120, 96, 76)),
+        'eye': ((214, 160, 84), (132, 100, 52), (242, 194, 122)),
+        '_face': 'muzzle', '_coat': 'brindle',
     },
     'gran_limo': {
         # Darker and more mineral than the chaff slimes it splits into — the same animal after a
@@ -2125,7 +2443,13 @@ BIPED_PALETTES = {
         'head': ((52, 48, 55), (32, 29, 34), (74, 69, 78)),
         'arm': ((54, 50, 57), (33, 30, 35), (76, 71, 80)),
         'leg': ((46, 43, 49), (28, 26, 30), (66, 62, 70)),
+        'hand': ((50, 47, 53), (31, 29, 33), (72, 67, 76)),
+        'boot': ((44, 41, 47), (27, 25, 29), (64, 60, 68)),
         'shard': ((186, 118, 236), (118, 68, 158), (226, 176, 255)),
+        # Painted amethyst, not emissive amethyst: the seams keep the glow budget, the face only
+        # has to agree with them about what the golem is made of.
+        'eye': ((196, 140, 240), (124, 84, 158), (230, 186, 255)),
+        '_face': 'grim',
     },
 }
 
@@ -2399,7 +2723,7 @@ def main():
     anim = os.path.join(ROOT, 'animations/dungeon_gran_limo.animation.json')
     write_json(anim, limo_animation(heavy=True))
     base = os.path.join(tex, 'gran_limo.png')
-    write_png(base, paint(sheet, BIPED_PALETTES['gran_limo'], 83, 128), 128, 128)
+    write_png(base, paint(sheet, BIPED_PALETTES['gran_limo'], 83, 128), 128 * SCALE, 128 * SCALE)
     written += [geo, anim, base]
 
     # --- the humanoids and the golem ----------------------------------------------------------
@@ -2425,7 +2749,8 @@ def main():
         size = build['sheet']
         for i, name in enumerate(palettes):
             base = os.path.join(tex, f'{name}.png')
-            write_png(base, paint(sheet, BIPED_PALETTES[name], 61 + 7 * i, size), size, size)
+            write_png(base, paint(sheet, BIPED_PALETTES[name], 61 + 7 * i, size),
+                      size * SCALE, size * SCALE)
             written.append(base)
             if build['shards']:
                 glow = os.path.join(tex, f'{name}_glow.png')
@@ -2484,7 +2809,7 @@ def main():
         seed = {'cria': 11, 'tejedora': 29, 'cazadora': 37, 'reina': 47}[name]
         for variant in variants:
             base = os.path.join(tex, f'{variant}.png')
-            write_png(base, paint(sheet, PALETTES[name], seed, size), size, size)
+            write_png(base, paint(sheet, PALETTES[name], seed, size), size * SCALE, size * SCALE)
             glow = os.path.join(tex, f'{variant}_glow.png')
             eye = PALETTES[name]['eye'][2] + (255,)
             # Eyes and nothing else, on every variant. The queen's spinneret glowed too for one
@@ -2512,7 +2837,8 @@ def main():
         anim = os.path.join(ROOT, f'animations/dungeon_{name}.animation.json')
         write_json(anim, anim_fn())
         base = os.path.join(tex, f'{texture}.png')
-        write_png(base, paint(sheet, BIPED_PALETTES[texture], 97 + 13 * len(name), 64), 64, 64)
+        write_png(base, paint(sheet, BIPED_PALETTES[texture], 97 + 13 * len(name), 64),
+                  64 * SCALE, 64 * SCALE)
         written += [geo, anim, base]
         if glow_parts:
             glow = os.path.join(tex, f'{texture}_glow.png')
@@ -2527,13 +2853,13 @@ def main():
     anim = os.path.join(ROOT, 'animations/dungeon_lepisma.animation.json')
     write_json(anim, lepisma_animation())
     base = os.path.join(tex, 'lepisma_cueva.png')
-    write_png(base, paint(sheet, LEPISMA_PALETTE, 5, 64), 64, 64)
+    write_png(base, paint(sheet, LEPISMA_PALETTE, 5, 64), 64 * SCALE, 64 * SCALE)
     glow = os.path.join(tex, 'lepisma_cueva_glow.png')
     write_png(glow, glow_rows(sheet, LEPISMA_PALETTE['eye'][2] + (255,), 64), 64, 64)
     written += [path, anim, base, glow]
     # Same rig, same sheet layout, different rock.
     crystal = os.path.join(tex, 'cristal_rastrero.png')
-    write_png(crystal, paint(sheet, CRISTAL_PALETTE, 23, 64), 64, 64)
+    write_png(crystal, paint(sheet, CRISTAL_PALETTE, 23, 64), 64 * SCALE, 64 * SCALE)
     crystal_glow = os.path.join(tex, 'cristal_rastrero_glow.png')
     write_png(crystal_glow, glow_rows(sheet, CRISTAL_PALETTE['eye'][2] + (255,), 64), 64, 64)
     written += [crystal, crystal_glow]

@@ -12,9 +12,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,18 +38,28 @@ import java.util.UUID;
  * <h2>Why accepting for the party takes three seconds</h2>
  *
  * <p>Four of the six afflictions land on everyone. A single click would let one member commit the
- * other three instantly and irreversibly, which is not drama, it is griefing. Holding right-click
- * repeats the interaction every four ticks, so the hold is measurable server-side: the holder gets a
- * progress bar, everyone else gets a warning naming them and what they are about to accept, and
- * three seconds is long enough to shout. Personal afflictions commit on one click — they are only
- * ever your own problem.</p>
+ * other three instantly and irreversibly, which is not drama, it is griefing. So a party offer
+ * charges instead of firing: the first click opens a three-second hold that the server itself
+ * ticks, alive for as long as the holder stays in reach with the stand in their sights. The holder
+ * gets a progress bar, everyone else gets a warning naming them and what they are about to accept,
+ * and three seconds is long enough to shout. Personal afflictions commit on one click — they are
+ * only ever your own problem.</p>
+ *
+ * <p>The hold is deliberately not measured by the client's repeated use packets. Their four-tick
+ * cadence is nominal at best — aim drifting a block, a usable item in hand, another client mod —
+ * and any break in the chain reset the bar, which in practice meant spam-clicking it full.</p>
  */
 public final class CurseMarket {
 
-    /** Ticks of held right-click before a party-wide affliction is accepted. */
+    /** Ticks of sustained attention before a party-wide affliction is accepted. */
     private static final int HOLD_TICKS = 60;
-    /** How stale a hold may get before it counts as released; the client repeats every 4 ticks. */
-    private static final int HOLD_GAP_TICKS = 8;
+    /** How far the holder may stand from the stand before the hold drops. */
+    private static final double HOLD_REACH = 5.0;
+    /**
+     * How far the view ray may pass from the stand's middle. Generous enough to cover aiming at
+     * the floating icon or the label rather than the pedestal block itself.
+     */
+    private static final double HOLD_AIM_SLACK = 1.5;
     private static final int RANGE = 1;
     private static final int DISPLAY_SWEEP_RADIUS = 3;
 
@@ -67,7 +79,7 @@ public final class CurseMarket {
     }
 
     /** One player's progress through a hold. */
-    private record Hold(BlockPos stand, long startedTick, long lastTick) {}
+    private record Hold(BlockPos stand, long startedTick) {}
 
     private final List<Stand> offers = new ArrayList<>();
     private Stand purge;
@@ -140,24 +152,72 @@ public final class CurseMarket {
             commit(floor, player, stand);
             return;
         }
-        long tick = floor.level().getServer().getTickCount();
         Hold held = holds.get(player.getUUID());
-        if (held == null || !held.stand().equals(stand.pos) || tick - held.lastTick() > HOLD_GAP_TICKS) {
-            holds.put(player.getUUID(), new Hold(stand.pos, tick, tick));
-            RunEngine.message(floor, "§5" + player.getName().getString() + " va a aceptar §d"
-                    + afliccion.nombre() + "§5 para todo el grupo…");
+        if (held != null && held.stand().equals(stand.pos)) {
+            // Already charging; tick() is driving it, and the client repeats clicks while held.
             return;
         }
-        long elapsed = tick - held.startedTick();
-        holds.put(player.getUUID(), new Hold(stand.pos, held.startedTick(), tick));
-        if (elapsed >= HOLD_TICKS) {
-            holds.remove(player.getUUID());
-            commit(floor, player, stand);
+        holds.put(player.getUUID(),
+                new Hold(stand.pos, floor.level().getServer().getTickCount()));
+        RunEngine.message(floor, "§5" + player.getName().getString() + " va a aceptar §d"
+                + afliccion.nombre() + "§5 para todo el grupo…");
+    }
+
+    /** Advances every open hold; runs once per server tick while the floor is live. */
+    void tick(RunEngine.ActiveFloor floor) {
+        if (holds.isEmpty()) {
             return;
         }
-        int filled = (int) (10 * elapsed / HOLD_TICKS);
-        player.displayClientMessage(Component.literal("§5Aceptando §d" + afliccion.nombre()
-                + " §8[§d" + "▉".repeat(filled) + "§8" + "▁".repeat(10 - filled) + "§8]"), true);
+        long tick = floor.level().getServer().getTickCount();
+        Iterator<Map.Entry<UUID, Hold>> it = holds.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Hold> entry = it.next();
+            Hold held = entry.getValue();
+            Stand stand = offerAt(held.stand());
+            ServerPlayer player = floor.level().getServer().getPlayerList()
+                    .getPlayer(entry.getKey());
+            if (stand == null || stand.spent || player == null || !player.isAlive()
+                    || player.serverLevel() != floor.level()) {
+                it.remove();
+                continue;
+            }
+            if (!engaged(player, stand.pos)) {
+                it.remove();
+                player.displayClientMessage(Component.literal("§8El trato queda en el aire."), true);
+                continue;
+            }
+            long elapsed = tick - held.startedTick();
+            if (elapsed >= HOLD_TICKS) {
+                it.remove();
+                commit(floor, player, stand);
+                continue;
+            }
+            int filled = (int) (10 * elapsed / HOLD_TICKS);
+            player.displayClientMessage(Component.literal("§5Aceptando §d"
+                    + stand.offer.afliccion().nombre() + " §8[§d" + "▉".repeat(filled) + "§8"
+                    + "▁".repeat(10 - filled) + "§8]"), true);
+        }
+    }
+
+    /** Still at the stand: close enough, with the view ray passing by its column. */
+    private static boolean engaged(ServerPlayer player, BlockPos standPos) {
+        Vec3 centre = Vec3.atBottomCenterOf(standPos).add(0, 1.0, 0);
+        Vec3 eye = player.getEyePosition();
+        if (eye.distanceTo(centre) > HOLD_REACH) {
+            return false;
+        }
+        Vec3 look = player.getViewVector(1.0F);
+        double along = Math.max(0.0, centre.subtract(eye).dot(look));
+        return eye.add(look.scale(along)).distanceTo(centre) <= HOLD_AIM_SLACK;
+    }
+
+    private Stand offerAt(BlockPos pos) {
+        for (Stand stand : offers) {
+            if (stand.pos.equals(pos)) {
+                return stand;
+            }
+        }
+        return null;
     }
 
     private void commit(RunEngine.ActiveFloor floor, ServerPlayer player, Stand stand) {

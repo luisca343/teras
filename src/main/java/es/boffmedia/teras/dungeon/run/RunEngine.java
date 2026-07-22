@@ -404,6 +404,7 @@ public final class RunEngine {
                     // value that changes on somebody else's schedule, and a player who walks in
                     // halfway has to be added to it.
                     floor.bossBars.tick(floor);
+                    floor.market.tick(floor);
                 }
                 if (sweep) {
                     abandonDeserted(floor);

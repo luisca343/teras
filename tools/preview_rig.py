@@ -4,6 +4,8 @@
     python3 tools/preview_rig.py                          # every rig, rest pose
     python3 tools/preview_rig.py dungeon_spider_tejedora  # one rig
     python3 tools/preview_rig.py dungeon_reina walk 0.5   # posed by a clip, at a time in seconds
+    python3 tools/preview_rig.py dungeon_raider --tex raider_vigia   # with a texture on it
+    python3 tools/preview_rig.py --textured               # every rig, wearing a default texture
 
 Writes `build/rig-preview/<rig>.png`: front, side, top and a three-quarter view side by side, plus
 whatever the audit found printed to stdout.
@@ -202,7 +204,8 @@ def build(name, clip=None, time=0.0):
                 local = about(rotation_matrix(cube['rotation']),
                               mirror_point(cube.get('pivot', [0, 0, 0])))
                 corners = [put(local, c) for c in corners]
-            built.append({'bone': bone_name, 'corners': [put(world, c) for c in corners]})
+            built.append({'bone': bone_name, 'corners': [put(world, c) for c in corners],
+                          'uv': cube.get('uv'), 'size': cube['size']})
 
         for child in geo['bones']:
             if child.get('parent') == bone_name:
@@ -212,6 +215,196 @@ def build(name, clip=None, time=0.0):
         if not bone.get('parent'):
             walk(bone['name'], IDENTITY)
     return geo, built
+
+
+# ---------------------------------------------------------------------------- textures
+
+def decode_png(path):
+    """Reads an 8-bit RGBA PNG back to rows of tuples — the inverse of write_png, plus the four
+    row filters any other encoder is free to have used."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    pos, w, h, idat = 8, 0, 0, b''
+    while pos < len(data):
+        length = struct.unpack('>I', data[pos:pos + 4])[0]
+        tag = data[pos + 4:pos + 8]
+        body = data[pos + 8:pos + 8 + length]
+        if tag == b'IHDR':
+            w, h, depth, colour = struct.unpack('>IIBB', body[:10])
+            if depth != 8 or colour != 6:
+                raise ValueError(f'{path}: only 8-bit RGBA is supported')
+        elif tag == b'IDAT':
+            idat += body
+        pos += 12 + length
+    raw = zlib.decompress(idat)
+    stride = w * 4
+    rows, prev = [], bytearray(stride)
+    for y in range(h):
+        f0 = raw[y * (stride + 1)]
+        line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - 4] if i >= 4 else 0
+            b = prev[i]
+            c = prev[i - 4] if i >= 4 else 0
+            if f0 == 1:
+                line[i] = (line[i] + a) & 0xff
+            elif f0 == 2:
+                line[i] = (line[i] + b) & 0xff
+            elif f0 == 3:
+                line[i] = (line[i] + (a + b) // 2) & 0xff
+            elif f0 == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xff
+        prev = line
+        rows.append([tuple(line[i:i + 4]) for i in range(0, stride, 4)])
+    return rows, w, h
+
+
+# For each face of `FACES`, in order: the box-UV rect it samples and, per corner, which texture
+# corner that model corner takes, as (dx,dy,dz) → (u,v) with v=0 at the rect's top. The v axis is
+# certain — texture v runs down, model y runs up. The u direction per face is the box-UV net's
+# convention as best reconstructed from vanilla sheets; if it is ever found backwards on one face
+# the fix is local to this table, and a flipped face on a preview is a nuisance rather than a bug
+# shipped — nothing in the game reads this file.
+def face_uv(rect_name, dx, dy, dz):
+    if rect_name == 'north':
+        return dx, 1 - dy
+    if rect_name == 'south':
+        return 1 - dx, 1 - dy
+    if rect_name == 'east':
+        return 1 - dz, 1 - dy
+    if rect_name == 'west':
+        return dz, 1 - dy
+    if rect_name == 'top':
+        return dx, dz
+    return dx, 1 - dz          # bottom
+
+
+# FACES entries carry normals in the mirrored space build() works in; dx=0 is the mirrored -X face.
+FACE_RECTS = {(-1, 0, 0): 'east', (1, 0, 0): 'west', (0, -1, 0): 'bottom',
+              (0, 1, 0): 'top', (0, 0, -1): 'north', (0, 0, 1): 'south'}
+
+
+def uv_rects(uv, size):
+    """The six face rectangles of one cube's box-UV slot, keyed by name — faces_of in the
+    authoring tool, restated here from the same net."""
+    u, v = uv
+    sx, sy, sz = (int(math.ceil(s)) for s in size)
+    return {
+        'top': (u + sz, v, sx, sz),
+        'bottom': (u + sz + sx, v, sx, sz),
+        'east': (u, v + sz, sz, sy),
+        'north': (u + sz, v + sz, sx, sy),
+        'west': (u + sz + sx, v + sz, sz, sy),
+        'south': (u + 2 * sz + sx, v + sz, sx, sy),
+    }
+
+
+def draw_textured(built, view, size, bounds, tex, tex_w, tex_h):
+    """The painter's algorithm again, but each face subdivided to the texture's own pixels.
+
+    Bilinear interpolation across the projected quad is exact here, not an approximation: the
+    corners went through an affine transform and an orthographic projection, and both commute
+    with the interpolation. `tex_w`/`tex_h` are the geometry's declared sheet size, which the PNG
+    is allowed to be a multiple of — that multiple is where the authoring tool hides its extra
+    resolution, and this samples at the PNG's grain so the preview shows all of it.
+    """
+    pixels = [[(24, 24, 28, 255)] * size for _ in range(size)]
+    depth = [[1e9] * size for _ in range(size)]
+    lo, hi = bounds
+    span = max(hi[i] - lo[i] for i in range(3)) or 1
+    scale = (size - 12) / span
+    png_h = len(tex)
+    png_w = len(tex[0])
+    sx_png, sy_png = png_w / tex_w, png_h / tex_h
+
+    def to_screen(c):
+        px, py, pd = project(c, view)
+        centre = [(lo[i] + hi[i]) / 2 for i in range(3)]
+        ox, oy, _ = project(centre, view)
+        return (size / 2 + (px - ox) * scale, size / 2 + (py - oy) * scale, pd)
+
+    quads = []
+    for cube in built:
+        if cube.get('uv') is None:
+            continue
+        pts = [to_screen(c) for c in cube['corners']]
+        rects = uv_rects(cube['uv'], cube['size'])
+        for idx, normal in FACES:
+            rect_name = FACE_RECTS[normal]
+            fx, fy, fw, fh = rects[rect_name]
+            # The four projected corners keyed by their texture-space corner.
+            keyed = {}
+            for i in idx:
+                dx, dy, dz = i >> 2 & 1, i >> 1 & 1, i & 1
+                keyed[face_uv(rect_name, dx, dy, dz)] = pts[i]
+            c00, c10 = keyed[(0, 0)], keyed[(1, 0)]
+            c01, c11 = keyed[(0, 1)], keyed[(1, 1)]
+            shade = 0.55 + 0.45 * abs(normal[1]) + 0.2 * abs(normal[0])
+            quads.append((sum(p[2] for p in keyed.values()) / 4,
+                          (c00, c10, c01, c11), shade,
+                          (fx, fy, fw, fh)))
+    quads.sort(key=lambda q: -q[0])
+
+    def lerp2(c00, c10, c01, c11, u, v):
+        return [c00[i] * (1 - u) * (1 - v) + c10[i] * u * (1 - v)
+                + c01[i] * (1 - u) * v + c11[i] * u * v for i in range(3)]
+
+    for centre, (c00, c10, c01, c11), shade, (fx, fy, fw, fh) in quads:
+        pw, ph = max(1, round(fw * sx_png)), max(1, round(fh * sy_png))
+        for j in range(ph):
+            for i in range(pw):
+                ty = int(fy * sy_png) + j
+                txx = int(fx * sx_png) + i
+                if not (0 <= ty < png_h and 0 <= txx < png_w):
+                    continue
+                texel = tex[ty][txx]
+                if len(texel) > 3 and texel[3] < 8:
+                    continue
+                sub = [lerp2(c00, c10, c01, c11, u, v)
+                       for u, v in ((i / pw, j / ph), ((i + 1) / pw, j / ph),
+                                    (i / pw, (j + 1) / ph), ((i + 1) / pw, (j + 1) / ph))]
+                quad = [sub[0], sub[1], sub[3], sub[2]]
+                d = sum(p[2] for p in sub) / 4
+                colour = tuple(min(255, int(v * min(shade, 1.35))) for v in texel[:3])
+                xs = [p[0] for p in quad]
+                ys = [p[1] for p in quad]
+                x0, x1 = max(0, int(min(xs))), min(size - 1, int(max(xs)) + 1)
+                y0, y1 = max(0, int(min(ys))), min(size - 1, int(max(ys)) + 1)
+                for y in range(y0, y1 + 1):
+                    for x in range(x0, x1 + 1):
+                        if inside(quad, x + 0.5, y + 0.5) and d < depth[y][x]:
+                            depth[y][x] = d
+                            pixels[y][x] = colour + (255,)
+    if view in ('front', 'side', '3/4'):
+        _, gy, _ = to_screen([0, 0, 0])
+        gy = int(gy)
+        if 0 <= gy < size:
+            for x in range(size):
+                if pixels[gy][x][:3] == (24, 24, 28):
+                    pixels[gy][x] = (70, 74, 86, 255)
+    return pixels
+
+
+# The texture each rig wears when `--textured` asks for everything: one representative variant.
+DEFAULT_TEXTURES = {
+    'dungeon_raider': 'raider_saqueador',
+    'dungeon_guardian': 'guardian_husk',
+    'dungeon_golem': 'golem_geoda',
+    'dungeon_limo': 'limo_cueva',
+    'dungeon_gran_limo': 'gran_limo',
+    'dungeon_lepisma': 'lepisma_cueva',
+    'dungeon_spider_cria': 'spider_cria',
+    'dungeon_spider_tejedora': 'spider_tejedora',
+    'dungeon_cazadora': 'spider_cazadora',
+    'dungeon_reina': 'spider_reina',
+    'dungeon_murcielago': 'murcielago_gruta',
+    'dungeon_escarabajo': 'escarabajo_geoda',
+    'dungeon_hongo': 'hongo_bombardero',
+    'dungeon_musgo': 'musgo_agarrador',
+    'dungeon_mastin': 'mastin_contrabandista',
+}
 
 
 # ---------------------------------------------------------------------------- raster
@@ -426,7 +619,7 @@ def audit(name, geo, built, posed=False):
 
 # ---------------------------------------------------------------------------- main
 
-def render(name, clip_name=None, time=0.0):
+def render(name, clip_name=None, time=0.0, texture=None):
     clip = None
     if clip_name:
         anim_path = os.path.join(ASSETS, 'animations', animation_for(name))
@@ -436,9 +629,16 @@ def render(name, clip_name=None, time=0.0):
     problems, bounds = audit(name, geo, built, posed=clip is not None)
 
     size = 300
-    highlight = {c['bone'] for c in built
-                 if any(p in ' '.join(problems) for p in [c['bone']])} if problems else set()
-    panels = [draw(built, v, size, bounds, highlight) for v, _ in VIEWS]
+    if texture:
+        tex, _, _ = decode_png(os.path.join(ASSETS, 'textures/entity/dungeon', texture + '.png'))
+        desc = geo['description']
+        panels = [draw_textured(built, v, size, bounds, tex,
+                                desc['texture_width'], desc['texture_height'])
+                  for v, _ in VIEWS]
+    else:
+        highlight = {c['bone'] for c in built
+                     if any(p in ' '.join(problems) for p in [c['bone']])} if problems else set()
+        panels = [draw(built, v, size, bounds, highlight) for v, _ in VIEWS]
     rows = []
     for y in range(size):
         row = []
@@ -448,7 +648,8 @@ def render(name, clip_name=None, time=0.0):
                 row.append((90, 90, 100, 255))
         rows.append(row)
 
-    label = name + ('' if not clip_name else f'-{clip_name}-{time}')
+    label = name + ('' if not clip_name else f'-{clip_name}-{time}') \
+        + ('' if not texture else f'-tex-{texture}')
     path = os.path.join(OUT, label + '.png')
     write_png(path, rows)
     print(f'{label}: {len(built)} cubes  bounds x{bounds[0][0]:.1f}..{bounds[1][0]:.1f} '
@@ -470,9 +671,21 @@ def animation_for(rig):
 
 def main():
     args = sys.argv[1:]
+    texture = None
+    if '--tex' in args:
+        i = args.index('--tex')
+        texture = args[i + 1]
+        del args[i:i + 2]
+    if '--textured' in args:
+        for f in sorted(os.listdir(os.path.join(ASSETS, 'geo'))):
+            if f.endswith('.geo.json'):
+                rig = f[:-len('.geo.json')]
+                render(rig, texture=DEFAULT_TEXTURES.get(rig))
+                print()
+        return
     if args:
         render(args[0], args[1] if len(args) > 1 else None,
-               float(args[2]) if len(args) > 2 else 0.0)
+               float(args[2]) if len(args) > 2 else 0.0, texture=texture)
         return
     bad = 0
     for f in sorted(os.listdir(os.path.join(ASSETS, 'geo'))):
