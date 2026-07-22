@@ -3,7 +3,9 @@ package es.boffmedia.teras.dungeon.piso;
 import es.boffmedia.teras.dungeon.model.RoomShape;
 import es.boffmedia.teras.dungeon.model.ShapeFamily;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -70,40 +72,68 @@ public final class RoomKeys {
         return ShapeFamily.SINGLE;
     }
 
+    /** Where the shared table lives, relative to the classpath root. */
+    private static final String MARKERS_RESOURCE = "/data/teras/dungeon/required_markers.txt";
+
+    private static final Map<String, List<String>> REQUIRED_MARKERS = loadRequiredMarkers();
+
     /**
      * The markers a finished room of this key is expected to carry.
      *
-     * <p>Here rather than in the editor because the editor is no longer the only thing that asks:
-     * the audit checks the same list, and two copies of "what a shop room needs" drift the moment
-     * one of them gains a room type. Absence is never fatal — every consumer falls back to a
-     * calculated position — so this is what a room *should* declare, not what it must.</p>
+     * <p>Read from a shared table rather than written here, because this is not the only audit that
+     * asks. {@code RoomAudit} checks a room saved in the in-game editor; the Python room tool checks
+     * the shipped templates as it generates them. They were hand-maintained mirrors and they drifted
+     * the first time it mattered — §37 required {@code loot} on secret rooms in the tool and not in
+     * Java, so the fix for "secrets pay nothing" only landed for half the rooms anyone could author.
+     * One file, both readers.</p>
+     *
+     * <p>Absence is never fatal — every consumer falls back to a calculated position — so this is
+     * what a room <i>should</i> declare, not what it must.</p>
      */
     public static List<String> requiredMarkers(String roomKey) {
-        if (roomKey.startsWith("boss")) {
-            return List.of("boss", "trapdoor");
+        return REQUIRED_MARKERS.getOrDefault(roomKey, List.of());
+    }
+
+    /** Every room key the table says something about, for tests and tooling. */
+    public static Set<String> keysWithRequiredMarkers() {
+        return REQUIRED_MARKERS.keySet();
+    }
+
+    private static Map<String, List<String>> loadRequiredMarkers() {
+        Map<String, List<String>> table = new java.util.LinkedHashMap<>();
+        try (java.io.InputStream stream = RoomKeys.class.getResourceAsStream(MARKERS_RESOURCE)) {
+            if (stream == null) {
+                // Not recoverable by guessing: an empty table would silently pass every room.
+                throw new IllegalStateException(MARKERS_RESOURCE + " is missing from the jar");
+            }
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                int comment = line.indexOf('#');
+                if (comment >= 0) {
+                    line = line.substring(0, comment);
+                }
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                int colon = line.indexOf(':');
+                if (colon < 0) {
+                    throw new IllegalStateException("bad line in " + MARKERS_RESOURCE + ": " + line);
+                }
+                List<String> markers = new ArrayList<>();
+                for (String marker : line.substring(colon + 1).split(",")) {
+                    if (!marker.isBlank()) {
+                        markers.add(marker.trim());
+                    }
+                }
+                table.put(line.substring(0, colon).trim(), List.copyOf(markers));
+            }
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("could not read " + MARKERS_RESOURCE, e);
         }
-        return switch (roomKey) {
-            case "mini_boss" -> List.of("boss");
-            case "treasure" -> List.of("loot");
-            case "shop" -> List.of("shopslot");
-            // The curse room pays out where its loot marker stands; without one the reward lands
-            // in the middle of the room, which works but reads like a bug.
-            case "curse" -> List.of("loot");
-            case "sacrifice" -> List.of("sacrifice");
-            case "arcade" -> List.of("arcade");
-            case "devil_deal" -> List.of("deal");
-            // The challenge plate is where the fight starts, so its marker is load-bearing on top
-            // of the wave spawns.
-            case "challenge" -> List.of("spawn", "challenge");
-            // Where the party lands. Without it arrival falls back to the room's centre, which is
-            // only safe while that centre happens to be empty floor — a start chamber built around
-            // any central feature teleports the party inside it.
-            case "start" -> List.of("inicio");
-            // Every normal room, whatever its footprint — keys carry the shape family, never the
-            // orientation.
-            case "normal", "normal_large", "normal_l", "normal_big" -> List.of("spawn");
-            default -> List.of();
-        };
+        return Map.copyOf(table);
     }
 
     /**

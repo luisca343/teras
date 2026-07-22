@@ -254,8 +254,20 @@ class Room:
         return len(placed), len(perches)
 
     def _candidates(self, ranged):
-        """Standable positions, in a stable order. A perch is anything at y>=5 with headroom."""
+        """Standable positions, in a stable order. A perch is anything at y>=5 with headroom.
+
+        Filtered by whether the spot connects to a doorway, which plain standability does not
+        answer: the top of a lone stalagmite has solid footing and two blocks of headroom, and an
+        enemy left there is scenery. `repisa` shipped with one such marker from §27 onward.
+
+        Perches are held to the stricter player rule as well — a ranged enemy on a ledge nobody can
+        climb is not a fight, it is a war of attrition, which is exactly what rule 4 of the room
+        checklist says and what nothing until now enforced."""
         out = []
+        heights = self.walk_heights()
+        entries = [e for e in self.door_entries() if e in heights]
+        reachable = self._can_descend_to(heights, entries) if entries else set()
+        climbable = self._reachable(heights, entries[0]) if entries else set()
         taken = {(mx, mz) for (_, mx, _, mz) in self.markers}
         for (cx, cz) in self.cells:
             for lx in range(2, S - 2):
@@ -272,7 +284,8 @@ class Room:
                         if self.solid_at(x, y + 1, z) or self.solid_at(x, y + 2, z):
                             continue
                         high = y >= 5
-                        if high == ranged:
+                        if high == ranged and (x, z) in reachable \
+                                and (not ranged or (x, z) in climbable):
                             out.append((x, z, y))
                         break
         return out
@@ -508,6 +521,103 @@ class Room:
 
     # -- verification ----------------------------------------------------------
 
+    def walk_heights(self):
+        """The y a player stands at on each tile, or absent where nothing can stand.
+
+        Lowest standable surface: solid underfoot, two blocks of air above. Water counts as solid,
+        so a flooded tile stands on the surface — which is what a mob wading in it does."""
+        heights = {}
+        for (cx, cz) in self.cells:
+            for lx in range(S):
+                for lz in range(S):
+                    x, z = cx * S + lx, cz * S + lz
+                    if self.is_wall(x, z):
+                        continue
+                    for y in range(1, H - 2):
+                        if not self.solid_at(x, y - 1, z):
+                            continue
+                        if self.solid_at(x, y, z) or self.solid_at(x, y + 1, z):
+                            continue
+                        heights[(x, z)] = y
+                        break
+        return heights
+
+    def spread_from_doorways(self):
+        """Tiles by their step distance from the nearest doorway apron.
+
+        Used to cap how high terrain may be built: capping a tile's height at its distance means
+        the ground can only ever rise one block per tile away from a door, so anything sculpted
+        against an apron becomes a stair instead of a cliff. Both rooms that got this wrong built
+        their terrain from the wall inward and forgot the aprons are held flat."""
+        spread = {}
+        frontier = [(x, z) for (x, z) in self.keep_clear
+                    if self.owned(x, z) and not self.is_wall(x, z)]
+        for cell in frontier:
+            spread[cell] = 0
+        while frontier:
+            nxt = []
+            for (x, z) in frontier:
+                for n in self._neighbours(x, z):
+                    if n in spread or not self.owned(*n) or self.is_wall(*n):
+                        continue
+                    spread[n] = spread[(x, z)] + 1
+                    nxt.append(n)
+            frontier = nxt
+        return spread
+
+    def door_entries(self):
+        """One tile inside each doorway, where a player actually arrives."""
+        out = []
+        for (cx, cz) in self.cells:
+            for side in self._exterior_sides(cx, cz):
+                for i in range(INSET, INSET + DOOR_W):
+                    x, z, dx, dz = self._wall_col(cx, cz, side, i)
+                    out.append((x + dx * DEPTH, z + dz * DEPTH))
+        return out
+
+    @staticmethod
+    def _neighbours(x, z):
+        return ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1))
+
+    @staticmethod
+    def _reachable(heights, start):
+        """Where a player can walk from `start`: one block up or down per step, no more.
+
+        Symmetric on purpose. Allowing free descent would pass a room you can enter and not leave,
+        and a pit you cannot climb out of is worse than a wall."""
+        seen = {start}
+        queue = [start]
+        while queue:
+            (x, z) = queue.pop()
+            for n in Room._neighbours(x, z):
+                if n in seen or n not in heights:
+                    continue
+                if abs(heights[n] - heights[(x, z)]) > 1:
+                    continue
+                seen.add(n)
+                queue.append(n)
+        return seen
+
+    @staticmethod
+    def _can_descend_to(heights, entries):
+        """Tiles from which an enemy could get to a doorway — climbing a block or dropping any.
+
+        A different question from the player's, and it has to be: a mob on a two-block rock is not
+        stranded, it just steps off. Holding spawns to the player's symmetric rule would condemn
+        every perch in the game, including the ones the ranged enemies are meant to hold."""
+        seen = set(entries)
+        queue = list(entries)
+        while queue:
+            (x, z) = queue.pop()
+            for n in Room._neighbours(x, z):
+                if n in seen or n not in heights:
+                    continue
+                # Walking n -> (x,z) means climbing at most one; any drop is free.
+                if heights[(x, z)] <= heights[n] + 1:
+                    seen.add(n)
+                    queue.append(n)
+        return seen
+
     def audit(self):
         """RoomAudit mirrored, plus the physics checks the game never makes."""
         errors, warnings = [], []
@@ -562,6 +672,26 @@ class Room:
                     for y in range(1, DOOR_H + 1):
                         if not self.solid_at(x, y, z):
                             errors.append(f'door band open at {x},{y},{z} — carves into air')
+
+        # Can you actually walk the room? Every earlier rule checks the doorway is *open*; none
+        # checked that what is behind it can be entered. anfiteatro shipped with terraces up to five
+        # blocks high built right against its doorway aprons, so all four doors opened onto a wall
+        # and the room could be seen and never entered. Nothing caught it because every individual
+        # rule passed.
+        heights = self.walk_heights()
+        entries = [e for e in self.door_entries() if e in heights]
+        if entries:
+            walkable = self._reachable(heights, entries[0])
+            for entry in entries[1:]:
+                if entry not in walkable:
+                    errors.append(f'doorway at {entry[0]},{entry[1]} cannot be walked to from '
+                                  f'{entries[0][0]},{entries[0][1]} — the room is cut in two')
+            # Spawns answer the mob's question, not the player's.
+            fightable = self._can_descend_to(heights, entries)
+            for (tag, x, y, z) in self.markers:
+                if tag.startswith('spawn') and (x, z) in heights and (x, z) not in fightable:
+                    errors.append(f'{tag} at {x},{z} is sealed off — whatever spawns there can '
+                                  f'never reach the party')
         return errors, warnings
 
     # -- output ----------------------------------------------------------------
@@ -618,16 +748,32 @@ class Room:
         return '\n'.join(rows)
 
 
+# Which markers each room key must carry. Read from the same file RoomKeys reads, not written out
+# again here: this table and its Java twin were hand-maintained mirrors, and they drifted the first
+# time it mattered — the fix that made secret rooms pay out added `loot` here and not in Java, so a
+# secret authored in the in-game editor still shipped with no pedestal and paid nothing.
+MARKERS_FILE = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..',
+    'src/main/resources/data/teras/dungeon/required_markers.txt'))
+
+
+def _load_required_markers():
+    table = {}
+    with open(MARKERS_FILE, encoding='utf-8') as handle:
+        for raw in handle:
+            line = raw.split('#', 1)[0].strip()
+            if not line:
+                continue
+            key, _, rest = line.partition(':')
+            table[key.strip()] = [m.strip() for m in rest.split(',') if m.strip()]
+    return table
+
+
+REQUIRED_MARKERS = _load_required_markers()
+
+
 def required_markers(key):
-    if key.startswith('boss'):
-        return ['boss', 'trapdoor']
-    return {
-        'mini_boss': ['boss'], 'treasure': ['loot'], 'shop': ['shopslot'],
-        'curse': ['loot'], 'sacrifice': ['sacrifice'], 'arcade': ['arcade'],
-        'devil_deal': ['deal'], 'challenge': ['spawn', 'challenge'],
-        'normal': ['spawn'], 'normal_large': ['spawn'], 'normal_l': ['spawn'],
-        'normal_big': ['spawn'],
-    }.get(key, [])
+    return REQUIRED_MARKERS.get(key, [])
 
 
 # The largest wave EnemySpawner can ask a room for, mirroring RoomAuditor.waveMax:
@@ -849,6 +995,186 @@ def build_secret():
     r.mark('loot', 5, 2, 5)
     r.enforce_aprons()
     r.deco('decoracion:suelo', 12, 1, 6)
+    return r
+
+
+
+def build_secret_alacena():
+    """The other kind of secret: not a gap in the rock but a cache somebody squared off, stocked
+    and walled up. rendija is natural, cramped and wet; this one is worked and dry, so finding
+    either one reads as a different discovery rather than the same pocket twice."""
+    r = Room('secret', 'single', 'cuevas:secret:alacena')
+    r.shell()
+    rng = r.rng
+    # the roof presses down, as it does in every secret — you crawl into these
+    for x in range(1, 20):
+        for z in range(1, 20):
+            for y in range(6, 11):
+                r.set(x, y, z, r.stone_blend(y, rng))
+    r.rough_walls(light_chance=0.0)
+    brick = r.block('minecraft:stone_bricks')
+    mossy = r.block('minecraft:mossy_stone_bricks')
+    cracked = r.block('minecraft:cracked_stone_bricks')
+    # the worked floor of the cache, in the corner the doorway bands leave alone
+    for x in range(12, 19):
+        for z in range(2, 9):
+            if (x, z) in r.keep_clear:
+                continue
+            roll = rng.random()
+            r.set(x, 0, z, brick if roll < 0.5 else (mossy if roll < 0.8 else cracked))
+    # a low surround you step over, open toward the room so the cache can be walked into
+    for (x, z) in ((12, 2), (12, 3), (12, 4), (12, 5), (12, 6), (12, 7), (12, 8),
+                   (13, 8), (14, 8), (15, 8), (16, 8), (17, 8), (18, 8)):
+        if (x, z) not in r.keep_clear:
+            r.set(x, 1, z, r.block('minecraft:stone_brick_slab', type='bottom'))
+    # shelving against the back wall, and the light someone left burning
+    for z in (3, 5, 7):
+        r.set(18, 1, z, r.block('minecraft:stone_brick_wall'))
+        r.set(18, 2, z, r.block('minecraft:stone_brick_slab', type='top'))
+    # y=5, so they hang from the ceiling at y=6 rather than from nothing
+    r.set(16, 5, 2, r.block('minecraft:lantern', hanging='true'))
+    r.set(14, 5, 7, r.block('minecraft:lantern', hanging='true'))
+    # the pedestal
+    r.set(15, 1, 5, r.block('minecraft:chiseled_stone_bricks'))
+    r.mark('loot', 15, 2, 5)
+    # rubble where it was broken open, spilling away from the cache
+    for (x, z) in ((10, 6), (9, 8), (11, 9), (8, 5)):
+        if (x, z) not in r.keep_clear:
+            r.set(x, 1, z, r.block('minecraft:cobblestone'))
+    r.stalagmite(4, 15, 2)
+    r.stalagmite(6, 4, 2)
+    r.lichen(1, 3, 12, 'west')
+    r.ore_seam(2)
+    r.enforce_aprons()
+    r.deco('decoracion:suelo', 5, 1, 9)
+    r.deco('decoracion:pared', 1, 3, 6)
+    return r
+
+
+
+def build_secret_veta():
+    """Someone was mining toward this and stopped. The ore is the reward's excuse: a seam running
+    out of the rock, a squared-off face where the work ended, and the cache left at it."""
+    r = Room('secret', 'single', 'cuevas:secret:veta')
+    r.shell()
+    rng = r.rng
+    for x in range(1, 20):
+        for z in range(1, 20):
+            for y in range(6, 11):
+                r.set(x, y, z, r.stone_blend(y, rng))
+    r.rough_walls(ore_chance=0.28, light_chance=0.0)
+    ores = [r.block(name) for name in ('minecraft:iron_ore', 'minecraft:copper_ore',
+                                       'minecraft:gold_ore', 'minecraft:deepslate_iron_ore')]
+    # the seam itself, running across the floor toward the face
+    for i, (x, z) in enumerate(((4, 4), (5, 5), (6, 5), (6, 6), (7, 7), (8, 7),
+                                (9, 8), (10, 8), (11, 9), (12, 10), (13, 10), (14, 11))):
+        if (x, z) in r.keep_clear:
+            continue
+        r.set(x, 0, z, ores[i % len(ores)])
+        if rng.random() < 0.4:
+            r.set(x, 1, z, r.block('minecraft:cobblestone_slab', type='bottom'))
+    # the cut face: worked, flat, and abandoned mid-swing
+    for z in range(3, 9):
+        for y in range(1, 5):
+            r.set(16, y, z, r.block('minecraft:polished_andesite')
+                  if rng.random() < 0.6 else r.block('minecraft:andesite'))
+    for z in (4, 7):
+        r.set(15, 1, z, r.block('minecraft:cobblestone'))
+        r.set(15, 2, z, r.block('minecraft:cobblestone_slab', type='bottom'))
+    r.set(15, 4, 5, r.block('minecraft:lantern', hanging='false'))
+    r.set(15, 3, 5, r.block('minecraft:cobblestone'))
+    # the cache at the face
+    r.set(13, 1, 6, r.block('minecraft:chiseled_stone_bricks'))
+    r.mark('loot', 13, 2, 6)
+    r.ore_seam(6)
+    r.stalagmite(5, 15, 2)
+    r.lichen(1, 3, 14, 'west')
+    r.enforce_aprons()
+    r.deco('decoracion:suelo', 7, 1, 14)
+    r.deco('decoracion:pared', 19, 3, 8)
+    return r
+
+
+def build_secret_derrumbado():
+    """The passage that came down. You climb the spill rather than walk in, and the cache is at the
+    top of it — the only secret whose reward you have to scramble for."""
+    r = Room('secret', 'single', 'cuevas:secret:derrumbado')
+    r.shell()
+    rng = r.rng
+    for x in range(1, 20):
+        for z in range(1, 20):
+            for y in range(7, 11):
+                r.set(x, y, z, r.stone_blend(y, rng))
+    r.rough_walls(light_chance=0.0)
+    rubble = [r.block(name) for name in ('minecraft:cobblestone', 'minecraft:andesite',
+                                         'minecraft:tuff', 'minecraft:cobblestone')]
+    # The spill, deepest at the northwest and thinning across the room. Capped at 4 so the peak
+    # still has two blocks of headroom under a ceiling that starts at 7 — and capped again by how
+    # far each tile is from a doorway, so the spill rises a block at a time instead of walling the
+    # north and west doors off behind three blocks of rock. Same cap as anfiteatro, for the same
+    # reason: the aprons are held clear at floor level, so anything built beside them is a cliff.
+    spread = r.spread_from_doorways()
+    for x in range(1, 20):
+        for z in range(1, 20):
+            if (x, z) in r.keep_clear or r.is_wall(x, z):
+                continue
+            d = x + z
+            top = 4 if d <= 10 else (3 if d <= 15 else (2 if d <= 20 else (1 if d <= 25 else 0)))
+            top = min(top, spread.get((x, z), 0))
+            for y in range(1, top + 1):
+                r.set(x, y, z, rubble[(x + z + y) % len(rubble)])
+    # loose stone on top of the spill, and the cache half-buried at its crest
+    for (x, z) in ((6, 3), (3, 7), (8, 5), (5, 9)):
+        if (x, z) not in r.keep_clear:
+            r.set(x, 5, z, r.block('minecraft:cobblestone_slab', type='bottom'))
+    r.set(4, 5, 4, r.block('minecraft:chiseled_stone_bricks'))
+    r.mark('loot', 4, 6, 4)
+    r.set(7, 6, 7, r.block('minecraft:lantern', hanging='true'))
+    r.stalactite(14, 14, 2)
+    r.stalactite(16, 8, 2)
+    r.lichen(19, 3, 14, 'east')
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.deco('decoracion:suelo', 15, 1, 16)
+    r.deco('decoracion:pared', 1, 3, 17)
+    return r
+
+
+def build_secret_burbuja():
+    """A void the rock closed around: smooth pale calcite, curved to the walls, with the cache dead
+    centre. Deliberately austere — the other four secrets are cluttered, and one that is empty and
+    clean reads as older than all of them.
+
+    Calcite only, no amethyst: that belongs to the super secret, and a secret that borrowed it
+    would blunt the room it was borrowed from."""
+    r = Room('secret', 'single', 'cuevas:secret:burbuja')
+    r.shell()
+    rng = r.rng
+    calcite = r.block('minecraft:calcite')
+    basalt = r.block('minecraft:smooth_basalt')
+    for x in range(1, 20):
+        for z in range(1, 20):
+            d = max(abs(x - 10), abs(z - 10))
+            top = 8 if d <= 3 else (7 if d <= 5 else (6 if d <= 7 else 5))
+            for y in range(top, 11):
+                r.set(x, y, z, calcite if rng.random() < 0.8 else basalt)
+            r.set(x, 0, z, calcite if rng.random() < 0.85 else basalt)
+    for x in range(21):
+        for z in range(21):
+            if r.is_wall(x, z):
+                for y in range(H):
+                    r.set(x, y, z, calcite if rng.random() < 0.75 else basalt)
+    # the cache, on the one thing standing in the room
+    r.set(10, 1, 10, r.block('minecraft:polished_basalt', axis='y'))
+    r.mark('loot', 10, 2, 10)
+    # y=7: the dome starts at 8 over the middle, so this is what they can hang from
+    for (x, z) in ((7, 7), (13, 13)):
+        r.set(x, 7, z, r.block('minecraft:lantern', hanging='true'))
+    r.lichen(1, 3, 10, 'west')
+    r.lichen(19, 3, 10, 'east')
+    r.enforce_aprons()
+    r.deco('decoracion:suelo', 6, 1, 13)
+    r.deco('decoracion:pared', 15, 3, 2)
     return r
 
 
@@ -1443,6 +1769,12 @@ def build_normal_big_anfiteatro():
     rng = r.rng
     r.rough_walls(light_chance=0.0)
     r.ceiling_relief(blobs=22, dripstone=12)
+    # Capped by distance from the nearest doorway approach, so the ground climbs at most one block
+    # per tile away from a door and every seat of the bowl can be reached. Without this the rim
+    # simply walled the doors off: the aprons are held clear at floor level, and the terrace beside
+    # them went straight to two or three blocks. Shipped that way, and all four doors opened onto a
+    # wall.
+    spread = r.spread_from_doorways()
     for x in range(1, 41):
         for z in range(1, 41):
             if (x, z) in r.keep_clear or r.is_wall(x, z) or not r.owned(x, z):
@@ -1450,7 +1782,7 @@ def build_normal_big_anfiteatro():
             d = min(x, z, 41 - x, 41 - z)
             if d > 9:
                 continue
-            top = 5 - (d // 2)
+            top = min(5 - (d // 2), spread.get((x, z), 0))
             for y in range(1, top + 1):
                 r.set(x, y, z, r.stone_blend(y, rng))
     for (x, z) in ((3, 20), (38, 20), (20, 3), (20, 38), (3, 3), (38, 38)):
@@ -1700,7 +2032,11 @@ VARIANTS = {
     'mini_boss':    {'columna': build_mini_boss},               # one column, one shelf
     'shop':         {'alcoba': build_shop},                     # the worked, paved end of a cave
     'treasure':     {'pedestal': build_treasure},               # pedestal under a shaft of light
-    'secret':       {'rendija': build_secret},                  # cramped pocket
+    'secret':       {'rendija': build_secret,                   # cramped natural pocket
+                     'alacena': build_secret_alacena,           # a walled-up cache
+                     'veta': build_secret_veta,                 # an abandoned mining face
+                     'derrumbado': build_secret_derrumbado,     # a collapsed passage to climb
+                     'burbuja': build_secret_burbuja},          # a smooth calcite void
     'super_secret': {'geoda': build_super_secret},              # calcite and amethyst
     'challenge':    {'galerias': build_challenge},              # corner galleries
     'curse':        {'santuario': build_curse},                 # blackstone shrine

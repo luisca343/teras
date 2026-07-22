@@ -113,6 +113,8 @@ public final class PisoCatalog {
                     .problems(piso)) {
                 Teras.LOGGER.warn("Dungeons: piso '{}' {}", piso.id(), problem);
             }
+            // A mechanic id that does not exist used to be indistinguishable from having none.
+            es.boffmedia.teras.dungeon.mecanica.Mechanics.report(piso);
             List<String> missing =
                     es.boffmedia.teras.dungeon.build.RoomTemplates.missingTemplates(piso, manager);
             if (missing.isEmpty()) {
@@ -385,7 +387,7 @@ public final class PisoCatalog {
             return null;
         }
         FloorDef seeded = new FloorDef(newId, newId, "", source.formas(), source.luz(),
-                source.musica(), source.ambiente(), "", source.maldiciones(),
+                source.musica(), source.ambiente(), MechanicDef.NONE, source.maldiciones(),
                 List.of(), List.of(), source.hereda(), source.pesoFormas(), Map.of(),
                 EnemyTable.EMPTY, DecorTables.EMPTY);
         try {
@@ -509,7 +511,7 @@ public final class PisoCatalog {
                     json.has("luz") ? json.get("luz").getAsInt() : 7,
                     string(json, "musica", ""),
                     string(json, "ambiente", ""),
-                    string(json, "mecanica", ""),
+                    mecanica(json.get("mecanica")),
                     curses(json.get("maldiciones")),
                     strings(json.get("jefes")),
                     strings(json.get("minijefes")),
@@ -766,6 +768,42 @@ public final class PisoCatalog {
     }
 
     /**
+     * The signature mechanic. Two accepted shapes, because the bare string predates params and
+     * every existing config on every server still uses it:
+     *
+     * <pre>
+     * "mecanica": "infestacion"
+     * "mecanica": { "id": "infestacion", "params": { "retrasoTicks": 120 } }
+     * </pre>
+     */
+    private static MechanicDef mecanica(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return MechanicDef.NONE;
+        }
+        if (element.isJsonPrimitive()) {
+            return MechanicDef.of(element.getAsString());
+        }
+        if (!element.isJsonObject()) {
+            Teras.LOGGER.warn("Dungeons: 'mecanica' is neither a name nor an object; ignored");
+            return MechanicDef.NONE;
+        }
+        JsonObject json = element.getAsJsonObject();
+        String id = json.has("id") ? json.get("id").getAsString() : "";
+        Map<String, String> params = new LinkedHashMap<>();
+        if (json.has("params") && json.get("params").isJsonObject()) {
+            JsonObject raw = json.getAsJsonObject("params");
+            for (String key : raw.keySet()) {
+                try {
+                    params.put(key, raw.get(key).getAsString());
+                } catch (Exception e) {
+                    Teras.LOGGER.warn("Dungeons: 'mecanica.params.{}' is not a value; skipped", key);
+                }
+            }
+        }
+        return new MechanicDef(id, params);
+    }
+
+    /**
      * Per-piso multipliers over the global shape odds: {@code {"big": 0.3}}. Not a way to forbid a
      * shape — that is what {@code formas} is for — only to make one rarer or commoner than the
      * generator's baseline.
@@ -854,7 +892,8 @@ public final class PisoCatalog {
         pisos.put("cuevas_infestadas", new FloorDef("cuevas_infestadas", "Cuevas Infestadas",
                 "algo se mueve en la oscuridad",
                 EnumSet.allOf(ShapeFamily.class), 4,
-                "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "infestacion",
+                "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave",
+                new MechanicDef("infestacion", Map.of()),
                 EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of("reina_cria"), List.of(),
                 Map.of(ShapeFamily.LARGE, 0.7, ShapeFamily.L, 0.6, ShapeFamily.BIG, 0.3),
                 infestadasEnemies(), infestadasDecor()));
@@ -1004,7 +1043,20 @@ public final class PisoCatalog {
         json.addProperty("luz", piso.luz());
         json.addProperty("musica", piso.musica());
         json.addProperty("ambiente", piso.ambiente());
-        json.addProperty("mecanica", piso.mecanica());
+        if (piso.mecanica().isNone()) {
+            json.addProperty("mecanica", "");
+        } else if (piso.mecanica().params().isEmpty()) {
+            // The bare-string form still round-trips, so a piso that tunes nothing keeps the file
+            // it has always had rather than growing an empty object.
+            json.addProperty("mecanica", piso.mecanica().id());
+        } else {
+            JsonObject mecanica = new JsonObject();
+            mecanica.addProperty("id", piso.mecanica().id());
+            JsonObject params = new JsonObject();
+            piso.mecanica().params().forEach(params::addProperty);
+            mecanica.add("params", params);
+            json.add("mecanica", mecanica);
+        }
         json.add("maldiciones", names(piso.maldiciones().stream().map(Enum::name).toList()));
         json.add("jefes", names(piso.jefes()));
         json.add("minijefes", names(piso.minijefes()));

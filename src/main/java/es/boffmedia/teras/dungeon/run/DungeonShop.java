@@ -204,9 +204,16 @@ public final class DungeonShop {
         slot.textDisplay = text == null ? null : text.getUUID();
     }
 
+    /** How far around a pedestal a stray display can have drifted. Displays do not move; this is
+     * slack for the offsets they were spawned at. */
+    private static final int DISPLAY_SWEEP_RADIUS = 3;
+
     private void despawn(ServerLevel level, Slot slot) {
         DungeonDisplays.discard(level, slot.itemDisplay);
         DungeonDisplays.discard(level, slot.textDisplay);
+        // And by tag, because the ids only work while the chunk is loaded: a pad the party has left
+        // hands back null for both lookups and the pedestal keeps its displays.
+        DungeonDisplays.sweep(level, slot.pos, DISPLAY_SWEEP_RADIUS);
         slot.itemDisplay = null;
         slot.textDisplay = null;
     }

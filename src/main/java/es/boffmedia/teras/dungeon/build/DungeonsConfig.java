@@ -38,6 +38,8 @@ public final class DungeonsConfig {
     private static long curseToll;
     private static int deathPenaltyPct;
     private static String treasureLootTable;
+    private static String secretLootTable;
+    private static String superSecretLootTable;
     private static String curseLootTable;
     private static String devilLootTable;
     private static String bossLootTable;
@@ -196,6 +198,8 @@ public final class DungeonsConfig {
             curseToll = yaml.longValue("peajeMaldicion", curseToll);
             deathPenaltyPct = yaml.integer("penalizacionMuertePct", deathPenaltyPct);
             treasureLootTable = yaml.string("lootTesoro", treasureLootTable);
+            secretLootTable = yaml.string("lootSecreta", secretLootTable);
+            superSecretLootTable = yaml.string("lootSupersecreta", superSecretLootTable);
             curseLootTable = yaml.string("lootMaldicion", curseLootTable);
             devilLootTable = yaml.string("lootTrato", devilLootTable);
             bossLootTable = yaml.string("lootJefe", bossLootTable);
@@ -283,6 +287,10 @@ public final class DungeonsConfig {
         curseToll = 0;
         deathPenaltyPct = 0;
         treasureLootTable = "teras:dungeon/treasure";
+        // A secret costs a wall charge the party bought, so it pays the treasure table: breaking in
+        // has to be worth at least what getting in cost. The super secret is rarer and pays better.
+        secretLootTable = "teras:dungeon/treasure";
+        superSecretLootTable = "teras:dungeon/boss";
         curseLootTable = "teras:dungeon/curse";
         devilLootTable = "teras:dungeon/devil";
         bossLootTable = "teras:dungeon/boss";
@@ -363,6 +371,8 @@ public final class DungeonsConfig {
                 peajeMaldicion: 0
                 penalizacionMuertePct: 0
                 lootTesoro: teras:dungeon/treasure
+                lootSecreta: teras:dungeon/treasure
+                lootSupersecreta: teras:dungeon/boss
                 lootMaldicion: teras:dungeon/curse
                 lootTrato: teras:dungeon/devil
                 lootJefe: teras:dungeon/boss
@@ -534,6 +544,14 @@ public final class DungeonsConfig {
 
     public static String treasureLootTable() {
         return treasureLootTable;
+    }
+
+    public static String secretLootTable() {
+        return secretLootTable;
+    }
+
+    public static String superSecretLootTable() {
+        return superSecretLootTable;
     }
 
     public static String curseLootTable() {

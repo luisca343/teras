@@ -31,7 +31,8 @@ import java.util.Set;
  * @param musica      sound event id, or "" — a resource location either way, so swapping a vanilla
  *                    track for a custom one later needs no code change
  * @param ambiente    ambient loop id, or ""
- * @param mecanica    signature mechanic key, or "" for none. Cuevas is the baseline and has none
+ * @param mecanica    signature mechanic and its tuning, or {@link MechanicDef#NONE}. Cuevas is
+ *                    the baseline and runs none
  * @param maldiciones the curses this piso accepts. A piso restricted to few shapes must refuse
  *                    LABYRINTH or it sprawls to the room cap in one repeated footprint
  * @param jefes       boss pool override; empty inherits the tramo's
@@ -59,7 +60,7 @@ public record FloorDef(String id,
                        int luz,
                        String musica,
                        String ambiente,
-                       String mecanica,
+                       MechanicDef mecanica,
                        Set<Curse> maldiciones,
                        List<String> jefes,
                        List<String> minijefes,
@@ -80,8 +81,9 @@ public record FloorDef(String id,
     public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
                     String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
                     List<String> jefes, List<String> minijefes) {
-        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
-                minijefes, null, Map.of(), Map.of(), EnemyTable.EMPTY, DecorTables.EMPTY);
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, MechanicDef.of(mecanica),
+                maldiciones, jefes, minijefes, null, Map.of(), Map.of(),
+                EnemyTable.EMPTY, DecorTables.EMPTY);
     }
 
     /** A piso with tables but no sharing or weight tuning of its own — how the defaults are built. */
@@ -89,13 +91,13 @@ public record FloorDef(String id,
                     String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
                     List<String> jefes, List<String> minijefes,
                     EnemyTable enemigos, DecorTables decoracion) {
-        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
-                minijefes, null, Map.of(), Map.of(), enemigos, decoracion);
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, MechanicDef.of(mecanica),
+                maldiciones, jefes, minijefes, null, Map.of(), Map.of(), enemigos, decoracion);
     }
 
     /** A piso with tables and shape weights of its own. */
     public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
-                    String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
+                    String musica, String ambiente, MechanicDef mecanica, Set<Curse> maldiciones,
                     List<String> jefes, List<String> minijefes,
                     Map<ShapeFamily, Double> pesoFormas,
                     EnemyTable enemigos, DecorTables decoracion) {
@@ -104,6 +106,7 @@ public record FloorDef(String id,
     }
 
     public FloorDef {
+        mecanica = mecanica == null ? MechanicDef.NONE : mecanica;
         hereda = hereda == null ? List.of(RoomPoolIndex.DEFAULT_SET) : List.copyOf(hereda);
         pesoFormas = pesoFormas == null ? Map.of() : Map.copyOf(pesoFormas);
         pesos = pesos == null ? Map.of() : Map.copyOf(pesos);

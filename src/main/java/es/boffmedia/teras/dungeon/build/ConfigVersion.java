@@ -48,9 +48,11 @@ public final class ConfigVersion {
      *       room key, with {@code hereda} for shared sets and {@code pesos} for odds</li>
      *   <li>Infestadas declares all four {@code formas} and accepts LABYRINTH (§36), with
      *       {@code pesosFormas} keeping its big shapes rare instead of impossible</li>
+     *   <li>{@code mecanica} accepts {@code {id, params}} (§37) so a mechanic's tuning stops being
+     *       compiled, and secret rooms roll loot at a marker that had never been read</li>
      * </ol>
      */
-    public static final int CURRENT = 4;
+    public static final int CURRENT = 5;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

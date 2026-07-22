@@ -69,10 +69,14 @@ import java.util.UUID;
 public final class RoomEditor {
     private RoomEditor() {}
 
-    /** Marker kinds {@code TemplateMarkers} understands — what {@code sala marcar} accepts. */
+    /**
+     * Marker kinds {@code sala marcar} accepts — derived from {@link
+     * es.boffmedia.teras.dungeon.piso.MarkerContract}, not listed again here. This was a third copy
+     * of the vocabulary, beside the command's completions and the contract itself, and a kind that
+     * exists in one copy and not another is exactly how a marker ends up unread.
+     */
     private static final Set<String> MARKER_KINDS =
-            Set.of("spawn", "loot", "boss", "trapdoor", "shopslot", "door", "challenge",
-                    "sacrifice", "arcade", "deal", "nido", "ambiente", "decoracion");
+            es.boffmedia.teras.dungeon.piso.MarkerContract.vocabulary();
 
     private static final Map<UUID, Session> SESSIONS = new LinkedHashMap<>();
 

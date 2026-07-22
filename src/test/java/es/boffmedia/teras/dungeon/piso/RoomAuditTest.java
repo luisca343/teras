@@ -207,4 +207,79 @@ class RoomAuditTest {
                 .marker("loot", SIZE + 10, 1, SIZE + 10).audit("normal_l");
         assertTrue(mentions(findings, "outside every cell"), findings.toString());
     }
+
+    /**
+     * The rule that {@code anfiteatro} shipped past. Every other check passed on that room — floor
+     * solid, aprons clear, markers placed — and all four of its doors opened onto a wall of terrace
+     * five blocks high. It was found by someone standing in the doorway, unable to get in.
+     */
+    @Test
+    void aWallBuiltAgainstTheApronsCutsTheRoomInTwo() {
+        Builder blocked = good(RoomShape.SINGLE);
+        // A ring of raised rock just inside every apron: the doors open, and nothing can step up.
+        for (int x = 0; x < SIZE; x++) {
+            for (int z = 0; z < SIZE; z++) {
+                boolean ring = x == 6 || x == 14 || z == 6 || z == 14;
+                if (ring) {
+                    for (int y = 1; y <= 3; y++) {
+                        blocked.solidAt(x, y, z);
+                    }
+                }
+            }
+        }
+        assertTrue(mentions(blocked.spawns(WAVE_MAX).audit("normal"), "cut in two"),
+                "a room whose doorways cannot reach each other has to be an error");
+    }
+
+    /** A room with nothing built in it is trivially crossable and must stay silent. */
+    @Test
+    void anOpenRoomIsWalkable() {
+        assertFalse(mentions(good(RoomShape.SINGLE).spawns(WAVE_MAX).audit("normal"),
+                "cut in two"));
+    }
+
+    /**
+     * A step is a step, not a wall. Terrain that rises one block at a time has to pass, or the rule
+     * would forbid every terrace and ledge in the game.
+     */
+    @Test
+    void aStaircaseIsNotAWall() {
+        Builder stepped = good(RoomShape.SINGLE);
+        for (int x = 0; x < SIZE; x++) {
+            for (int z = 0; z < SIZE; z++) {
+                int height = Math.min(3, Math.max(0, Math.min(x, z) - 1));
+                for (int y = 1; y <= height; y++) {
+                    stepped.solidAt(x, y, z);
+                }
+            }
+        }
+        assertFalse(mentions(stepped.spawns(WAVE_MAX).audit("normal"), "cut in two"));
+    }
+
+    /**
+     * A mob may drop any distance, so a spawn on a raised rock is fine. Holding spawns to the
+     * player's symmetric rule would condemn every ranged perch the piso design depends on.
+     */
+    @Test
+    void aSpawnOnARaisedRockIsNotSealedOff() {
+        Builder perch = good(RoomShape.SINGLE);
+        for (int y = 1; y <= 3; y++) {
+            perch.solidAt(4, y, 4);
+        }
+        assertFalse(mentions(perch.marker("spawn", 4, 4, 4).audit("normal"), "sealed off"),
+                "it can step off the rock; it does not need to climb back on");
+    }
+
+    /** A spawn walled in on every side is scenery, and the wave that draws it is a body short. */
+    @Test
+    void aSpawnInASealedBoxIsReported() {
+        Builder boxed = good(RoomShape.SINGLE);
+        for (int y = 1; y <= 4; y++) {
+            boxed.solidAt(3, y, 4);
+            boxed.solidAt(5, y, 4);
+            boxed.solidAt(4, y, 3);
+            boxed.solidAt(4, y, 5);
+        }
+        assertTrue(mentions(boxed.marker("spawn", 4, 1, 4).audit("normal"), "sealed off"));
+    }
 }

@@ -62,7 +62,154 @@ public final class RoomAudit {
         checkMarkersOutOfDoorways(room, roomSize, doorWidth, doorHeight, cells, findings);
         checkRequiredMarkers(room, roomKey, findings);
         checkSpawnCount(room, roomKey, waveMax, findings);
+        checkWalkable(room, roomSize, doorWidth, doorHeight, cells, findings);
         return findings;
+    }
+
+    /**
+     * Can the room actually be entered and crossed?
+     *
+     * <p>Every other rule here checks that a doorway is <b>open</b>. None checked what is behind
+     * it. {@code anfiteatro} shipped with terraces up to five blocks high built right against its
+     * aprons: all four doors were clear, the floor had no holes, the markers were placed correctly,
+     * every rule passed — and the room could be seen through the doorway and never walked into.
+     * The person who found it was playing.</p>
+     *
+     * <p>Two different questions, and they need two different rules. A <b>player</b> steps at most
+     * one block up or down, and the rule is symmetric because a drop you cannot climb back out of
+     * is a trap. A <b>mob</b> may drop any distance, so a spawn on a two-block rock is fine and
+     * holding it to the player's rule would condemn every ranged perch in the game.</p>
+     */
+    private static void checkWalkable(Room room, int roomSize, int doorWidth, int doorHeight,
+                                      List<GridPos> cells, List<Finding> findings) {
+        Map<Long, Integer> heights = standingHeights(room, roomSize, cells);
+        List<Long> entries = new ArrayList<>();
+        for (GridPos cell : cells) {
+            for (Direction side : exteriorSides(cells, cell)) {
+                for (int i = 0; i < doorWidth; i++) {
+                    long tile = doorEntry(cell, side, roomSize, doorWidth, i);
+                    if (heights.containsKey(tile) && !entries.contains(tile)) {
+                        entries.add(tile);
+                    }
+                }
+            }
+        }
+        if (entries.isEmpty()) {
+            return;
+        }
+        Set<Long> walkable = flood(heights, entries.subList(0, 1),
+                (from, to) -> Math.abs(heights.get(to) - heights.get(from)) <= 1);
+        for (Long entry : entries) {
+            if (!walkable.contains(entry)) {
+                findings.add(new Finding(Level.ERROR, "the doorway at " + describeTile(entry)
+                        + " cannot be walked to from the others — the room is cut in two, and a "
+                        + "door that opens onto a wall is not a door"));
+                break;
+            }
+        }
+        // A mob climbs one and drops any: an edge into `to` is walkable when standing on `to`
+        // could have got you to `from`.
+        Set<Long> canFight = flood(heights, entries,
+                (from, to) -> heights.get(from) <= heights.get(to) + 1);
+        for (Pos marker : room.markers().getOrDefault("spawn", List.of())) {
+            long tile = tileKey(marker.x(), marker.z());
+            if (heights.containsKey(tile) && !canFight.contains(tile)) {
+                findings.add(new Finding(Level.ERROR, "the spawn at " + describe(marker)
+                        + " is sealed off — whatever spawns there can never reach the party"));
+            }
+        }
+    }
+
+    /** The lowest y a body can stand on each tile: solid underfoot, two blocks of air above. */
+    private static Map<Long, Integer> standingHeights(Room room, int roomSize,
+                                                      List<GridPos> cells) {
+        Map<Long, Integer> heights = new java.util.HashMap<>();
+        int top = room.sizeY() - 2;
+        for (GridPos cell : cells) {
+            for (int lx = 0; lx < roomSize; lx++) {
+                for (int lz = 0; lz < roomSize; lz++) {
+                    int x = cell.x() * roomSize + lx;
+                    int z = cell.y() * roomSize + lz;
+                    for (int y = 1; y < top; y++) {
+                        if (!room.solid().contains(new Pos(x, y - 1, z))
+                                || room.solid().contains(new Pos(x, y, z))
+                                || room.solid().contains(new Pos(x, y + 1, z))) {
+                            continue;
+                        }
+                        heights.put(tileKey(x, z), y);
+                        break;
+                    }
+                }
+            }
+        }
+        return heights;
+    }
+
+    private interface Step {
+        boolean allowed(long from, long to);
+    }
+
+    private static Set<Long> flood(Map<Long, Integer> heights, List<Long> starts, Step step) {
+        Set<Long> seen = new java.util.HashSet<>(starts);
+        java.util.ArrayDeque<Long> queue = new java.util.ArrayDeque<>(starts);
+        while (!queue.isEmpty()) {
+            long tile = queue.poll();
+            int x = (int) (tile >> 32);
+            int z = (int) tile;
+            for (long next : new long[] {tileKey(x + 1, z), tileKey(x - 1, z),
+                    tileKey(x, z + 1), tileKey(x, z - 1)}) {
+                if (seen.contains(next) || !heights.containsKey(next)
+                        || !step.allowed(tile, next)) {
+                    continue;
+                }
+                seen.add(next);
+                queue.add(next);
+            }
+        }
+        return seen;
+    }
+
+    private static long tileKey(int x, int z) {
+        return ((long) x << 32) | (z & 0xffffffffL);
+    }
+
+    private static String describeTile(long tile) {
+        return (int) (tile >> 32) + "," + (int) tile;
+    }
+
+    /** One tile inside a doorway, where a body actually arrives. */
+    private static long doorEntry(GridPos cell, Direction side, int roomSize, int doorWidth,
+                                  int index) {
+        int inset = (roomSize - doorWidth) / 2 + index;
+        int base = DoorwayZone.DEPTH;
+        int x = cell.x() * roomSize;
+        int z = cell.y() * roomSize;
+        return switch (side) {
+            case NORTH -> tileKey(x + inset, z + base);
+            case SOUTH -> tileKey(x + inset, z + roomSize - 1 - base);
+            case WEST -> tileKey(x + base, z + inset);
+            case EAST -> tileKey(x + roomSize - 1 - base, z + inset);
+        };
+    }
+
+    private enum Direction { NORTH, SOUTH, EAST, WEST }
+
+    /** The sides of a cell that face outside the room, and therefore may carry a doorway. */
+    private static List<Direction> exteriorSides(List<GridPos> cells, GridPos cell) {
+        List<Direction> sides = new ArrayList<>();
+        if (!cells.contains(new GridPos(cell.x(), cell.y() - 1))) {
+            sides.add(Direction.NORTH);
+        }
+        if (!cells.contains(new GridPos(cell.x(), cell.y() + 1))) {
+            sides.add(Direction.SOUTH);
+        }
+        if (!cells.contains(new GridPos(cell.x() - 1, cell.y()))) {
+            sides.add(Direction.WEST);
+        }
+        if (!cells.contains(new GridPos(cell.x() + 1, cell.y()))) {
+            sides.add(Direction.EAST);
+        }
+        return sides;
     }
 
     /**

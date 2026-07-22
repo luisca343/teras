@@ -53,7 +53,7 @@ class ShippedPisoTest {
             "oculo",
             // the extra variants
             "pozo", "columnas", "derrumbe", "balcon", "columnata", "manantial", "mirador",
-            "anfiteatro", "cuatro_pilares",
+            "anfiteatro", "cuatro_pilares", "alacena", "veta", "derrumbado", "burbuja",
             // Infestadas only
             "nidal", "capullos");
 
@@ -70,7 +70,7 @@ class ShippedPisoTest {
     }
 
     private static FloorDef piso(String id, Set<ShapeFamily> shapes) {
-        return new FloorDef(id, id, "", shapes, 7, "", "", "",
+        return new FloorDef(id, id, "", shapes, 7, "", "", MechanicDef.NONE,
                 EnumSet.noneOf(es.boffmedia.teras.dungeon.model.Curse.class),
                 List.of(), List.of(), List.of(), java.util.Map.of(), java.util.Map.of(),
                 EnemyTable.EMPTY, DecorTables.EMPTY);
@@ -127,6 +127,8 @@ class ShippedPisoTest {
         FloorDef infestadas = piso("cuevas_infestadas", EnumSet.allOf(ShapeFamily.class));
         assertEquals(5, index.pool(cuevas, "normal").size());
         assertEquals(7, index.pool(infestadas, "normal").size());
+        // A secret found twice in one run must not be the same pocket twice.
+        assertEquals(5, index.pool(cuevas, "secret").size());
 
         List<String> onlyInfested = index.pool(infestadas, "normal").stream()
                 .map(RoomVariant::name)

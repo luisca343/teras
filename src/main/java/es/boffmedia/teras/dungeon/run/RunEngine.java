@@ -1103,20 +1103,43 @@ public final class RunEngine {
 
         @Override
         public void roomDiscovered(Room room, UUID discoverer) {
-            if (room.type() == RoomType.TREASURE) {
-                rollLootAt(floor, markerPos(floor, room, "loot"),
-                        DungeonsConfig.treasureLootTable());
-            } else if (room.type() == RoomType.CURSE && discoverer != null) {
+            // Which rooms pay out is MarkerContract's answer, not a chain of ifs here. Both secret
+            // templates carried a `loot` marker that nothing read, so breaking in — after buying a
+            // wall charge, since shop slot 1 is always ROMPEMUROS — paid nothing. Dispatching on the
+            // contract is what makes that unrepeatable: a room type absent from it cannot pay, and
+            // one present in it cannot be forgotten here.
+            var loot = es.boffmedia.teras.dungeon.piso.MarkerContract.lootSource(room.type());
+            if (loot != null) {
+                rollLootAt(floor, markerPos(floor, room, "loot"), lootTable(loot));
+            }
+            if (room.type() == RoomType.CURSE && discoverer != null) {
                 chargeToll(room, discoverer);
             }
+        }
+
+        /** Exhaustive on purpose: adding a source without giving it a table is a compile error. */
+        private static String lootTable(
+                es.boffmedia.teras.dungeon.piso.MarkerContract.LootSource source) {
+            return switch (source) {
+                case TESORO -> DungeonsConfig.treasureLootTable();
+                case SECRETA -> DungeonsConfig.secretLootTable();
+                case SUPERSECRETA -> DungeonsConfig.superSecretLootTable();
+                case MALDICION -> DungeonsConfig.curseLootTable();
+            };
         }
 
         @Override
         public void sealRoom(Room room) {
             clearDoorways(floor, room);
             DoorCarver.setRoomDoors(floor.level, floor.built, room, sealState());
-            es.boffmedia.teras.dungeon.mecanica.Nests.onRoomSealed(
-                    floor.level, floor.built, room, floor.run.plan().piso());
+            var piso = floor.run.plan().piso();
+            // One call for every mechanic there will ever be. Routing through the registry rather
+            // than naming a class is the point: a second mechanic is a registration, not an edit
+            // here, and a piso that runs none gets a no-op instead of a branch.
+            es.boffmedia.teras.dungeon.mecanica.Mechanics.of(piso).onRoomSealed(
+                    floor.level, floor.built, room,
+                    es.boffmedia.teras.dungeon.mecanica.Mechanics.defOf(piso));
+            es.boffmedia.teras.dungeon.mecanica.Nests.warnIfUnhatchable(floor.built, room, piso);
         }
 
         @Override
@@ -1319,7 +1342,7 @@ public final class RunEngine {
                 online.sendSystemMessage(Component.literal(
                         "§5La maldición también cobra " + toll + " ₽."));
             }
-            rollLootAt(floor, markerPos(floor, room, "loot"), DungeonsConfig.curseLootTable());
+            // The loot itself is rolled by roomDiscovered through the contract; this only charges.
         }
     }
 }

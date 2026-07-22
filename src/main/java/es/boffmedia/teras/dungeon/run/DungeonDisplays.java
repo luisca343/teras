@@ -99,6 +99,38 @@ public final class DungeonDisplays {
         return entity;
     }
 
+    /**
+     * Discards every display this system put up inside a box, by tag.
+     *
+     * <p>The tag has been applied since displays existed and <b>nothing read it</b> — the javadoc
+     * above claimed it was what let a floor tear its displays down, and that was simply untrue. This
+     * makes it true, and closes a real hole while it is at it: {@link #discard} looks an entity up
+     * by UUID, and {@code getEntity} returns null for anything in an unloaded chunk, so a shop whose
+     * pad had gone quiet kept its pedestals. That is the same unloaded-chunk blindness §38 fixed in
+     * the materializer, in a second place.</p>
+     *
+     * <p>Chunks are touched first for exactly that reason. Boxes here are a few blocks across, so
+     * the cost is a handful of loads.</p>
+     */
+    public static void sweep(ServerLevel level, BlockPos centre, int radius) {
+        int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getX() - radius);
+        int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getX() + radius);
+        int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getZ() - radius);
+        int maxChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getZ() + radius);
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                level.getChunk(cx, cz);
+            }
+        }
+        net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+                centre.getX() - radius, centre.getY() - radius, centre.getZ() - radius,
+                centre.getX() + radius + 1, centre.getY() + radius + 1, centre.getZ() + radius + 1);
+        for (Entity entity : level.getEntities((Entity) null, box,
+                e -> e.getTags().contains(DISPLAY_TAG))) {
+            entity.discard();
+        }
+    }
+
     /** Discards a display spawned here; tolerates a null or already-gone entity. */
     public static void discard(ServerLevel level, java.util.UUID id) {
         if (id == null) {

@@ -119,13 +119,20 @@ public final class DungeonCommand {
             (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
                     es.boffmedia.teras.dungeon.gear.GearDefs.all().keySet(), builder);
 
+    /**
+     * Completions for {@code sala marcar}: the contract's vocabulary, plus the qualified forms of
+     * the kinds that take one. Derived rather than listed, so a new marker cannot exist in the
+     * editor and be missing from the suggestions.
+     */
     private static final com.mojang.brigadier.suggestion.SuggestionProvider<CommandSourceStack> MARKER_KINDS =
-            (ctx, builder) -> net.minecraft.commands.SharedSuggestionProvider.suggest(
-                    java.util.List.of("spawn", "spawn:ranged", "loot", "boss", "trapdoor",
-                            "shopslot:1", "door:n", "challenge", "sacrifice", "arcade", "deal",
-                            "nido", "ambiente", "decoracion:techo", "decoracion:suelo",
-                            "decoracion:pared"),
-                    builder);
+            (ctx, builder) -> {
+                java.util.List<String> kinds = new java.util.ArrayList<>(
+                        es.boffmedia.teras.dungeon.piso.MarkerContract.vocabulary());
+                java.util.Collections.sort(kinds);
+                kinds.addAll(java.util.List.of("spawn:ranged", "shopslot:1", "door:n",
+                        "decoracion:techo", "decoracion:suelo", "decoracion:pared"));
+                return net.minecraft.commands.SharedSuggestionProvider.suggest(kinds, builder);
+            };
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -1009,7 +1016,7 @@ public final class DungeonCommand {
         ctx.getSource().sendSuccess(() -> Component.literal("§7maldiciones: §f"
                 + piso.maldiciones().stream().map(Enum::name).sorted().toList()
                 + " §7· luz §f" + piso.luz()
-                + (piso.mecanica().isBlank() ? "" : " §7· mecánica §f" + piso.mecanica())), false);
+                + (piso.mecanica().isNone() ? "" : " §7· mecánica §f" + piso.mecanica())), false);
         ctx.getSource().sendSuccess(() -> Component.literal("§7hereda: §f"
                 + (piso.hereda().isEmpty() ? "(nada)" : String.join(", ", piso.hereda()))), false);
         java.util.List<String> wrongSize =

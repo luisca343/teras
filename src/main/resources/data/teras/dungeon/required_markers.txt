@@ -1,0 +1,47 @@
+# Which markers a room key must carry, read by BOTH audits.
+#
+# There are two: RoomAudit, which runs when a room is saved in the in-game editor, and the Python
+# room tool, which runs when the shipped templates are generated. They were hand-maintained mirrors
+# of each other, and they drifted the first time it mattered — §37 added `loot` to secret rooms in
+# the tool and not in Java, so a secret authored in game still shipped with no pedestal and paid
+# nothing. This file is what they both read instead.
+#
+# Format: <roomKey>: <marker>[, <marker>...]     '#' starts a comment.
+# A marker named here must be one the runtime actually READS — see MarkerContract, which refuses
+# to let an annotation be required.
+
+# Both boss keys owe the same pair. Listed twice rather than matched by prefix, so the table stays
+# a lookup with no logic in it and neither reader has to reimplement the rule.
+boss:         boss, trapdoor
+boss_big:     boss, trapdoor
+
+mini_boss:    boss
+treasure:     loot
+
+# A secret costs a wall charge the party bought, so it has to pay out where its pedestal stands.
+secret:       loot
+super_secret: loot
+
+shop:         shopslot
+
+# The curse room pays out where its loot marker stands; without one the reward lands in the middle
+# of the room, which works but reads like a bug.
+curse:        loot
+
+sacrifice:    sacrifice
+arcade:       arcade
+devil_deal:   deal
+
+# The challenge plate is where the fight starts, so its marker is load-bearing on top of the waves.
+challenge:    spawn, challenge
+
+# Where the party lands. Without it arrival falls back to the room's centre, which is only safe
+# while that centre happens to be empty floor — a start chamber built around any central feature
+# teleports the party inside it.
+start:        inicio
+
+# Every normal room, whatever its footprint — keys carry the shape family, never the orientation.
+normal:       spawn
+normal_large: spawn
+normal_l:     spawn
+normal_big:   spawn

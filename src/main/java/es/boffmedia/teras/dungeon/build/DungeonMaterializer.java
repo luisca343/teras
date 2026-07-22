@@ -8,6 +8,7 @@ import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.piso.DecorTables;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.OwnableEntity;
@@ -199,6 +200,13 @@ public final class DungeonMaterializer {
             }
             BlockPos nominal = origin.offset(
                     room.anchor().x() * roomSize, 0, room.anchor().y() * roomSize);
+            // Before the paste, not after: the template brings its own entities and sweeping
+            // afterwards would delete them. Before is also the only moment the volume is still
+            // the *old* floor's, which is what has to go.
+            for (GridPos cell : room.shape().offsets()) {
+                sweepLoadedEntities(level, nominal.offset(cell.x() * roomSize, 0,
+                        cell.y() * roomSize), roomSize, roomHeight);
+            }
             StructurePlaceSettings settings = new StructurePlaceSettings()
                     .setRotation(entry.rotation())
                     .setIgnoreEntities(false);
@@ -405,7 +413,8 @@ public final class DungeonMaterializer {
             }
             // Entities before blocks: a lingering mob — or a hidden CustomNPCs corpse waiting to
             // respawn — must go with the floor it stood in, or it turns up inside the next one.
-            sweepEntities(level, cell, roomSize, roomHeight);
+            // Loaded, because the pad this is clearing is one the party has already left.
+            sweepLoadedEntities(level, cell, roomSize, roomHeight);
             for (int x = 0; x < roomSize; x++) {
                 for (int y = 0; y < roomHeight; y++) {
                     for (int z = 0; z < roomSize; z++) {
@@ -433,5 +442,37 @@ public final class DungeonMaterializer {
             }
             entity.discard();
         }
+    }
+
+    /**
+     * The same sweep, but over chunks it has made sure are loaded first.
+     *
+     * <p><b>This is the fix for shop displays turning up inside a later floor.</b>
+     * {@code getEntities} only ever sees loaded chunks, and every sweep in this class used to run
+     * <i>before</i> the block writes that load them: the discard job swept a cell and then cleared
+     * it, and the build job swept the whole footprint on its first tick. On a pad the party had
+     * already left, those chunks were unloaded, so the sweep found nothing, the blocks were then
+     * cleared around entities that were never removed, and the next floor built on that pad pasted
+     * its rooms around a floating shop pedestal that no longer belonged to anything.</p>
+     *
+     * <p>Nothing said a word, because from the sweep's point of view it succeeded — it discarded
+     * every entity it could see.</p>
+     *
+     * <p>Only used on cell-sized boxes. Touching every chunk of a whole 13×13-cell footprint would
+     * be some 289 forced loads in one tick, which is why the broad pass stays best-effort and the
+     * per-cell passes are the ones made exact.</p>
+     */
+    private static void sweepLoadedEntities(ServerLevel level, BlockPos origin, int span,
+                                            int height) {
+        int minChunkX = SectionPos.blockToSectionCoord(origin.getX());
+        int maxChunkX = SectionPos.blockToSectionCoord(origin.getX() + span);
+        int minChunkZ = SectionPos.blockToSectionCoord(origin.getZ());
+        int maxChunkZ = SectionPos.blockToSectionCoord(origin.getZ() + span);
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                level.getChunk(cx, cz);
+            }
+        }
+        sweepEntities(level, origin, span, height);
     }
 }
