@@ -69,9 +69,20 @@ public final class BestiaryAudit {
         if (variant.scale() <= 0) {
             findings.add(new Finding(Level.ERROR, id, "scale is " + variant.scale()));
         }
-        if (variant.health() <= 0 || variant.speed() <= 0) {
-            findings.add(new Finding(Level.ERROR, id,
-                    "health and speed must both be positive"));
+        if (variant.health() <= 0) {
+            findings.add(new Finding(Level.ERROR, id, "health must be positive"));
+        }
+        // Speed zero is a broken enemy everywhere except the one mode whose whole statement is that
+        // it does not move. ROOTED is checked the other way round: the entity forces the attribute
+        // to zero, so a rooted variant that declares a speed has written a number nothing reads.
+        if (variant.movement() == Movement.ROOTED) {
+            if (variant.speed() != 0) {
+                findings.add(new Finding(Level.WARNING, id,
+                        "is ROOTED but declares speed " + variant.speed()
+                                + ", which the entity overrides to zero"));
+            }
+        } else if (variant.speed() <= 0) {
+            findings.add(new Finding(Level.ERROR, id, "speed must be positive"));
         }
         // A hopper's speed is spent per bounce rather than per tick, so the usual walking values
         // read as motionless. Cheap to get wrong and impossible to see except in play.

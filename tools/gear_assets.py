@@ -122,6 +122,25 @@ def charm():
     return px
 
 
+def gadget():
+    """A canister with a pull-ring: the one gear icon that has to say "press this".
+
+    Every other sprite here says what the piece *is* — a sword is a sword whichever piece it is.
+    A gadget is four different objects on one item, so the icon says what they have in common
+    instead: something held, with something to pull.
+    """
+    px = blank()
+    rect(px, 5, 6, 10, 13, MID)             # the body of the canister
+    rect(px, 5, 6, 10, 6, LIGHT)            # a lit top edge, so it is not a flat block
+    rect(px, 5, 13, 10, 13, DARK)
+    rect(px, 6, 9, 9, 10, DARK)             # a band around the middle
+    rect(px, 7, 3, 8, 5, LIGHT)             # the ring, above the body
+    rect(px, 6, 2, 6, 3, LIGHT)
+    rect(px, 9, 2, 9, 3, LIGHT)
+    rect(px, 7, 1, 8, 1, LIGHT)
+    return px
+
+
 def armor_layer(inner):
     """One grey layer for all four pieces. layer_1 is head/chest/boots, layer_2 is legs."""
     px = blank(64, 32)
@@ -140,7 +159,7 @@ def armor_layer(inner):
 SPRITES = {
     'gear_espada': sword, 'gear_hacha': axe, 'gear_escudo': shield,
     'gear_yelmo': helmet, 'gear_coraza': chest, 'gear_grebas': legs,
-    'gear_botas': boots, 'gear_amuleto': charm,
+    'gear_botas': boots, 'gear_amuleto': charm, 'gear_artilugio': gadget,
 }
 
 MODEL = '{\n  "parent": "minecraft:item/generated",\n  "textures": {\n    "layer0": "teras:item/%s"\n  }\n}\n'

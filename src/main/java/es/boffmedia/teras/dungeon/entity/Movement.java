@@ -27,8 +27,27 @@ public enum Movement {
      * do. Replacing the move control instead means there is no walking left to show through.
      */
     HOPPER,
-    /** Flying navigation. */
-    FLYER;
+    /**
+     * Flying navigation, and the move control that goes with it.
+     *
+     * <p>Two halves again, and for a while this had the same one the climber had: a
+     * {@code FlyingPathNavigation} was built for it from the day the mode existed, so a flyer
+     * planned a route through the air and then walked the floor underneath it, because the move
+     * control it was handed only understands forward and turn. The other half is
+     * {@code FlyMoveControl} plus {@code setNoGravity}, and the wander goal has to change with it —
+     * a ground stroll picks positions on the floor, so a flyer given one flies down to wander along
+     * it.</p>
+     */
+    FLYER,
+    /**
+     * Does not move at all. What is planted is dangerous to walk past, not to stand away from.
+     *
+     * <p>A movement mode rather than a speed of zero, because those are not the same statement: a
+     * zero-speed walker still paths, still turns to follow, and still reads as something broken
+     * that is trying to reach you. This one is given no wander and no approach, so what a player
+     * sees is a thing that was already there.</p>
+     */
+    ROOTED;
 
     /**
      * Whether the entity implements this mode. A mode nothing honours is worse than a missing one:

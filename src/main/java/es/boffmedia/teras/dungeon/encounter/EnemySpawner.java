@@ -299,13 +299,18 @@ public final class EnemySpawner {
             case "cnpc" -> SpawnTables.Kind.CNPC;
             default -> SpawnTables.Kind.GEO;
         };
-        if (resolved == SpawnTables.Kind.GEO && !GeoEnemyVariant.exists(ref.id())) {
+        // Renamed ids are healed here rather than downstream: the entry's id is what names the boss
+        // bar, keys the ability table and reaches the entity, so an id fixed only at the renderer
+        // would still fight without its abilities under its old name.
+        String id = resolved == SpawnTables.Kind.GEO
+                ? GeoEnemyVariant.current(ref.id()) : ref.id();
+        if (resolved == SpawnTables.Kind.GEO && !GeoEnemyVariant.exists(id)) {
             // GeoEnemyVariant.of falls back rather than failing, so without this the wrong enemy
             // appears and the table looks like it worked.
             Teras.LOGGER.warn("Dungeons: '{}' is not a known enemy variant — spawning the fallback. "
-                    + "Check the piso's enemigos table.", ref.id());
+                    + "Check the piso's enemigos table.", id);
         }
-        return new SpawnTables.SpawnEntry(resolved, ref.id(), ref.tab(), ref.peso(), ref.elite());
+        return new SpawnTables.SpawnEntry(resolved, id, ref.tab(), ref.peso(), ref.elite());
     }
 
     /**

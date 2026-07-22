@@ -71,6 +71,24 @@ public record EnemyTable(int countMin,
     }
 
     /**
+     * The ids of the roster's elite entries — the toughest things this floor already fields.
+     *
+     * <p>Only entries the mini-boss pool can actually spawn: that pool is a list of bare ids, and
+     * the spawner reads a bare id as the first-party bestiary, so a CustomNPCs elite offered here
+     * would be looked up as a geo variant and come back as the fallback.</p>
+     */
+    public List<String> elites() {
+        List<String> ids = new ArrayList<>();
+        for (SpawnRef ref : oleada) {
+            if (ref.elite() && (ref.kind() == null || ref.kind().isBlank()
+                    || ref.kind().equalsIgnoreCase("geo"))) {
+                ids.add(ref.id());
+            }
+        }
+        return ids;
+    }
+
+    /**
      * Wave size at this depth, before the room's own multipliers (cell count, a challenge's later
      * waves). Rounded rather than truncated so a small dificultad is not swallowed entirely.
      */

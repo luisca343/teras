@@ -280,6 +280,49 @@ class FloorSelectorTest {
         assertEquals(List.of("reina_madre"), plan.jefes(),
                 "the queen's piso must override, or she never appears");
         assertEquals(List.of("minijefe"), plan.minijefes(),
-                "an unset mini-boss pool still inherits the tramo's");
+                "a piso with no mini-boss and no elites of its own falls back to the tramo's");
+    }
+
+    /**
+     * A piso that declares no mini-boss promotes one of its own elites before it inherits the
+     * tramo's.
+     *
+     * <p>The tramo's pool says how hard the tier is, not what lives on the floor, and inheriting it
+     * directly put a bone humanoid in the mini-boss room of a spider nest for as long as Infestadas
+     * went without declaring a pool. An elite is by construction the toughest thing the floor
+     * already fields, so this makes the silent case correct instead of merely legal — including on
+     * every config already written, which is the half a version bump cannot reach.</p>
+     */
+    @Test
+    void anUndeclaredMiniBossIsPromotedFromThePisosOwnElites() {
+        EnemyTable roster = new EnemyTable(3, 5, List.of(
+                SpawnRef.of("chaff", 4),
+                SpawnRef.of("tejedora", 1).asElite()), List.of());
+        FloorDef withElites = new FloorDef("infestadas", "Cuevas Infestadas", "", TIGHT, 4,
+                "", "", "infestacion", EnumSet.of(Curse.LOST),
+                List.of("reina_madre"), List.of(), roster, DecorTables.EMPTY);
+        FloorPlan plan = FloorSelector.select(
+                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
+                catalog(withElites), 1, "s", Map.of());
+        assertEquals(List.of("tejedora"), plan.minijefes(),
+                "the floor's own elite should be promoted before the tramo's humanoid");
+    }
+
+    /**
+     * Only elites the mini-boss pool can actually spawn. That pool is a list of bare ids and the
+     * spawner reads a bare id as the first-party bestiary, so a CustomNPCs elite promoted into it
+     * would be looked up as a geo variant and come back as the fallback — the wrong enemy, in the
+     * one room where being wrong is most visible.
+     */
+    @Test
+    void aCloneEliteIsNotPromoted() {
+        EnemyTable roster = new EnemyTable(3, 5, List.of(
+                new SpawnRef("cnpc", "esqueleto_guardia", 7, 1, true, 1.0, 1.0, 1.0)), List.of());
+        FloorDef clones = new FloorDef("cuevas", "Cuevas", "", ALL, 7,
+                "", "", "", Set.of(), List.of(), List.of(), roster, DecorTables.EMPTY);
+        FloorPlan plan = FloorSelector.select(
+                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("cuevas", 1)))),
+                catalog(clones), 1, "s", Map.of());
+        assertEquals(List.of("minijefe"), plan.minijefes());
     }
 }

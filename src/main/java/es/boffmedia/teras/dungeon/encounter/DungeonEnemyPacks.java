@@ -167,6 +167,64 @@ public final class DungeonEnemyPacks {
         // SUMMON spawns `geo:cria` — the hatchlings the floor is already full of and the ones its
         // nests crack open, so the adds need no new enemy and read immediately as hers. Adds enter
         // the room's kill ledger, so the room cannot clear while they live.
+        // The spore sac. Everything it is worth is in ESTALLIDO, which is the first ability in the
+        // system that fires after its owner is dead: it is slow, it is weak, and killing it from
+        // arm's length is the mistake. Radius is small on purpose — one step is the whole answer,
+        // and a cloud you cannot walk out of is not a lesson, it is a tax.
+        table.put("hongo_bombardero", List.of(
+                new AbilityDef(AbilityKind.ESTALLIDO, "minecraft:poison",
+                        Map.of("radius", 3.0, "magnitud", 2.0, "duration", 100.0))));
+
+        // The scavenger is carrying the floor's money and TESORO is where that becomes true. Without
+        // it, an enemy that runs away is only an enemy that wastes your time.
+        table.put("carronero", List.of(
+                new AbilityDef(AbilityKind.TESORO, "", Map.of("magnitud", 12.0))));
+
+        // The lookout: eight seconds from first seeing you, then it calls, and it can call again.
+        // Reinforcements are saqueadores — the wave it grows is the wave the floor already has, so
+        // the threat is the count and not a surprise.
+        table.put("vigia", List.of(
+                new AbilityDef(AbilityKind.ALERTA, "geo:saqueador_cuevas",
+                        Map.of("ticks", 160.0, "count", 2.0, "spread", 3.0))));
+
+        // Its curl is an animation; this is what the curl means. Small, because the beetle is where
+        // the lesson is free — the golem is where it costs.
+        table.put("escarabajo", List.of(
+                new AbilityDef(AbilityKind.THORNS, "", Map.of("fraction", 0.2))));
+
+        // Cuevas' boss, and the whole fight: it splits at two thirds and again at a third, into the
+        // slime the floor is already full of. Nothing else — no phase change to read, no add from
+        // somewhere else in the room. A first boss is where a player finds out what a boss fight in
+        // this dungeon *is*, and one idea executed cleanly teaches that better than three.
+        //
+        // Two SUMMONs on one enemy only became possible when ability firing stopped being keyed on
+        // the kind alone; before that the second was config that looked authored and did nothing.
+        // ENRAGE is the last quarter and spends itself on speed: a slime that gets frantic, not one
+        // that starts hitting like the next floor down.
+        table.put("gran_limo", List.of(
+                new AbilityDef(AbilityKind.SUMMON, "geo:limo_cueva",
+                        Map.of("healthPct", 0.66, "count", 2.0, "spread", 3.0)),
+                new AbilityDef(AbilityKind.SUMMON, "geo:limo_cueva",
+                        Map.of("healthPct", 0.33, "count", 3.0, "spread", 3.5)),
+                new AbilityDef(AbilityKind.ENRAGE, "",
+                        Map.of("healthPct", 0.25, "speedMult", 0.3, "damageMult", 0.15))));
+
+        // The geode's whole reason to exist: hitting it hurts. A third of the melee damage comes
+        // back, which is enough to change what a party does rather than only what it spends —
+        // nothing else in Cuevas asks a question that swinging harder does not answer.
+        table.put("golem_geoda", List.of(
+                new AbilityDef(AbilityKind.THORNS, "", Map.of("fraction", 0.35))));
+
+        // Infestadas' mini-boss. CLEAVE is her pounce landing on whoever was standing together, and
+        // ENRAGE spends almost all of itself on speed — a wounded hunter gets harder to escape
+        // rather than harder to trade with, which is the one thing the queen's enrage does not do.
+        // No SUMMON: adds are the queen's signature, and a mini-boss that opened with them would
+        // spend the boss's first surprise an hour early.
+        table.put("cazadora", List.of(
+                new AbilityDef(AbilityKind.CLEAVE, "", Map.of("radius", 3.0, "fraction", 0.5)),
+                new AbilityDef(AbilityKind.ENRAGE, "",
+                        Map.of("healthPct", 0.35, "speedMult", 0.5, "damageMult", 0.2))));
+
         table.put("reina_madre", List.of(
                 new AbilityDef(AbilityKind.SUMMON, "geo:cria",
                         Map.of("healthPct", 0.6, "count", 3.0, "spread", 3.5)),

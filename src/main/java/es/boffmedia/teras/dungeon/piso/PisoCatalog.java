@@ -879,7 +879,11 @@ public final class PisoCatalog {
         pisos.put("cuevas", new FloorDef("cuevas", "Cuevas", "el aire huele a piedra húmeda",
                 EnumSet.allOf(ShapeFamily.class), 7,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave", "",
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of(), List.of(),
+                // Its own set-pieces, both drawn from the floor's own bestiary. The boss is the
+                // slime the floor has been showing you all along, and the mini-boss is the one
+                // enemy on it that has a rule — so both fights are about something already learned.
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST),
+                List.of("gran_limo"), List.of("golem_geoda"),
                 cuevasEnemies(), cuevasDecor()));
         // Every family, but not at every piso's odds. This used to be two families, on the argument
         // that "tight and choked is the identity" and that it excused six rooms of authoring. The
@@ -894,7 +898,12 @@ public final class PisoCatalog {
                 EnumSet.allOf(ShapeFamily.class), 4,
                 "minecraft:music.overworld.dripstone_caves", "minecraft:ambient.cave",
                 new MechanicDef("infestacion", Map.of()),
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST), List.of("reina_madre"), List.of(),
+                // Its own mini-boss, declared rather than inherited: the tramo's is a bone humanoid,
+                // and the fallback that now promotes a piso's own elite would give the floor a
+                // second tejedora — correct by construction, and still one of the two fights the
+                // floor already has.
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST),
+                List.of("reina_madre"), List.of("cazadora"),
                 Map.of(ShapeFamily.LARGE, 0.7, ShapeFamily.L, 0.6, ShapeFamily.BIG, 0.3),
                 infestadasEnemies(), infestadasDecor()));
 
@@ -908,7 +917,12 @@ public final class PisoCatalog {
                 new TierDef(2, 1.0,
                         List.of(new WeightedRef("cuevas", 3),
                                 new WeightedRef("cuevas_infestadas", 1)),
-                        List.of("coloso_guardian"), List.of("centinela_hueso")))));
+                        // The tramo's own pools are floor-1 defaults now, not crypt wardens. Both
+                        // pisos declare their own, so these are only what a *future* member of this
+                        // pool inherits if it says nothing — and what it should inherit is the
+                        // stage's register, which at tramo 1 is a cave. `coloso_guardian` and
+                        // `centinela_hueso` stay registered for the bone-crypt pool at tramo 2.
+                        List.of("gran_limo"), List.of("golem_geoda")))));
     }
 
     /**
@@ -959,33 +973,74 @@ public final class PisoCatalog {
     private static final int CNPC_TAB = 7;
 
     /**
-     * Cuevas' roster: cave-specific humanoids on the shared rig, the two geo guardians as elites,
-     * and first-party swarm and bouncy chaff for what a humanoid rig cannot be. Every id here is a
-     * {@code GeoEnemyVariant} or a humanoid clone — never a {@code minecraft:} id, since on a
-     * Pixelmon server a real vanilla monster is deleted the instant it spawns. Weights are
-     * relative composition only; the tramo's dificultad supplies the depth.
+     * Cuevas' roster: <b>one enemy per verb, and nothing else.</b>
      *
-     * <p>No ambient entry: a CustomNPCs clone uses NPC navigation, so a bat clone walks the floor
-     * rather than flying, which read worse than no bat at all. The {@code ambientales} mechanism
-     * stays for a mob that a ground path actually suits.</p>
+     * <p>This is the first fight anyone has with the system, so the floor's job is to teach what
+     * the verbs are — things walk at you, things shoot from the ledges, things come in numbers,
+     * things bounce, and one thing must not be hit. Five lessons, each answerable with a sword and
+     * your feet, and every wave a combination of things already understood.</p>
+     *
+     * <p>{@code husk_guardian} and {@code bone_sentinel} used to be the elites here. They are the
+     * bone-crypt's bestiary — see the Catacumbas/Osario pool in {@code DUNGEONS_TRAMOS_DRAFT.md} —
+     * sitting one stage too early, and with them the floor's roster was two thirds humanoid and
+     * two thirds borrowed. They stay registered, because that is what tramo 2 is built from.</p>
+     *
+     * <p>The humanoids that remain are the smugglers, not raiders in general: La Guarida promotes
+     * this roster to a floor of its own later, so spending human variety here spends that floor's
+     * identity. Two is the slice Cuevas needs.</p>
+     *
+     * <p>Every id here is a {@code GeoEnemyVariant} — never a {@code minecraft:} id, since on a
+     * Pixelmon server a real vanilla monster is deleted the instant it spawns. Weights are relative
+     * composition only; the tramo's dificultad supplies the depth.</p>
+     *
+     * <p>The ambient entry is a bat, and it took a first-party flyer to get one. The last attempt
+     * was a CustomNPCs clone, which uses NPC navigation and therefore <i>walked</i> — a bat on foot
+     * read worse than no bat at all, and the entry was pulled. {@code FLYER} now has the half of
+     * its implementation it was missing, so the mechanism finally has a mob that suits it.</p>
      */
     private static EnemyTable cuevasEnemies() {
         return new EnemyTable(3, 5,
-                List.of(SpawnRef.of("saqueador_cuevas", 4),
+                List.of(// The smugglers: the people who got here first, and the roster La Guarida
+                        // will one day promote to a floor of its own.
+                        SpawnRef.of("saqueador_cuevas", 4),
                         // The one shooter, deliberately scarce: perches should be a threat to
                         // answer, not the shape of every fight.
                         SpawnRef.of("arquero_gruta", 2),
-                        SpawnRef.of("husk_guardian", 2).asElite(),
-                        SpawnRef.of("bone_sentinel", 1).asElite(),
+                        // The dog closes a gap the party opened on purpose, which is what keeps
+                        // backing off from being the answer to everything else on this floor.
+                        SpawnRef.of("mastin", 2),
+                        // Kill-me-first, and the only threat here that is a clock. Rare: two
+                        // lookouts is two clocks, and a wave nobody can read.
+                        SpawnRef.of("vigia", 1),
+                        // Does not fight. Leaves, with the money.
+                        SpawnRef.of("carronero", 1),
+                        // The cave's own. The beetle teaches the golem's rule where getting it
+                        // wrong is free; the golem is where it costs.
+                        SpawnRef.of("escarabajo", 2),
+                        SpawnRef.of("cristal_rastrero", 2),
+                        // Slow, weak, and worse dead than alive.
+                        SpawnRef.of("hongo_bombardero", 1),
+                        // It never moves, so its weight is not a share of the threat — it is how
+                        // often a room has one already sitting in it.
+                        SpawnRef.of("musgo_agarrador", 1),
+                        // The floor's one enemy that punishes the default answer. Elite and scarce:
+                        // a room with two of them is a room a melee party cannot enter, which is a
+                        // different game rather than a harder one.
+                        SpawnRef.of("golem_geoda", 1).asElite(),
                         // First-party now, not CustomNPCs clones — see GeoEnemyVariant. As clones
                         // these could not be sized or made to bounce; as geo variants they are both,
                         // and they need no `enemigos instalar` to exist at all.
                         SpawnRef.of("lepisma_cueva", 3),
                         SpawnRef.of("limo_cueva", 2),
-                        // The big slime is scarce and counts as elite: one is a fight, three is a
-                        // wall of them.
+                        // The slime appears at three sizes across the floor — chaff, elite, and the
+                        // boss it splits back into. That is the one repetition worth having: by the
+                        // time the boss lands, a player has already been taught what it is and how
+                        // it moves, so the fight can be about scale instead of about explanation.
                         SpawnRef.of("limo_mayor", 1).asElite()),
-                List.of());
+                // Atmosphere, and the first thing in Cuevas that lives above head height. Outside
+                // the kill ledger on purpose: a bat inside it seals the room until the party has
+                // hunted down every one, which is the fight nobody wants to have.
+                List.of(new EnemyTable.AmbientRef(null, "murcielago", 0, 2)));
     }
 
     /**

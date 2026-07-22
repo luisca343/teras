@@ -41,6 +41,7 @@ public final class GearItems {
             case LEGGINGS -> ItemInit.GEAR_GREBAS.get();
             case BOOTS -> ItemInit.GEAR_BOTAS.get();
             case CHARM -> ItemInit.GEAR_AMULETO.get();
+            case GADGET -> ItemInit.GEAR_ARTILUGIO.get();
         };
     }
 

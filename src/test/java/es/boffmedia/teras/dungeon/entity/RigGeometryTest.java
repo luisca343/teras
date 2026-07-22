@@ -42,6 +42,9 @@ class RigGeometryTest {
     /** A foot this far from the floor reads as hovering or as sunk into it. */
     private static final double GROUND_TOLERANCE = 1.5;
 
+    /** Both flanks come out of the same arithmetic with one sign flipped, so any drift is a fault. */
+    private static final double MIRROR_TOLERANCE = 1e-6;
+
     @Test
     void everyRigStandsOnItsFeet() {
         List<String> problems = new ArrayList<>();
@@ -51,23 +54,28 @@ class RigGeometryTest {
         assertTrue(problems.isEmpty(), "rig geometry:\n" + String.join("\n", problems));
     }
 
-    private static List<String> check(String model) {
-        List<String> problems = new ArrayList<>();
+    /** Bone to {min corner, max corner} once loaded, empty when the rig is not in the jar. */
+    private static Map<String, double[][]> extents(String model) {
+        Map<String, double[][]> extents = new HashMap<>();
         String json = read("assets/teras/" + model);
         if (json == null) {
-            return problems;   // BestiaryAuditTest owns the missing-file case
+            return extents;   // BestiaryAuditTest owns the missing-file case
         }
-        JsonObject geo = JsonParser.parseString(json).getAsJsonObject()
-                .getAsJsonArray("minecraft:geometry").get(0).getAsJsonObject();
-        JsonArray bones = geo.getAsJsonArray("bones");
-
-        Map<String, double[][]> extents = new HashMap<>();   // bone -> {min, max}
+        JsonArray bones = JsonParser.parseString(json).getAsJsonObject()
+                .getAsJsonArray("minecraft:geometry").get(0).getAsJsonObject()
+                .getAsJsonArray("bones");
         for (int i = 0; i < bones.size(); i++) {
             JsonObject bone = bones.get(i).getAsJsonObject();
             if (bone.get("parent") == null) {
                 walk(bones, bone.get("name").getAsString(), identity(), extents);
             }
         }
+        return extents;
+    }
+
+    private static List<String> check(String model) {
+        List<String> problems = new ArrayList<>();
+        Map<String, double[][]> extents = extents(model);
         if (extents.isEmpty()) {
             return problems;
         }
@@ -117,6 +125,54 @@ class RigGeometryTest {
             }
         }
         return problems;
+    }
+
+    /**
+     * Every rig here is an animal at rest, so its two flanks are the same pose reflected.
+     *
+     * <p>Nothing above catches a rig where they are not: each leg still reaches the floor and each
+     * chain still holds together while one side fans out and the other folds into a bundle of legs
+     * leaving a single point. The splay that shipped that way was one Y rotation per leg written
+     * identically on both sides — and because the loader negates Y, identical is exactly what makes
+     * them differ. Symmetry is checked after the transform for the same reason the rest of this
+     * class is: in the file the wrong numbers look right.</p>
+     */
+    @Test
+    void everyRigIsSymmetricAtRest() {
+        List<String> problems = new ArrayList<>();
+        for (GeoEnemyVariant variant : GeoEnemyVariant.all()) {
+            Map<String, double[][]> extents = extents(variant.model());
+            for (String bone : new TreeSet<>(extents.keySet())) {
+                String other = partner(bone);
+                if (other == null || !extents.containsKey(other)) {
+                    continue;
+                }
+                double[][] mine = extents.get(bone);
+                double[][] theirs = extents.get(other);
+                double gap = 0;
+                for (int a = 0; a < 3; a++) {
+                    // Reflecting swaps which corner is the minimum in x, and leaves y and z alone.
+                    double min = a == 0 ? -mine[1][0] : mine[0][a];
+                    double max = a == 0 ? -mine[0][0] : mine[1][a];
+                    gap = Math.max(gap, Math.max(Math.abs(min - theirs[0][a]),
+                            Math.abs(max - theirs[1][a])));
+                }
+                if (gap > MIRROR_TOLERANCE) {
+                    problems.add(String.format("%s %s and %s are not mirror images — %.1f apart at"
+                            + " the worst corner; the two sides are in different poses",
+                            variant.model(), bone, other, gap));
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "rig symmetry:\n" + String.join("\n", problems));
+    }
+
+    /** The bone on the other flank, or null for one on the centre line. */
+    private static String partner(String bone) {
+        if (bone.contains("_left")) {
+            return bone.replace("_left", "_right");
+        }
+        return bone.contains("_l") ? bone.replaceFirst("_l", "_r") : null;
     }
 
     private static boolean isLeg(String bone) {

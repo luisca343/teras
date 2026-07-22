@@ -73,6 +73,48 @@ public record GeoEnemyVariant(
         return glowTexture != null && !glowTexture.isBlank();
     }
 
+    /**
+     * What a rig occupies on the ground, in blocks at scale 1.0: {@code {width, height}}.
+     *
+     * <p>The entity type is {@code sized(0.6, 1.95)} — a person — and every variant's hitbox was
+     * that shape times its scale. For the two upright rigs it is right, because that is the shape
+     * they are. For anything else it is a column that has nothing to do with the model: a slime
+     * whose sprite is two thirds of a block tall was hittable to nearly two blocks, so a swing over
+     * an empty patch of floor connected and a swing at the slime itself often did not.</p>
+     *
+     * <p>Keyed by rig rather than by variant because that is what it is a property of — the scale
+     * on the variant does the rest — and because a rig's real extents are printed by
+     * {@code tools/preview_rig.py}, which is where these numbers come from. Width is the body, not
+     * the reach: arms and legs that hang outside the trunk are not what a hit lands on.</p>
+     *
+     * <p>Absent means the humanoid default, which is deliberately how the arachnids still resolve:
+     * their footprint is wrong in both directions — the queen is five blocks wide and hittable in
+     * one — but Infestadas has been played and verified as it stands, and correcting every spider's
+     * hitbox is a change to how that floor fights, not a floor-1 detail.</p>
+     */
+    private static final Map<String, float[]> RIG_FOOTPRINT = Map.ofEntries(
+            Map.entry("geo/dungeon_limo.geo.json", new float[] {0.75f, 0.70f}),
+            Map.entry("geo/dungeon_gran_limo.geo.json", new float[] {1.5f, 1.35f}),
+            Map.entry("geo/dungeon_golem.geo.json", new float[] {1.0f, 1.7f}),
+            // The wingspan is not the hitbox: a bat is a fist with wings on it, and a two-block-wide
+            // box around one would be hit by everything swung anywhere near it.
+            Map.entry("geo/dungeon_murcielago.geo.json", new float[] {0.5f, 0.6f}),
+            Map.entry("geo/dungeon_escarabajo.geo.json", new float[] {0.9f, 0.6f}),
+            Map.entry("geo/dungeon_hongo.geo.json", new float[] {0.65f, 0.9f}),
+            Map.entry("geo/dungeon_musgo.geo.json", new float[] {0.8f, 0.6f}),
+            Map.entry("geo/dungeon_mastin.geo.json", new float[] {0.7f, 1.0f}));
+
+    /** The shape {@code EntityInit} sizes the type for: a person. */
+    private static final float[] HUMANOID = {0.6f, 1.95f};
+
+    public float hitboxWidth() {
+        return RIG_FOOTPRINT.getOrDefault(model, HUMANOID)[0];
+    }
+
+    public float hitboxHeight() {
+        return RIG_FOOTPRINT.getOrDefault(model, HUMANOID)[1];
+    }
+
     public boolean has(Behaviour behaviour) {
         return behaviours.contains(behaviour);
     }
@@ -85,10 +127,33 @@ public record GeoEnemyVariant(
     /** The variant used when an entity carries an id nothing is registered under. */
     public static final String FALLBACK = "husk_guardian";
 
+    /**
+     * Ids that were renamed, pointing at what they are called now.
+     *
+     * <p>A rename breaks every config and every saved entity that still names the old id, and the
+     * break is invisible: {@link #of} substitutes the fallback, so Infestadas' floor boss came back
+     * as a husk guardian wearing the name "Reina Cria" — the id is what the boss bar and the
+     * ability table are keyed on too. Bumping {@code ConfigVersion} only <i>reports</i> that, and
+     * the report is a log line during a fight nobody is reading logs through. Healing the id at the
+     * boundary means no config has to be resynced for a rename, ever.</p>
+     *
+     * <p>Renames only. A deleted variant must <b>not</b> be repointed at something else: an id that
+     * no longer means anything should be reported to whoever wrote it, not quietly replaced.</p>
+     */
+    private static final Map<String, String> RENAMED = Map.of("reina_cria", "reina_madre");
+
+    /**
+     * The current id for {@code id} — itself, unless it has been renamed. Apply this wherever an
+     * enemy id arrives from a config file or from saved NBT, before it is used to look anything up.
+     */
+    public static String current(String id) {
+        return RENAMED.getOrDefault(id, id);
+    }
+
     private static final Map<String, GeoEnemyVariant> BUILT_IN = builtIn();
 
     public static GeoEnemyVariant of(String id) {
-        GeoEnemyVariant variant = BUILT_IN.get(id);
+        GeoEnemyVariant variant = BUILT_IN.get(current(id));
         return variant != null ? variant : BUILT_IN.get(FALLBACK);
     }
 
@@ -99,7 +164,7 @@ public record GeoEnemyVariant(
      * and nothing anywhere says so. Callers that can report check this first.
      */
     public static boolean exists(String id) {
-        return BUILT_IN.containsKey(id);
+        return BUILT_IN.containsKey(current(id));
     }
 
     public static List<GeoEnemyVariant> all() {
@@ -120,6 +185,15 @@ public record GeoEnemyVariant(
     private static Map<String, GeoEnemyVariant> builtIn() {
         String model = "geo/dungeon_guardian.geo.json";
         String animation = "animations/dungeon_guardian.animation.json";
+        // The cave humanoids came off the guardian rig for the same reason the spiders came off one
+        // mesh: it existed. Seven variants on one vanilla-proportioned body meant the scavenger, the
+        // archer, the crypt heavy and both bosses were the same silhouette at four scales, and the
+        // only thing telling them apart was a texture nobody can read across a dark room. They share
+        // a bone contract now — same names, one clip vocabulary — and nothing else: the raider
+        // tapers upward and leans into its walk at 20 frames a stride, the guardian is a slab under
+        // pauldrons at 32.
+        String raider = "geo/dungeon_raider.geo.json";
+        String raiderAnim = "animations/dungeon_raider.animation.json";
         // Two rigs on one bone contract, not one rig at two scales. The juvenile and the weaver are
         // the same skeleton with different proportions — a bigger head and shorter legs against a
         // heavy spinneret abdomen — because a player has to be able to tell which of the two spits
@@ -151,16 +225,93 @@ public record GeoEnemyVariant(
                 // chaff and their own shooter on the same rig — a texture each, no new model. The
                 // archer is what makes a room's ranged perches worth authoring: it is the only
                 // shipped humanoid that wants one.
-                Map.entry("saqueador_cuevas", GeoEnemyVariant.melee("saqueador_cuevas", model,
-                        "textures/entity/dungeon/raider_saqueador.png", animation,
-                        0.95f, 20, 4, 0.30, 1, 24)),
-                Map.entry("arquero_gruta", new GeoEnemyVariant("arquero_gruta", model,
-                        "textures/entity/dungeon/raider_arquero.png", animation,
+                Map.entry("saqueador_cuevas", GeoEnemyVariant.melee("saqueador_cuevas", raider,
+                        "textures/entity/dungeon/raider_saqueador.png", raiderAnim,
+                        0.95f, 20, 3, 0.30, 1, 24)),
+                Map.entry("arquero_gruta", new GeoEnemyVariant("arquero_gruta", raider,
+                        "textures/entity/dungeon/raider_arquero.png", raiderAnim,
                         0.95f, 16, 2, 0.27, 0, 32,
                         // BLINK is the archer's answer to being closed on: without it a shooter in
                         // a 21-wide room is a free target the moment anyone reaches it.
                         Movement.GROUND,
-                        java.util.EnumSet.of(Behaviour.RANGED, Behaviour.BLINK), 4f, 45)),
+                        java.util.EnumSet.of(Behaviour.RANGED, Behaviour.BLINK), 3f, 45)),
+
+                // The rest of the smugglers' outfit, both on the raider rig: an outfit is a texture
+                // set, not a rig set, which is the whole return on a shared bone contract.
+                //
+                // The scavenger is the first enemy in the bestiary that does not want to fight. It
+                // runs, it is carrying the floor's money, and chasing it costs the ground you were
+                // holding — the first decision a player makes rather than a question they answer.
+                Map.entry("carronero", new GeoEnemyVariant("carronero", raider,
+                        "textures/entity/dungeon/raider_carronero.png", raiderAnim,
+                        0.9f, 14, 2, 0.36, 0, 26, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.HUIDIZO), 0f, 0)),
+                // The lookout. Kill it inside its countdown or it calls, and the wave grows. Its
+                // sash is red for the same reason its ability is a timer: the enemy you are meant
+                // to reach first has to be findable in a fight that is already happening.
+                Map.entry("vigia", new GeoEnemyVariant("vigia", raider,
+                        "textures/entity/dungeon/raider_vigia.png", raiderAnim,
+                        0.95f, 18, 3, 0.33, 0, 32, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // The dog. Fast, fragile, and the only thing on the floor that closes a gap the
+                // party opened on purpose — which is what stops backing away from being a universal
+                // answer to everything Cuevas has.
+                Map.entry("mastin", new GeoEnemyVariant("mastin",
+                        "geo/dungeon_mastin.geo.json",
+                        "textures/entity/dungeon/mastin_contrabandista.png",
+                        "animations/dungeon_mastin.animation.json",
+                        0.9f, 16, 4, 0.42, 0, 30, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP), 0f, 0)),
+
+                // The cave's own. Each on its own rig, because §44 is the whole reason this
+                // bestiary is not four things at four scales.
+                //
+                // Ambient, and the only enemy here that is not an enemy: it is outside the kill
+                // ledger, it barely hurts, and it exists so that something in Cuevas is above head
+                // height. It is also the first FLYER the mod has ever actually flown.
+                Map.entry("murcielago", new GeoEnemyVariant("murcielago",
+                        "geo/dungeon_murcielago.geo.json",
+                        "textures/entity/dungeon/murcielago_gruta.png",
+                        "animations/dungeon_murcielago.animation.json",
+                        0.9f, 6, 1, 0.30, 0, 16, Movement.FLYER,
+                        java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // The golem's lesson, taught small and taught first. It curls up and its crystals
+                // come up with it, so a player learns "this one hurts to hit" on something that
+                // cannot punish them for learning it slowly.
+                Map.entry("escarabajo", new GeoEnemyVariant("escarabajo",
+                        "geo/dungeon_escarabajo.geo.json",
+                        "textures/entity/dungeon/escarabajo_geoda.png",
+                        "animations/dungeon_escarabajo.animation.json",
+                        "textures/entity/dungeon/escarabajo_geoda_glow.png",
+                        0.9f, 18, 3, 0.24, 6, 20, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // Same rig as the swarm, different rock. A retexture is the honest kind of reuse
+                // when it is the same animal in a different part of the same cave.
+                Map.entry("cristal_rastrero", new GeoEnemyVariant("cristal_rastrero",
+                        "geo/dungeon_lepisma.geo.json",
+                        "textures/entity/dungeon/cristal_rastrero.png",
+                        "animations/dungeon_lepisma.animation.json",
+                        "textures/entity/dungeon/cristal_rastrero_glow.png",
+                        0.6f, 12, 2, 0.34, 2, 20,
+                        Movement.GROUND, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // Slow, weak, and the only enemy on the floor that is more dangerous dead. Killing
+                // it while standing next to it is the mistake; the sac is top-heavy and luminous so
+                // that mistake is available to be avoided.
+                Map.entry("hongo_bombardero", new GeoEnemyVariant("hongo_bombardero",
+                        "geo/dungeon_hongo.geo.json",
+                        "textures/entity/dungeon/hongo_bombardero.png",
+                        "animations/dungeon_hongo.animation.json",
+                        "textures/entity/dungeon/hongo_bombardero_glow.png",
+                        0.9f, 14, 2, 0.16, 0, 14, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // ROOTED: it was already there. No chase, no approach, no wander — what it does is
+                // punish walking past it, which makes a corridor a decision instead of a distance.
+                Map.entry("musgo_agarrador", new GeoEnemyVariant("musgo_agarrador",
+                        "geo/dungeon_musgo.geo.json",
+                        "textures/entity/dungeon/musgo_agarrador.png",
+                        "animations/dungeon_musgo.animation.json",
+                        1.0f, 26, 4, 0.0, 4, 8, Movement.ROOTED,
+                        java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
 
                 // Tramo 1's boss and mini-boss. Distinct ids rather than reusing the two above
                 // because they are the cave tuning: slower and far tougher, sized to a 21x21 arena
@@ -189,6 +340,21 @@ public record GeoEnemyVariant(
                         1.0f, 30, 4, 0.26, 2, 28,
                         Movement.CLIMBER,
                         java.util.EnumSet.of(Behaviour.MELEE, Behaviour.WEB_SHOT), 3f, 70)),
+                // The floor's mini-boss, and deliberately the anti-weaver: no web of any kind, the
+                // longest reach in the bestiary, and the speed to use it. Infestadas' other two
+                // set-pieces hold height and throw silk, so a mini-boss that did the same would be
+                // the queen at 60% — which is the mistake the four-spiders-one-mesh bestiary made,
+                // committed in behaviour instead of in geometry. She closes. Her rig is long-legged
+                // and light-bodied so that is legible before she moves, and her clips run at 18
+                // frames against the chaff's 24 so it is unmistakable once she does.
+                Map.entry("cazadora", new GeoEnemyVariant("cazadora",
+                        "geo/dungeon_cazadora.geo.json",
+                        "textures/entity/dungeon/spider_cazadora.png",
+                        "animations/dungeon_cazadora.animation.json",
+                        "textures/entity/dungeon/spider_cazadora_glow.png",
+                        1.35f, 110, 9, 0.34, 3, 40,
+                        Movement.CLIMBER,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP), 0f, 0)),
                 // The floor boss. Her own rig and her own animation file: she is not the weaver
                 // scaled up, and a boss walking the same cycle as the chaff around her is most of
                 // what makes a boss look small. Named for what she does — the id used to be
@@ -226,15 +392,44 @@ public record GeoEnemyVariant(
                         // Deliberately not a climber: the swarm belongs on the floor, and leaving
                         // the ledges to Infestadas' spiders is what keeps the two pisos apart.
                         Movement.GROUND, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // Cuevas' answer to the one thing every fight on the floor had in common: walk up
+                // and swing. THORNS makes meleeing this a decision rather than the default, and the
+                // speed is what keeps that from being unfair — it is slow enough to leave, in rooms
+                // that give you somewhere to go. The seams are its telegraph: the only emissive
+                // surface outside Infestadas, so "the one you should not hit" is legible in an
+                // unlit room before it is in range.
+                // Its armour is deliberately moderate. The lesson is "do not hit this", and a golem
+                // that is also a wall turns that lesson into a slog: the party learns it in the
+                // first three seconds and then spends a minute proving it.
+                Map.entry("golem_geoda", new GeoEnemyVariant("golem_geoda",
+                        "geo/dungeon_golem.geo.json",
+                        "textures/entity/dungeon/golem_geoda.png",
+                        "animations/dungeon_golem.animation.json",
+                        "textures/entity/dungeon/golem_geoda_glow.png",
+                        1.3f, 70, 6, 0.19, 8, 20,
+                        Movement.GROUND, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
                 Map.entry("limo_cueva", new GeoEnemyVariant("limo_cueva", limo,
                         "textures/entity/dungeon/limo_cueva.png", limoAnim,
-                        0.85f, 22, 4, 0.30, 0, 22,
+                        0.85f, 22, 3, 0.30, 0, 22,
                         Movement.HOPPER, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
                 Map.entry("limo_mayor", new GeoEnemyVariant("limo_mayor", limo,
                         "textures/entity/dungeon/limo_mayor.png", limoAnim,
-                        // The big one is genuinely big now: a geo hitbox scales with the model, so
-                        // this is the size it looks, and it still clears a 3-high door at 1.5.
-                        1.5f, 60, 7, 0.26, 4, 26,
+                        1.5f, 60, 5, 0.26, 4, 26,
+                        Movement.HOPPER, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // Cuevas' boss: the slimes' own animal, grown on what it has eaten. Floor 1 teaches
+                // the verbs of the dungeon, and a first boss should teach exactly one of them — this
+                // one splits, twice, and the answer is to kill what comes out of it. No caster
+                // phase, no adds from off-screen, nothing that has to be explained: everything in
+                // the fight is something the floor has already shown you, at a size that matters.
+                //
+                // Its two SUMMONs are the reason ability firing had to stop being once-per-kind:
+                // the second was silently dead, which is exactly the class of fault this system
+                // keeps producing — authored, plausible, inert.
+                Map.entry("gran_limo", new GeoEnemyVariant("gran_limo",
+                        "geo/dungeon_gran_limo.geo.json",
+                        "textures/entity/dungeon/gran_limo.png",
+                        "animations/dungeon_gran_limo.animation.json",
+                        1.5f, 150, 8, 0.23, 4, 30,
                         Movement.HOPPER, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)));
     }
 }

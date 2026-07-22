@@ -35,7 +35,9 @@ class GearDefsTest {
     @Test
     void catalogIsComplete() {
         Map<String, GearDef> defs = GearDefs.defaults();
-        assertEquals(12, defs.size(), "the shipped set is twelve pieces");
+        // Twelve, plus floor 1's eleven: seven pieces of the previous expedition's kit and the four
+        // gadgets, which are the first gear in the dungeon a player spends rather than wears.
+        assertEquals(23, defs.size(), "the shipped set is twenty-three pieces");
 
         for (Map.Entry<String, GearDef> entry : defs.entrySet()) {
             GearDef def = entry.getValue();
@@ -45,6 +47,44 @@ class GearDefsTest {
             assertNotNull(def.abilities(), def.id() + " has no ability list");
             assertNotNull(def.stats(), def.id() + " has no stat list");
             assertFalse(def.effectiveSkinType().isBlank(), def.id() + " has no skin type");
+        }
+    }
+
+    /**
+     * An active ability and a gadget are the same statement, and the catalog has to make both.
+     *
+     * <p>Each half is inert on its own, silently: an active ability on a sword can never be
+     * triggered, because only {@link es.boffmedia.teras.dungeon.gear.GadgetItem} has a use; and a
+     * gadget carrying only passives is a right-click that does nothing. Both read as configured
+     * everywhere a person would look — which is the exact fault this project keeps shipping.</p>
+     */
+    @Test
+    void activeAbilitiesAndGadgetsAgree() {
+        for (GearDef def : GearDefs.defaults().values()) {
+            boolean active = def.abilities().stream().anyMatch(a -> a.ability().isActive());
+            if (def.kind() == GearKind.GADGET) {
+                assertTrue(active, def.id() + " is a gadget with nothing to do when used");
+            } else {
+                assertFalse(active, def.id() + " carries an active ability but is a "
+                        + def.kind() + ", which has no use to fire it");
+            }
+        }
+    }
+
+    /** Every gadget needs a cooldown, or it is not spent, it is only pressed. */
+    @Test
+    void everyGadgetIsGatedByACooldown() {
+        for (GearDef def : GearDefs.defaults().values()) {
+            for (AbilityDef ability : def.abilities()) {
+                if (!ability.ability().isActive()) {
+                    continue;
+                }
+                int seconds = ability.intParam(GearAbility.P_COOLDOWN,
+                        ability.ability().defaultCooldownSeconds());
+                assertTrue(seconds > 0, def.id() + " has no cooldown, so it has no cost at all");
+                assertTrue(ability.ability().defaultRadius() > 0,
+                        def.id() + " has no reach, so it happens nowhere");
+            }
         }
     }
 

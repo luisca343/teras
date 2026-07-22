@@ -32,7 +32,16 @@ public enum Behaviour {
      * the party can answer. Deliberately not {@link #isRanged}: the queen is a boss placed at the
      * boss marker, and adding a {@code RangedAttackGoal} would only make her park at range instead.
      */
-    CEILING_WEB;
+    CEILING_WEB,
+    /**
+     * Runs from players instead of at them — the scavenger.
+     *
+     * <p>The first behaviour in the vocabulary that is not a way of attacking, and the first enemy
+     * the party has to make a decision about rather than answer: it is carrying something, it is
+     * leaving, and chasing it costs the position you were holding. Suppresses the melee approach
+     * where both are declared, because an enemy that flees and closes does neither.</p>
+     */
+    HUIDIZO;
 
     public boolean isRanged() {
         return this == RANGED || this == VOLLEY || this == WEB_SHOT;
@@ -72,7 +81,9 @@ public enum Behaviour {
             case VOLLEY -> "cast";
             case LEAP -> "jump";
             case MELEE -> "attack";
-            case BLINK -> "";
+            // Fleeing is the walk cycle played in the other direction, so it asks for no clip of
+            // its own. Naming one here would oblige every rig that ever flees to carry it.
+            case BLINK, HUIDIZO -> "";
         };
     }
 

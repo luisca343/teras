@@ -259,6 +259,186 @@ class BestiaryAuditTest {
                 "the silverfish is on the arachnid animation set");
     }
 
+    /**
+     * The cave humanoids and the crypt's are not one rig either. Seven variants shared the vanilla
+     * player box — the scavenger, the archer, the crypt heavy, both bosses — so the only thing
+     * separating a boss from chaff was a scale factor and a texture, neither of which reads across
+     * an unlit room. They keep a bone contract; they do not keep a body.
+     */
+    @Test
+    void theCaveHumanoidsAndTheCryptsAreNotOneRig() {
+        String raider = GeoEnemyVariant.of("saqueador_cuevas").model();
+        String guardian = GeoEnemyVariant.of("husk_guardian").model();
+        assertFalse(raider.equals(guardian),
+                "the cave raiders are still on the guardian rig: " + raider);
+        assertEquals(raider, GeoEnemyVariant.of("arquero_gruta").model(),
+                "the archer belongs to the raiders — a shared rig is the point, one rig is not");
+        // Timing separates them as much as proportion does: a heavy that walks at the scavenger's
+        // cadence is a scavenger wearing armour.
+        assertFalse(GeoEnemyVariant.of("saqueador_cuevas").animation()
+                        .equals(GeoEnemyVariant.of("husk_guardian").animation()),
+                "raider and guardian share a clip file, so they walk at the same speed");
+    }
+
+    /**
+     * The golem is the floor's answer to "walk up and swing", so the two things that make it that
+     * must both be present: damage coming back, and a light on it saying so before it is in range.
+     */
+    @Test
+    void theGeodeGolemPunishesMeleeAndSaysSo() {
+        GeoEnemyVariant golem = GeoEnemyVariant.of("golem_geoda");
+        assertEquals("golem_geoda", golem.id(), "the golem is not registered");
+        assertTrue(golem.glows(), "its crystal seams are its telegraph");
+        List<es.boffmedia.teras.dungeon.ability.AbilityDef> defs =
+                es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities()
+                        .get("golem_geoda");
+        assertTrue(defs != null && defs.stream().anyMatch(
+                        d -> d.kind() == es.boffmedia.teras.dungeon.ability.AbilityKind.THORNS),
+                "a geode golem without THORNS is a slow zombie with a light on it");
+    }
+
+    /**
+     * The huntress is the mini-boss Infestadas never had, and she is not the queen at 60%: her own
+     * rig, her own clips, and nothing that throws silk. A mini-boss that rehearsed the boss's tricks
+     * would spend the fight's first surprise an hour early.
+     */
+    @Test
+    void theHuntressIsNotTheQueenScaledDown() {
+        GeoEnemyVariant huntress = GeoEnemyVariant.of("cazadora");
+        GeoEnemyVariant queen = GeoEnemyVariant.of("reina_madre");
+        assertFalse(huntress.model().equals(queen.model()));
+        assertFalse(huntress.animation().equals(queen.animation()));
+        assertFalse(huntress.animation().equals(GeoEnemyVariant.of("tejedora").animation()),
+                "she runs the chaff's cycle at the chaff's speed");
+        assertFalse(huntress.has(Behaviour.WEB_SHOT) || huntress.has(Behaviour.CEILING_WEB),
+                "the hunter webs — which is the weaver's job and the queen's");
+        assertTrue(huntress.has(Behaviour.LEAP), "closing the gap is the whole of her");
+        assertEquals(Movement.CLIMBER, huntress.movement(), "every spider on this floor climbs");
+    }
+
+    /**
+     * A hitbox is the rig's footprint, not a person's.
+     *
+     * <p>The entity type is sized for a humanoid and every variant used to be that column times its
+     * scale, so a slime two thirds of a block tall was hittable to nearly two: a swing over empty
+     * floor connected, and one at the slime often did not. The upright rigs keep the default because
+     * for them it is correct.</p>
+     */
+    @Test
+    void hitboxesFollowTheRigRatherThanTheEntityType() {
+        GeoEnemyVariant slime = GeoEnemyVariant.of("limo_cueva");
+        assertTrue(slime.hitboxHeight() < 1.0f,
+                "a knee-high blob must not carry a person's hitbox: " + slime.hitboxHeight());
+        assertTrue(slime.hitboxWidth() > slime.hitboxHeight(),
+                "a blob is wider than it is tall, and its hitbox should say so");
+
+        GeoEnemyVariant guardian = GeoEnemyVariant.of("husk_guardian");
+        assertEquals(1.95f, guardian.hitboxHeight(), 0.001f,
+                "the upright rigs are the shape the entity type is sized for; leave them alone");
+
+        // The golem is the wide one: its trunk, not its reach — arms that hang outside the body are
+        // not what a hit lands on.
+        assertTrue(GeoEnemyVariant.of("golem_geoda").hitboxWidth() > guardian.hitboxWidth());
+    }
+
+    /**
+     * Two abilities of one kind on one enemy must sit at different health thresholds.
+     *
+     * <p>{@code AbilityEngine} fires each kind once per threshold, so two SUMMONs at the same
+     * percentage are one summon and one line of config that does nothing. Before the threshold was
+     * part of that key it was worse — the <i>second</i> SUMMON never fired at all, whatever its
+     * percentage — which is how the splitting boss was written twice and split once.</p>
+     */
+    @Test
+    void repeatedAbilitiesSitAtDistinctThresholds() {
+        Set<String> problems = new TreeSet<>();
+        es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities()
+                .forEach((enemy, defs) -> {
+                    Set<String> seen = new TreeSet<>();
+                    for (es.boffmedia.teras.dungeon.ability.AbilityDef def : defs) {
+                        String key = def.kind() + "@" + Math.round(def.param("healthPct", -1) * 100);
+                        if (!seen.add(key)) {
+                            problems.add(enemy + " declares " + def.kind()
+                                    + " twice at the same threshold; only one of them fires");
+                        }
+                    }
+                });
+        assertTrue(problems.isEmpty(), String.join("\n", problems));
+    }
+
+    /** The floor-1 boss splits twice, into the chaff its floor is already made of. */
+    @Test
+    void theGreatSlimeSplitsTwice() {
+        List<es.boffmedia.teras.dungeon.ability.AbilityDef> defs =
+                es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities().get("gran_limo");
+        assertTrue(defs != null, "gran_limo has no abilities, so the boss is a health bar that hops");
+        List<es.boffmedia.teras.dungeon.ability.AbilityDef> summons = defs.stream()
+                .filter(d -> d.kind() == es.boffmedia.teras.dungeon.ability.AbilityKind.SUMMON)
+                .toList();
+        assertEquals(2, summons.size(), "the whole fight is that it splits, twice");
+        for (var summon : summons) {
+            assertEquals("geo:limo_cueva", summon.arg(),
+                    "it should split into the slime the floor already fields, not something new");
+        }
+        assertFalse(GeoEnemyVariant.of("gran_limo").glows(),
+                "a glow in this bestiary means 'there is a rule here'; a boss under a boss bar in a "
+                        + "lit arena is already announced");
+    }
+
+    /**
+     * The cave's own fauna are five animals, not one animal five times.
+     *
+     * <p>The crystal crawler is the deliberate exception and the shape reuse is meant to take: it is
+     * the silverfish rig in the geode's colours, because it is the same animal living in a different
+     * part of the same rock. Sharing a rig is honest when the two things are the same thing.</p>
+     */
+    @Test
+    void theCaveFaunaAreDistinctAnimals() {
+        Set<String> models = new TreeSet<>();
+        for (String id : List.of("murcielago", "escarabajo", "hongo_bombardero",
+                "musgo_agarrador", "mastin")) {
+            assertTrue(GeoEnemyVariant.exists(id), id + " is not registered");
+            models.add(GeoEnemyVariant.of(id).model());
+        }
+        assertEquals(5, models.size(), "cave fauna sharing a rig: " + models);
+        assertEquals(GeoEnemyVariant.of("lepisma_cueva").model(),
+                GeoEnemyVariant.of("cristal_rastrero").model(),
+                "the crawler is the silverfish in another colour, and should share its rig");
+        assertFalse(GeoEnemyVariant.of("cristal_rastrero").texture()
+                        .equals(GeoEnemyVariant.of("lepisma_cueva").texture()),
+                "...but not its sheet, or it is the same enemy twice");
+    }
+
+    /**
+     * A movement mode is only worth declaring if something honours it. Both of these were declared
+     * long before they moved anything: {@code FLYER} had navigation and a ground move control, so a
+     * flyer planned a route through the air and walked the floor under it.
+     */
+    @Test
+    void theNewMovementModesAreActuallyUsed() {
+        assertEquals(Movement.FLYER, GeoEnemyVariant.of("murcielago").movement());
+        assertEquals(Movement.ROOTED, GeoEnemyVariant.of("musgo_agarrador").movement());
+        assertEquals(0.0, GeoEnemyVariant.of("musgo_agarrador").speed(), 0.0001,
+                "a ROOTED variant declaring a speed has written a number nothing reads");
+        for (Movement movement : Movement.values()) {
+            assertTrue(movement.isImplemented(), movement + " is declared but honoured by nothing");
+        }
+    }
+
+    /** The scavenger's whole design: it does not fight, and it is carrying something. */
+    @Test
+    void theScavengerFleesAndIsWorthChasing() {
+        GeoEnemyVariant scavenger = GeoEnemyVariant.of("carronero");
+        assertTrue(scavenger.has(Behaviour.HUIDIZO));
+        assertFalse(scavenger.has(Behaviour.MELEE),
+                "an enemy that flees and closes does neither");
+        List<es.boffmedia.teras.dungeon.ability.AbilityDef> defs =
+                es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities().get("carronero");
+        assertTrue(defs != null && defs.stream().anyMatch(
+                        d -> d.kind() == es.boffmedia.teras.dungeon.ability.AbilityKind.TESORO),
+                "without a reason to chase it, an enemy that runs away only wastes your time");
+    }
+
     /** The boss carries a boss's kit; she was the only one in the bestiary carrying none. */
     @Test
     void theQueenHasAbilities() {

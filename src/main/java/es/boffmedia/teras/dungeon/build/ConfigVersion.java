@@ -51,13 +51,34 @@ public final class ConfigVersion {
      *   <li>{@code mecanica} accepts {@code {id, params}} (§37) so a mechanic's tuning stops being
      *       compiled, and secret rooms roll loot at a marker that had never been read</li>
      *   <li>the infestation's rigs and its boss id (§38): {@code reina_cria} is now
-     *       {@code reina_madre}, so a {@code pisos/cuevas_infestadas.json} written before this
-     *       names a boss that no longer exists and the floor draws <b>no boss at all</b> — the
-     *       trapdoor is behind a fight that never spawns. {@code lepisma_cueva} moved onto its own
-     *       silverfish rig, and the arachnids onto per-build ones</li>
+     *       {@code reina_madre}. A {@code pisos/cuevas_infestadas.json} written before this names a
+     *       boss that no longer exists, which cost a floor its boss until
+     *       {@code GeoEnemyVariant.current} started healing renamed ids at the spawn boundary — a
+     *       version bump only reports staleness, and reporting is not a fix for content that is
+     *       already broken. {@code lepisma_cueva} moved onto its own silverfish rig, and the
+     *       arachnids onto per-build ones</li>
+     *   <li>the cave bestiary stops being one body (§49): {@code golem_geoda} joins Cuevas' roster
+     *       as an elite and {@code cazadora} becomes Infestadas' declared mini-boss. Both are
+     *       additions to a piso's tables, so an older file simply never fields them — no fallback,
+     *       nothing in a log, just two enemies that exist in the jar and never appear. Unlike the
+     *       rename above there is no boundary that can heal this: an absent line carries no id to
+     *       correct, which is why the promote-your-own-elite rule in {@code FloorSelector} exists
+     *       for the mini-boss half and why this one is worth a resync</li>
+     *   <li>Cuevas becomes a floor-1 floor (§50): the bone-crypt elites leave its roster for the
+     *       tramo-2 pool they were always part of, it declares {@code gran_limo} and
+     *       {@code golem_geoda} as its own set-pieces, and the tramo's own default pools stop being
+     *       crypt wardens. An existing {@code pisos/cuevas.json} keeps the old roster <b>and</b> the
+     *       old empty pools, so it still fields husks and still inherits whatever the tramo says —
+     *       which is now a boss it has never met</li>
+     *   <li>the cave gains eight inhabitants and an ambient one (§51): {@code mastin},
+     *       {@code vigia}, {@code carronero}, {@code escarabajo}, {@code cristal_rastrero},
+     *       {@code hongo_bombardero} and {@code musgo_agarrador} join Cuevas' roster, and
+     *       {@code murcielago} becomes its first {@code ambientales} entry. All of it is new lines
+     *       in the piso's tables, so an older file fields none of them — and the ambient block in
+     *       particular has never existed on any config written before this</li>
      * </ol>
      */
-    public static final int CURRENT = 6;
+    public static final int CURRENT = 9;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

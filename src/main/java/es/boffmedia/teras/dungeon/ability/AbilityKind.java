@@ -29,5 +29,32 @@ public enum AbilityKind {
     /** Applies the {@code arg} mob effect to whoever it hits, for {@code duration} ticks. */
     ON_HIT,
     /** Reflects {@code fraction} of incoming melee damage back at the attacker. */
-    THORNS
+    THORNS,
+    /**
+     * On death: applies the {@code arg} mob effect to everything within {@code radio}, for
+     * {@code duration} ticks, and deals {@code magnitud} damage.
+     *
+     * <p>The first ability that fires <b>after</b> the enemy is gone, which is the whole of what
+     * makes it interesting: it is the only thing in the bestiary that punishes killing something
+     * while standing next to it.</p>
+     */
+    ESTALLIDO,
+    /**
+     * On death: drops {@code magnitud} extra coins into the room.
+     *
+     * <p>For enemies that are worth killing rather than dangerous. Coins from a kill are otherwise
+     * decided entirely by the tier tag, so an enemy cannot be made valuable without being made a
+     * mini-boss.</p>
+     */
+    TESORO,
+    /**
+     * Once it has had a target for {@code ticks}: summons the {@code arg} spec, exactly as
+     * {@link #SUMMON} does, and can do it again on the same interval.
+     *
+     * <p>A timer rather than a health threshold, which is what makes it a different question:
+     * SUMMON asks "can you finish it", this asks "can you finish it <i>in time</i>". Only animated
+     * enemies carry the countdown, so a CustomNPCs clone declaring it does nothing — the state has
+     * to live on the entity, and a clone has nowhere to put it.</p>
+     */
+    ALERTA
 }

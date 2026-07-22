@@ -87,7 +87,10 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
                 .add(Attributes.MOVEMENT_SPEED, 0.28)
                 .add(Attributes.ARMOR, 2)
                 .add(Attributes.FOLLOW_RANGE, 24)
-                .add(Attributes.KNOCKBACK_RESISTANCE, 0.2);
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.2)
+                // Monsters do not carry FLYING_SPEED by default, and reading an attribute an entity
+                // does not have throws. A ground enemy simply never asks.
+                .add(Attributes.FLYING_SPEED, 0.6);
     }
 
     /**
@@ -99,7 +102,6 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     @Override
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
-        goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.8));
         goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12f));
         goalSelector.addGoal(8, new RandomLookAroundGoal(this));
         targetSelector.addGoal(1, new HurtByTargetGoal(this));
@@ -146,9 +148,26 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         if (variant.has(Behaviour.LEAP)) {
             goalSelector.addGoal(3, new es.boffmedia.teras.dungeon.entity.goal.SpiderPounceGoal(this));
         }
-        if (variant.has(Behaviour.MELEE) || variant.behaviours().isEmpty()) {
+        if (variant.has(Behaviour.HUIDIZO)) {
+            // Above everything that closes: a scavenger that is also deciding to attack is a
+            // scavenger standing still while it makes up its mind.
+            goalSelector.addGoal(1, new net.minecraft.world.entity.ai.goal.AvoidEntityGoal<>(
+                    this, Player.class, 10f, 1.4, 1.6));
+        }
+        if ((variant.has(Behaviour.MELEE) || variant.behaviours().isEmpty())
+                && !variant.has(Behaviour.HUIDIZO)) {
             // An empty list still melees: an enemy that does nothing at all is never what was meant.
+            // A fleeing one is the exception — it has somewhere else to be.
             goalSelector.addGoal(4, new MeleeAttackGoal(this, 1.0, true));
+        }
+        // Wandering belongs to the movement mode, not to the constant goals: a ground stroll picks
+        // positions on the floor, so a flyer handed one paths down to the ground and wanders along
+        // it — flying, technically, and never once off the floor. What is rooted wanders nowhere.
+        if (variant.movement() == Movement.FLYER) {
+            goalSelector.addGoal(6,
+                    new net.minecraft.world.entity.ai.goal.WaterAvoidingRandomFlyingGoal(this, 1.0));
+        } else if (variant.movement() != Movement.ROOTED) {
+            goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.8));
         }
         // Navigation is built in the Mob constructor too, so a spider read back from NBT would
         // path along the floor until this is redone.
@@ -165,6 +184,10 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     /** Goal classes {@link #rebuildGoals()} owns, so it never strips the constant ones. */
     private static final java.util.Set<Class<?>> BEHAVIOUR_GOALS = java.util.Set.of(
             MeleeAttackGoal.class, RangedAttackGoal.class,
+            // Both wander goals, because which one an enemy gets is decided by its movement mode
+            // and the mode is only known once the variant is.
+            WaterAvoidingRandomStrollGoal.class,
+            net.minecraft.world.entity.ai.goal.WaterAvoidingRandomFlyingGoal.class,
             es.boffmedia.teras.dungeon.entity.goal.SpiderPounceGoal.class,
             es.boffmedia.teras.dungeon.entity.goal.SpiderCeilingWebGoal.class,
             es.boffmedia.teras.dungeon.entity.goal.BlinkGoal.class,
@@ -200,9 +223,22 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
      * {@code Mob} constructor, so a hopper read back from NBT would otherwise walk.
      */
     private void rebuildMovement() {
-        this.moveControl = variant().movement() == Movement.HOPPER
-                ? new es.boffmedia.teras.dungeon.entity.goal.HopMoveControl(this)
-                : new net.minecraft.world.entity.ai.control.MoveControl(this);
+        this.moveControl = switch (variant().movement()) {
+            case HOPPER -> new es.boffmedia.teras.dungeon.entity.goal.HopMoveControl(this);
+            // Flight is two halves as well, and this is the one that was missing: FLYER has built a
+            // FlyingPathNavigation since the mode existed, so a flyer planned a route through the air
+            // and then walked the floor beneath it under a ground control, falling the whole way.
+            case FLYER -> new es.boffmedia.teras.dungeon.entity.goal.FlyMoveControl(this);
+            default -> new net.minecraft.world.entity.ai.control.MoveControl(this);
+        };
+        // Gravity is a property of the mode, not of the control: the control only runs while
+        // something is steering, and a flyer between orders must not drop out of the air.
+        setNoGravity(variant().movement() == Movement.FLYER);
+    }
+
+    /** A flyer is always airborne, so the client plays its flight loop instead of a walk. */
+    public boolean isFlyer() {
+        return variant().movement() == Movement.FLYER;
     }
 
     /** Called by {@link es.boffmedia.teras.dungeon.entity.goal.HopMoveControl} on each bounce. */
@@ -263,9 +299,17 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         rebuildGoals();
         setAttribute(Attributes.MAX_HEALTH, variant.health());
         setAttribute(Attributes.ATTACK_DAMAGE, variant.damage());
-        setAttribute(Attributes.MOVEMENT_SPEED, variant.speed());
+        // ROOTED is enforced here rather than trusted to the declaration: a rooted variant that also
+        // carried a speed would creep toward its target, and "does not move at all" would be true of
+        // the mode and false of the enemy.
+        setAttribute(Attributes.MOVEMENT_SPEED,
+                variant.movement() == Movement.ROOTED ? 0 : variant.speed());
         setAttribute(Attributes.ARMOR, variant.armor());
         setAttribute(Attributes.FOLLOW_RANGE, variant.followRange());
+        // One speed field on the variant drives whichever attribute its movement actually reads,
+        // rather than asking every flyer's declaration to carry a second number that means the same
+        // thing. The multiplier is the difference in what the two attributes count in.
+        setAttribute(Attributes.FLYING_SPEED, variant.speed() * 3.0);
         setHealth(getMaxHealth());
     }
 
@@ -275,6 +319,51 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         if (instance != null) {
             instance.setBaseValue(value);
         }
+    }
+
+    /**
+     * Ticks the {@code ALERTA} countdown and reports the tick it expires on.
+     *
+     * <p>Lives here rather than in {@link AbilityEngine} because it is per-entity state, and the
+     * engine keeps its one-shot bookkeeping on the entity for the same reason. The countdown only
+     * runs while it has a target: a lookout that has not seen anyone is not calling anyone, and one
+     * that loses its target gets the full time again the next time it finds one — so backing out of
+     * the room genuinely buys the time it looks like it buys.</p>
+     */
+    public boolean tickAlert(int ticks) {
+        if (getTarget() == null || !getTarget().isAlive()) {
+            alertTicks = 0;
+            return false;
+        }
+        if (++alertTicks < Math.max(20, ticks)) {
+            // The wind-up is the whole mechanic, so it is visible for the last second and a bit:
+            // without it, reinforcements arrive out of an enemy that gave no sign it was doing
+            // anything, which is the same complaint the queen's summon had.
+            if (alertTicks == Math.max(20, ticks) - CAST_TELEGRAPH_TICKS) {
+                triggerAction(Action.CAST, CAST_TELEGRAPH_TICKS);
+                level().playSound(null, blockPosition(),
+                        net.minecraft.sounds.SoundEvents.NOTE_BLOCK_BELL.value(),
+                        net.minecraft.sounds.SoundSource.HOSTILE, 1.2f, 1.4f);
+            }
+            return false;
+        }
+        alertTicks = 0;
+        return true;
+    }
+
+    /** How long before the call the lookout is visibly winding up. */
+    private static final int CAST_TELEGRAPH_TICKS = 28;
+
+    private int alertTicks;
+
+    @Override
+    public void die(net.minecraft.world.damagesource.DamageSource source) {
+        if (!level().isClientSide) {
+            // Before super, which is what removes the entity: an ability that fires on death needs
+            // the corpse to still have a position and a bounding box to fire around.
+            AbilityEngine.onDeath(this);
+        }
+        super.die(source);
     }
 
     @Override
@@ -468,10 +557,18 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
                 .isFaceSturdy(level(), above, net.minecraft.core.Direction.DOWN);
     }
 
-    /** Larger variants get a proportionally larger hitbox, so what you see is what you hit. */
+    /**
+     * The variant's rig footprint at the variant's scale, so what you see is what you hit.
+     *
+     * <p>This used to scale the entity type's own dimensions, which are a person's — correct for
+     * the two upright rigs and for nothing else. See {@link GeoEnemyVariant#hitboxWidth}.</p>
+     */
     @Override
     public net.minecraft.world.entity.EntityDimensions getDefaultDimensions(net.minecraft.world.entity.Pose pose) {
-        return super.getDefaultDimensions(pose).scale(variant().scale());
+        GeoEnemyVariant variant = variant();
+        return net.minecraft.world.entity.EntityDimensions
+                .scalable(variant.hitboxWidth(), variant.hitboxHeight())
+                .scale(variant.scale());
     }
 
     @Override

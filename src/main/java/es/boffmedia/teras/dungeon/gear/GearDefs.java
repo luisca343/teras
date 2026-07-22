@@ -87,6 +87,18 @@ public final class GearDefs {
         return melee(id, GearKind.SWORD, rarity, damage, speed, ability, magnitude);
     }
 
+    /**
+     * A gadget: no stat line at all, so the ability is the whole item — the same shape a charm has,
+     * and for the same reason. What separates the two is that this one is spent.
+     *
+     * <p>Magnitude, radius and cooldown are all left to the ability's own defaults, which is what
+     * makes a gadget one line here and a retune one number in {@code gear.json}.</p>
+     */
+    private static GearDef gadget(String id, GearAbility effect) {
+        return new GearDef(id, GearKind.GADGET, COMUN, List.of(),
+                List.of(AbilityDef.of(effect, effect.defaultMagnitude())), "", "");
+    }
+
     /** The axe profile: same shape as a sword, different item and a heavier, slower stat line. */
     private static GearDef axe(String id, GearDef.Rarity rarity, double damage, double speed,
                                GearAbility ability, double magnitude) {
@@ -112,6 +124,59 @@ public final class GearDefs {
      */
     public static Map<String, GearDef> defaults() {
         Map<String, GearDef> map = new LinkedHashMap<>();
+
+        // --- floor 1 -----------------------------------------------------------------------------
+        // The previous expedition's kit and what the cave grew. Numbers that would embarrass a
+        // floor-3 chest, on purpose: what a first floor's loot is for is the first small decision
+        // and the first hint that gear has a personality, not power a player will keep.
+        //
+        // A COMUN piece with an ability is the shape worth repeating here. A stat line alone is
+        // legible but forgettable; one small rule attached to it is what makes a player choose
+        // between two things that are numerically the same.
+        put(map, "minecraft:iron_sword",
+                sword("machete_contrabandista", COMUN, 3.0, 0.9, GearAbility.NINGUNA, 0));
+        // Slime on the blade. It does not kill faster, it decides who reaches whom — which is the
+        // only kind of power a floor-1 weapon should have.
+        put(map, "minecraft:stone_sword",
+                sword("fisga_enlimada", COMUN, 2.5, 0.3, GearAbility.VISCOSO, 2.5));
+        // The cosh: the archer's answer. A shooter that keeps getting shoved never gets its
+        // cooldown back, and that is worth more on this floor than two points of damage.
+        put(map, "minecraft:wooden_axe",
+                axe("cachiporra", COMUN, 4.0, -0.6, GearAbility.EMPUJE, 1.1));
+
+        put(map, "minecraft:leather_helmet", new GearDef("casco_prospector", GearKind.HELMET, COMUN,
+                List.of(new GearDef.Stat(GearStat.ARMOR, 1.0, FLAT)),
+                // The lamp, and the most valuable thing on a floor lit at 7 — Infestadas at 4. It
+                // is the piece that changes how the floor is played without touching a number, and
+                // it turns the climbers' eye-glow from a jump scare into information.
+                // Three seconds of outline, refreshed every two: the number is the piece's, not a
+                // fallback, because a magnitude of zero on a piece that has an ability is how you
+                // ship an ability that does nothing.
+                GearAbility.LINTERNA, 3, "", ""));
+        put(map, "minecraft:leather_boots", new GearDef("botas_limo", GearKind.BOOTS, COMUN,
+                List.of(new GearDef.Stat(GearStat.ARMOR, 1.0, FLAT),
+                        new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.05, FRACTION_OF_BASE)),
+                // Slime soles. The archers stand on ledges, and this is what makes going up there
+                // a route rather than a commitment.
+                GearAbility.CAIDA_SUAVE, 1.0, "", ""));
+        // The plain one. Every floor needs a piece that is only a number, or the ones that are not
+        // stop reading as special.
+        put(map, "minecraft:leather_leggings", new GearDef("rodilleras_espeleologo",
+                GearKind.LEGGINGS, COMUN,
+                List.of(new GearDef.Stat(GearStat.ARMOR, 2.0, FLAT)),
+                GearAbility.NINGUNA, 0, "", ""));
+        // A barrel lid with a handle nailed to it: blocks like a shield, weighs like a lid.
+        put(map, "minecraft:shield", new GearDef("tapa_barril", GearKind.SHIELD, COMUN,
+                List.of(new GearDef.Stat(GearStat.ARMOR, 1.0, FLAT),
+                        new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.04, FRACTION_OF_BASE)),
+                GearAbility.NINGUNA, 0, "", ""));
+
+        // The gadgets. Floor 1 is where the dungeon should teach that there is a button as well as
+        // a swing, so all four are COMUN and all four are cheap: what they cost is a cooldown.
+        put(map, "minecraft:firework_rocket", gadget("bengala", GearAbility.BENGALA));
+        put(map, "minecraft:tnt", gadget("petardo_minero", GearAbility.PETARDO));
+        put(map, "minecraft:slime_ball", gadget("frasco_limo", GearAbility.FRASCO));
+        put(map, "minecraft:fishing_rod", gadget("garfio", GearAbility.GARFIO));
 
         // Weapons. Attack speed is a delta on the vanilla base (-2.4 bare-handed), so the hammer's
         // -0.4 is a real cost and the fang's +0.6 is one paid for elsewhere.

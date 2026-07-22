@@ -55,6 +55,33 @@ public final class GearEvents {
         }
         if (victim instanceof ServerPlayer defender) {
             onHurt(defender, event.getSource(), event.getAmount());
+            onFall(defender, event);
+        }
+    }
+
+    /**
+     * Softens a landing for whoever is wearing something that says it does.
+     *
+     * <p>Reduces rather than cancels, so a piece can be worth half a fall instead of all of it, and
+     * so the default of 1.0 is a statement in the catalog rather than a special case in here.</p>
+     */
+    private static void onFall(ServerPlayer defender, LivingIncomingDamageEvent event) {
+        if (!event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_FALL)) {
+            return;
+        }
+        for (ItemStack stack : bearing(defender, defender.getArmorSlots())) {
+            GearDef def = GearHolder.defOf(stack);
+            AbilityDef soft = def == null ? null : def.ability(GearAbility.CAIDA_SUAVE);
+            if (soft == null) {
+                continue;
+            }
+            double share = Math.clamp(
+                    soft.magnitude(GearAbility.CAIDA_SUAVE.defaultMagnitude()), 0.0, 1.0);
+            event.setAmount((float) (event.getAmount() * (1 - share)));
+            if (event.getAmount() <= 0) {
+                event.setCanceled(true);
+            }
+            return;
         }
     }
 
@@ -83,6 +110,16 @@ public final class GearEvents {
                             // A level, which used to be the hard-coded 1 — the second number the
                             // old one-magnitude shape had nowhere to put.
                             Math.max(0, a.intParam(GearAbility.P_LEVEL, 1) - 1)));
+                    case VISCOSO -> victim.addEffect(new MobEffectInstance(
+                            MobEffects.MOVEMENT_SLOWDOWN,
+                            (int) (a.magnitude(GearAbility.VISCOSO.defaultMagnitude()) * 20),
+                            Math.max(0, a.intParam(GearAbility.P_LEVEL, 1) - 1)));
+                    // Away from the attacker, worked out from the horizontal offset rather than
+                    // from look direction: a shove should go where the two of you actually stand,
+                    // not where the camera happens to point.
+                    case EMPUJE -> victim.knockback(
+                            a.magnitude(GearAbility.EMPUJE.defaultMagnitude()),
+                            attacker.getX() - victim.getX(), attacker.getZ() - victim.getZ());
                     default -> { }
                 }
             }
@@ -201,6 +238,8 @@ public final class GearEvents {
             }
         }
 
+        lantern(player);
+
         DungeonRun run = DungeonRunManager.runOf(player.getUUID());
         if (run == null || !DungeonHealth.isInRun(player)) {
             PHOENIX_GRANTED.remove(player.getUUID());
@@ -218,6 +257,47 @@ public final class GearEvents {
             run.stateOf(player.getUUID()).grantPhoenix();
             player.displayClientMessage(net.minecraft.network.chat.Component.literal(
                     "§6Las alas de fénix se despliegan."), true);
+        }
+    }
+
+    /**
+     * Outlines what is moving nearby, for whoever is carrying a light.
+     *
+     * <p>Rides the two-second scan that is already happening rather than its own tick, and the
+     * outline lasts a little longer than the gap between scans so it never blinks. Enemies only:
+     * outlining another player would be a wallhack rather than a lamp, and outlining an item would
+     * make the charm a treasure detector, which is a different item and a different decision.</p>
+     */
+    private static void lantern(ServerPlayer player) {
+        AbilityDef lamp = null;
+        for (ItemStack stack : bearing(player, player.getMainHandItem(), player.getOffhandItem())) {
+            GearDef def = GearHolder.defOf(stack);
+            if (def != null && def.ability(GearAbility.LINTERNA) != null) {
+                lamp = def.ability(GearAbility.LINTERNA);
+                break;
+            }
+        }
+        if (lamp == null) {
+            for (ItemStack stack : bearing(player, player.getArmorSlots())) {
+                GearDef def = GearHolder.defOf(stack);
+                if (def != null && def.ability(GearAbility.LINTERNA) != null) {
+                    lamp = def.ability(GearAbility.LINTERNA);
+                    break;
+                }
+            }
+        }
+        if (lamp == null) {
+            return;
+        }
+        double radius = lamp.doubleParam(GearAbility.P_RADIUS, 12.0);
+        // Long enough to outlive the gap between scans, or the outline blinks once every two
+        // seconds and reads as a bug in the lamp rather than as a lamp.
+        int ticks = Math.max(PHOENIX_CHECK_TICKS + 20,
+                (int) (lamp.magnitude(GearAbility.LINTERNA.defaultMagnitude()) * 20));
+        for (LivingEntity nearby : player.level().getEntitiesOfClass(LivingEntity.class,
+                player.getBoundingBox().inflate(radius),
+                e -> e instanceof net.minecraft.world.entity.monster.Monster && e.isAlive())) {
+            nearby.addEffect(new MobEffectInstance(MobEffects.GLOWING, ticks, 0, true, false, false));
         }
     }
 

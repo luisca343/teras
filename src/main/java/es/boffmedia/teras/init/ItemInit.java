@@ -148,6 +148,17 @@ public final class ItemInit {
             new Item.Properties().stacksTo(1)
     );
 
+    /**
+     * Every gadget, on one item — the flare, the charge, the flask, the hook. Which one a stack is
+     * stays the gear id component, exactly as it does for swords and helmets; what is different is
+     * that this one has a use.
+     */
+    public static final DeferredItem<Item> GEAR_ARTILUGIO = ITEMS.registerItem(
+            "gear_artilugio",
+            es.boffmedia.teras.dungeon.gear.GadgetItem::new,
+            new Item.Properties().stacksTo(1)
+    );
+
     public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, Teras.MOD_ID);
 

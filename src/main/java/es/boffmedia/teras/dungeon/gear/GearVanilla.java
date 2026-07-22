@@ -43,6 +43,10 @@ public final class GearVanilla {
             case LEGGINGS -> EquipmentSlotGroup.LEGS;
             case BOOTS -> EquipmentSlotGroup.FEET;
             case CHARM -> EquipmentSlotGroup.OFFHAND;
+            // A gadget is used from whichever hand holds it, and carries no stat line to apply from
+            // a slot in the first place. MAINHAND is the honest answer to "where does it count":
+            // nowhere, and the hand is where it is.
+            case GADGET -> EquipmentSlotGroup.MAINHAND;
         };
     }
 

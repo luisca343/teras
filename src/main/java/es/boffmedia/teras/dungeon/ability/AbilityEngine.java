@@ -43,9 +43,20 @@ public final class AbilityEngine {
     private static final ResourceLocation ENRAGE_DAMAGE =
             ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_enrage_damage");
 
-    /** Whether {@code self} has already crossed an enrage threshold — read by the CNPC damage hook. */
+    /**
+     * Whether {@code self} has already crossed an enrage threshold — read by the CNPC damage hook.
+     *
+     * <p>A prefix scan, not an exact match: the fired-tag carries the threshold it fired at, and an
+     * enemy may enrage at more than one. Any of them means enraged.</p>
+     */
     public static boolean isEnraged(Entity self) {
-        return self.getTags().contains(FIRED_PREFIX + AbilityKind.ENRAGE);
+        String prefix = FIRED_PREFIX + AbilityKind.ENRAGE;
+        for (String tag : self.getTags()) {
+            if (tag.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -61,12 +72,23 @@ public final class AbilityEngine {
         for (AbilityDef def : defs) {
             switch (def.kind()) {
                 case ENRAGE -> {
-                    if (healthPct <= def.param("healthPct", 0.4) && fireOnce(self, def.kind())) {
+                    double at = def.param("healthPct", 0.4);
+                    if (healthPct <= at && fireOnce(self, def.kind(), at)) {
                         enrage(level, self, def);
                     }
                 }
                 case SUMMON -> {
-                    if (healthPct <= def.param("healthPct", 0.5) && fireOnce(self, def.kind())) {
+                    double at = def.param("healthPct", 0.5);
+                    if (healthPct <= at && fireOnce(self, def.kind(), at)) {
+                        summon(level, self, def);
+                    }
+                }
+                case ALERTA -> {
+                    // The countdown lives on the entity because it is the entity's state, and only
+                    // the animated enemy has anywhere to keep it. A clone declaring ALERTA does
+                    // nothing rather than silently doing it wrong.
+                    if (self instanceof es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy geo
+                            && geo.tickAlert(def.intParam("ticks", 120))) {
                         summon(level, self, def);
                     }
                 }
@@ -121,9 +143,78 @@ public final class AbilityEngine {
         }
     }
 
-    /** True the first time it is asked for this entity and ability; the tag persists with it. */
-    private static boolean fireOnce(Entity self, AbilityKind kind) {
-        return self.addTag(FIRED_PREFIX + kind);
+    /**
+     * What happens after it dies.
+     *
+     * <p>Called from the animated enemy's own death hook. There is no equivalent on the CustomNPCs
+     * path yet, so {@link AbilityKind#ESTALLIDO} and {@link AbilityKind#TESORO} are geo-only — which
+     * is stated here rather than left to be discovered, because "the clone declared it and nothing
+     * happened" is the exact failure this codebase keeps producing.</p>
+     */
+    public static void onDeath(LivingEntity self) {
+        List<AbilityDef> defs = Abilities.of(self);
+        if (defs.isEmpty() || !(self.level() instanceof ServerLevel level)) {
+            return;
+        }
+        for (AbilityDef def : defs) {
+            switch (def.kind()) {
+                case ESTALLIDO -> burst(level, self, def);
+                case TESORO -> hoard(level, self, def);
+                default -> { }
+            }
+        }
+    }
+
+    /**
+     * The death cloud: everything living inside {@code radio} takes {@code magnitud} damage and
+     * catches the {@code arg} effect.
+     *
+     * <p>Enemies are exempt, for the same reason THORNS exempts them — one faction, and a spore
+     * cloud that thinned the wave would make killing the sac a tactic rather than a mistake.</p>
+     */
+    private static void burst(ServerLevel level, LivingEntity self, AbilityDef def) {
+        double radius = def.param("radius", 3.0);
+        float damage = (float) def.param("magnitud", 3.0);
+        level.sendParticles(ParticleTypes.SNEEZE, self.getX(), self.getY() + 0.4, self.getZ(),
+                40, radius / 2, 0.3, radius / 2, 0.02);
+        level.playSound(null, self.blockPosition(),
+                net.minecraft.sounds.SoundEvents.FIREWORK_ROCKET_BLAST,
+                net.minecraft.sounds.SoundSource.HOSTILE, 0.7f, 0.6f);
+        AABB box = self.getBoundingBox().inflate(radius);
+        for (LivingEntity victim : level.getEntitiesOfClass(LivingEntity.class, box)) {
+            if (victim == self || Abilities.enemyId(victim) != null || !victim.isAlive()) {
+                continue;
+            }
+            if (damage > 0) {
+                victim.hurt(level.damageSources().magic(), damage);
+            }
+            applyEffect(victim, def);
+        }
+    }
+
+    /** Extra coins into the room, for an enemy that is worth killing rather than dangerous. */
+    private static void hoard(ServerLevel level, LivingEntity self, AbilityDef def) {
+        int coins = def.intParam("magnitud", 5);
+        if (coins > 0) {
+            es.boffmedia.teras.dungeon.run.CoinDrops.spawnCoins(level, self.position(), coins);
+        }
+    }
+
+    /**
+     * True the first time it is asked for this entity, ability <b>and threshold</b>; the tag
+     * persists with the entity.
+     *
+     * <p>The threshold is part of the key because an enemy may carry the same ability at two
+     * depths, and until it was, only the first ever fired: a slime declaring a split at 66% and
+     * another at 33% split once and then stopped, with both lines present in the config and nothing
+     * anywhere reporting that the second was dead. Keying on the kind alone is what made "declare it
+     * twice" look like a thing you could do.</p>
+     *
+     * <p>{@link #isEnraged} scans for the kind prefix rather than matching a whole tag, so it still
+     * answers for an enrage whatever threshold it fired at.</p>
+     */
+    private static boolean fireOnce(Entity self, AbilityKind kind, double threshold) {
+        return self.addTag(FIRED_PREFIX + kind + "@" + Math.round(threshold * 100));
     }
 
     private static void cleave(ServerLevel level, LivingEntity attacker, LivingEntity victim,

@@ -25,7 +25,18 @@ public enum GearKind {
      * A trinket whose whole point is the ability, not the stat line. Worn in a Curios slot where
      * Curios is installed and in the offhand where it is not.
      */
-    CHARM("item");
+    CHARM("item"),
+    /**
+     * Held, and <b>used</b>: the flare, the charge, the flask, the hook.
+     *
+     * <p>The first kind whose point is a verb rather than a stat or a passive. It shares AW's
+     * {@code item} skin type with {@link #CHARM}, which is the one place this enum's
+     * "every kind has a distinct skin type" promise does not hold — so {@link #bySkinType} still
+     * answers {@code CHARM} for it, and a gadget in {@code gear.json} has to name its {@code tipo}
+     * explicitly rather than have it inferred. Stated here because a silently mis-inferred kind
+     * would make a gadget a charm: worn, not used, and doing nothing.</p>
+     */
+    GADGET("item");
 
     private final String skinType;
 
@@ -76,6 +87,7 @@ public enum GearKind {
             case LEGGINGS -> "gear_grebas";
             case BOOTS -> "gear_botas";
             case CHARM -> "gear_amuleto";
+            case GADGET -> "gear_artilugio";
         };
     }
 }

@@ -128,6 +128,25 @@ class BehaviourTest {
     }
 
     /**
+     * A renamed id resolves to what it is called now, and reports as existing. This is the fallback
+     * above turned into a bug when the id is one <i>we</i> retired: Infestadas' boss pool on every
+     * server predating the rename says {@code reina_cria}, and without the migration the floor boss
+     * comes back a husk guardian named "Reina Cria" — a fight that looks configured, in a config no
+     * one has reason to reopen.
+     */
+    @Test
+    void aRenamedVariantResolvesToItsCurrentId() {
+        assertEquals("reina_madre", GeoEnemyVariant.current("reina_cria"));
+        assertEquals("reina_madre", GeoEnemyVariant.of("reina_cria").id());
+        assertTrue(GeoEnemyVariant.exists("reina_cria"),
+                "an old id a shipped config still names must not read as unknown");
+        // Only renames are healed: an id nothing was ever renamed to is left alone, so a typo is
+        // still reported instead of being silently pointed somewhere.
+        assertEquals("no_such_enemy", GeoEnemyVariant.current("no_such_enemy"));
+        assertFalse(GeoEnemyVariant.exists("no_such_enemy"));
+    }
+
+    /**
      * Every clip the animation controller can request must exist in the file it plays it from. The
      * controller picks a clip by action ({@code shoot}, {@code jump}) or state ({@code climb}), and a
      * clip named there but absent from the {@code .animation.json} T-poses the model at spawn — the

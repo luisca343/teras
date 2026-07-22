@@ -382,6 +382,33 @@ def audit(name, geo, built, posed=False):
                 problems.append(f'{bone}: segment {i} and {i + 1} do not touch '
                                 f'(centres {gap:.1f} apart, reach {reach:.1f})')
 
+    # Left against right, in the space GeckoLib draws in rather than the space the file is written
+    # in. Every check above passes on a rig whose flanks disagree — each leg reaches the floor, each
+    # chain holds together — and the animal still stands with one side fanned and the other folded
+    # into a bundle of legs leaving a single point. The rest-pose splay is one Y rotation per leg
+    # and the load-time mirror negates Y, so a value shared by both sides is right on one flank and
+    # backwards on the other. A posed frame is exempt: a gait desynchronises the sides on purpose.
+    def partner(bone):
+        for a, b in (('_left', '_right'), ('_l', '_r')):
+            if a in bone:
+                return bone.replace(a, b, 1)
+        return None
+
+    per_bone = {}
+    for cube in built:
+        per_bone.setdefault(cube['bone'], []).extend(cube['corners'])
+    for bone, corners in ([] if posed else sorted(per_bone.items())):
+        other = partner(bone)
+        if other not in per_bone:
+            continue
+        mine = sorted([-x, y, z] for x, y, z in corners)
+        theirs = sorted(list(p) for p in per_bone[other])
+        gap = (max(math.dist(a, b) for a, b in zip(mine, theirs))
+               if len(mine) == len(theirs) else float('inf'))
+        if gap > 0.01:
+            problems.append(f'{bone} and {other} are not mirror images — {gap:.1f} apart at the '
+                            f'worst corner. The two sides of the animal are in different poses')
+
     lo = [min(p[i] for c in built for p in c['corners']) for i in range(3)]
     hi = [max(p[i] for c in built for p in c['corners']) for i in range(3)]
     desc = geo['description']

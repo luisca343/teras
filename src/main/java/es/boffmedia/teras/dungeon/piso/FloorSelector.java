@@ -60,7 +60,32 @@ public final class FloorSelector {
         return new FloorPlan(stage, dungeon.id(), position.tierIndex(), position.indexInTier(),
                 piso, position.tier().dificultad(), curses,
                 pool(piso.jefes(), position.tier().jefes()),
-                pool(piso.minijefes(), position.tier().minijefes()));
+                miniPool(piso, position.tier()));
+    }
+
+    /**
+     * The mini-boss pool: the piso's own if it declares one, <b>its own elites</b> if it does not,
+     * and the tramo's only when the floor fields no elite at all.
+     *
+     * <p>The middle step is the one worth having. A tramo's pool is a statement about how hard the
+     * tier is, not about what lives on the floor, so inheriting it directly put {@code
+     * centinela_hueso} — a bone humanoid — in the mini-boss room of a spider nest, because
+     * Infestadas never declared a pool of its own. An elite is by construction the toughest thing
+     * the floor already fields, so a piso that says nothing still gets a mini-boss that belongs to
+     * it, and every config already on disk is fixed without being rewritten.</p>
+     *
+     * <p>The tramo remains the last resort rather than being dropped: a floor whose roster is all
+     * chaff has nothing to promote, and no mini-boss at all is worse than a borrowed one.</p>
+     */
+    private static List<String> miniPool(FloorDef piso, TierDef tier) {
+        if (piso.minijefes() != null && !piso.minijefes().isEmpty()) {
+            return piso.minijefes();
+        }
+        List<String> elites = piso.enemigos().elites();
+        if (!elites.isEmpty()) {
+            return elites;
+        }
+        return tier.minijefes() == null ? List.of() : tier.minijefes();
     }
 
     /**
