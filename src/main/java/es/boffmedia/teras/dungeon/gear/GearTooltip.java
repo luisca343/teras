@@ -22,12 +22,17 @@ final class GearTooltip {
         if (def == null) {
             return;
         }
-        if (def.ability() != GearAbility.NINGUNA) {
-            Double stamped = stack.get(ComponentInit.GEAR_MAGNITUDE.get());
-            double magnitude = stamped != null ? stamped : def.magnitude();
+        // A line per ability. The stamped magnitude only speaks for the first — it is one double
+        // on the stack — so the rest read their numbers from the catalog, which is where a piece
+        // with several abilities is described anyway.
+        Double stamped = stack.get(ComponentInit.GEAR_MAGNITUDE.get());
+        for (int i = 0; i < def.abilities().size(); i++) {
+            AbilityDef ability = def.abilities().get(i);
+            double fallback = ability.magnitude(ability.ability().defaultMagnitude());
+            double magnitude = i == 0 && stamped != null ? stamped : fallback;
             tooltip.add(Component.translatable(
-                    "gear.teras." + def.ability().name().toLowerCase(Locale.ROOT),
-                    format(def.ability(), magnitude)));
+                    "gear.teras." + ability.ability().name().toLowerCase(Locale.ROOT),
+                    format(ability.ability(), magnitude)));
         }
         tooltip.add(Component.translatable("gear.teras.exclusiva"));
     }

@@ -10,8 +10,6 @@ import es.boffmedia.teras.dungeon.piso.FloorDef;
 import es.boffmedia.teras.dungeon.piso.MechanicDef;
 import es.boffmedia.teras.dungeon.run.RunEngine;
 import net.minecraft.core.BlockPos;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Blocks;
@@ -73,10 +71,11 @@ public final class Nests implements Mechanic {
         if (nests.isEmpty()) {
             return;
         }
-        MinecraftServer server = level.getServer();
-        int delay = def.intParam(P_DELAY, DEFAULT_DELAY);
-        server.tell(new TickTask(server.getTickCount() + delay,
-                () -> hatch(level, room, nests, def)));
+        // DungeonScheduler, not server.tell(new TickTask(...)): vanilla runs a TickTask as soon as
+        // the tick has spare time regardless of the tick it names, so the pause this mechanic is
+        // built around never happened and the sacs cracked the instant the doors shut.
+        es.boffmedia.teras.dungeon.run.DungeonScheduler.after(level.getServer(),
+                def.intParam(P_DELAY, DEFAULT_DELAY), () -> hatch(level, room, nests, def));
     }
 
     /**

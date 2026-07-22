@@ -98,5 +98,13 @@
   "biome.teras.pueblo_yume": "Pueblo Yume",
   "biome.teras.puerto_wingull": "Puerto de los Wingull",
   "biome.teras.vacio": "Vacío",
-  "entity.teras.dungeon_enemy": "Dungeon Guardian"
+  "entity.teras.dungeon_enemy": "Dungeon Guardian",
+  "item.teras.gear_espada": "Dungeon Sword",
+  "item.teras.gear_hacha": "Dungeon Axe",
+  "item.teras.gear_escudo": "Dungeon Shield",
+  "item.teras.gear_yelmo": "Dungeon Helmet",
+  "item.teras.gear_coraza": "Dungeon Chestplate",
+  "item.teras.gear_grebas": "Dungeon Leggings",
+  "item.teras.gear_botas": "Dungeon Boots",
+  "item.teras.gear_amuleto": "Dungeon Charm"
 }

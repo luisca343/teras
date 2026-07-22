@@ -159,6 +159,18 @@ dependencies {
     compileOnly("maven.modrinth:armourers-workshop:3.4.0-beta.3+1.21.1-neoforge") { transitive = false }
     runtimeOnly("maven.modrinth:armourers-workshop:3.4.0-beta.3+1.21.1-neoforge") { transitive = false }
 
+    // Curios 9.5.1 for 1.21.1 NeoForge (CurseForge file 6529130) — the slot dungeon charms are worn
+    // in. SOFT, like Armourer's Workshop and for the same reason: Teras is one mod with many
+    // systems, and a server that wants regions or starbank without dungeons should not have to
+    // install a trinket-slot mod because a system it never uses has charms in it. Without Curios a
+    // charm falls back to the offhand, where it competes with the shield — see GearCurios.
+    //
+    // Modrinth is safe here, unlike GeckoLib: that coordinate resolves by version *number*, which
+    // GeckoLib reuses across loaders, so it silently returned the Fabric build. Every 1.21.1 Curios
+    // version on Modrinth is loaders=['neoforge'] and its primary file is the NeoForge jar.
+    compileOnly("maven.modrinth:curios:9.5.1+1.21.1") { transitive = false }
+    runtimeOnly("maven.modrinth:curios:9.5.1+1.21.1") { transitive = false }
+
     // WorldEdit 7.3.8 (CurseForge file 5830452, single NeoForge/Fabric jar for MC 1.21–1.21.1) —
     // /teras region create|redefine read the admin's WE selection (//wand cuboid or //sel poly).
     // Only WorldEditBridge imports com.sk89q.*; without WorldEdit the region commands report how to

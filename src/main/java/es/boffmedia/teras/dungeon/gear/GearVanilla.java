@@ -27,10 +27,17 @@ public final class GearVanilla {
                 : AttributeModifier.Operation.ADD_VALUE;
     }
 
-    /** Where a piece's stats apply from — the slot it has to be in to count. */
+    /**
+     * Where a piece's stats apply from — the slot it has to be in to count.
+     *
+     * <p>{@code CHARM} answers {@code OFFHAND} here, which is right only when Curios is absent. A
+     * charm in a Curios slot is not in any {@link EquipmentSlotGroup} at all, and its modifiers come
+     * from {@code ICurio#getAttributeModifiers} instead — see {@code GearCurios}.</p>
+     */
     public static EquipmentSlotGroup slot(GearKind kind) {
         return switch (kind) {
-            case SWORD -> EquipmentSlotGroup.MAINHAND;
+            case SWORD, AXE -> EquipmentSlotGroup.MAINHAND;
+            case SHIELD -> EquipmentSlotGroup.OFFHAND;
             case HELMET -> EquipmentSlotGroup.HEAD;
             case CHESTPLATE -> EquipmentSlotGroup.CHEST;
             case LEGGINGS -> EquipmentSlotGroup.LEGS;
@@ -47,12 +54,4 @@ public final class GearVanilla {
         };
     }
 
-    /** The vanilla base a fresh copy of {@code def} is made of; air when the id is unknown. */
-    public static net.minecraft.world.item.Item itemFor(GearDef def) {
-        if (!def.hasBaseItem()) {
-            return net.minecraft.world.item.Items.AIR;
-        }
-        return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
-                net.minecraft.resources.ResourceLocation.parse(def.baseItem()));
-    }
 }

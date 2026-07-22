@@ -58,19 +58,33 @@ public final class GearEvents {
         }
     }
 
-    /** Main-hand and offhand both count: the charms are held, and that is how they are worn. */
+    /**
+     * Main-hand, offhand and curio slots. Charms used to be held, which is why the hands were
+     * enough; once they moved to a Curios slot the offhand stops holding them, and scanning only
+     * the hands would leave every charm equipping, tooltipping and doing nothing.
+     */
     private static void onHit(ServerPlayer attacker, LivingEntity victim, float amount) {
-        for (ItemStack stack : new ItemStack[]{attacker.getMainHandItem(), attacker.getOffhandItem()}) {
+        for (ItemStack stack : bearing(attacker, attacker.getMainHandItem(),
+                attacker.getOffhandItem())) {
             GearDef def = GearHolder.defOf(stack);
             if (def == null) {
                 continue;
             }
-            switch (def.ability()) {
-                case VAMPIRISMO -> heal(attacker, (float) (amount * def.magnitude()));
-                case QUEMAZON -> victim.igniteForSeconds((float) def.magnitude());
-                case DESGARRO -> victim.addEffect(new MobEffectInstance(
-                        MobEffects.WITHER, (int) (def.magnitude() * 20), 1));
-                default -> { }
+            // Every ability the piece carries, not just its first: a sword that both burns and
+            // steals life is expressible now, and was not before.
+            for (AbilityDef a : def.abilities()) {
+                switch (a.ability()) {
+                    case VAMPIRISMO -> heal(attacker,
+                            (float) (amount * a.magnitude(GearAbility.VAMPIRISMO.defaultMagnitude())));
+                    case QUEMAZON -> victim.igniteForSeconds(
+                            (float) a.magnitude(GearAbility.QUEMAZON.defaultMagnitude()));
+                    case DESGARRO -> victim.addEffect(new MobEffectInstance(MobEffects.WITHER,
+                            (int) (a.magnitude(GearAbility.DESGARRO.defaultMagnitude()) * 20),
+                            // A level, which used to be the hard-coded 1 — the second number the
+                            // old one-magnitude shape had nowhere to put.
+                            Math.max(0, a.intParam(GearAbility.P_LEVEL, 1) - 1)));
+                    default -> { }
+                }
             }
         }
     }
@@ -82,11 +96,12 @@ public final class GearEvents {
                 || source.getDirectEntity() != attacker) {
             return;
         }
-        for (ItemStack stack : defender.getArmorSlots()) {
+        for (ItemStack stack : bearing(defender, defender.getArmorSlots())) {
             GearDef def = GearHolder.defOf(stack);
-            if (def != null && def.ability() == GearAbility.ESPINAS) {
+            AbilityDef thorns = def == null ? null : def.ability(GearAbility.ESPINAS);
+            if (thorns != null) {
                 attacker.hurt(defender.damageSources().thorns(defender),
-                        (float) (amount * def.magnitude()));
+                        (float) (amount * thorns.magnitude(GearAbility.ESPINAS.defaultMagnitude())));
             }
         }
     }
@@ -101,28 +116,29 @@ public final class GearEvents {
         int bonus = 0;
         boolean shockwave = false;
         double shockwaveMagnitude = 0;
+        double shockwaveRadius = DEFAULT_SHOCKWAVE_RADIUS;
 
-        for (ItemStack stack : held(killer)) {
+        for (ItemStack stack : bearing(killer, held(killer))) {
             GearDef def = GearHolder.defOf(stack);
             if (def == null) {
                 continue;
             }
-            if (def.ability() == GearAbility.BOTIN) {
-                bonus += (int) def.magnitude();
-            } else if (def.ability() == GearAbility.ONDA) {
+            bonus += loot(def);
+            AbilityDef wave = def.ability(GearAbility.ONDA);
+            if (wave != null) {
                 shockwave = true;
-                shockwaveMagnitude = Math.max(shockwaveMagnitude, def.magnitude());
+                shockwaveMagnitude = Math.max(shockwaveMagnitude,
+                        wave.magnitude(GearAbility.ONDA.defaultMagnitude()));
+                shockwaveRadius = Math.max(shockwaveRadius,
+                        wave.doubleParam(GearAbility.P_RADIUS, DEFAULT_SHOCKWAVE_RADIUS));
             }
         }
         for (ItemStack stack : killer.getArmorSlots()) {
-            GearDef def = GearHolder.defOf(stack);
-            if (def != null && def.ability() == GearAbility.BOTIN) {
-                bonus += (int) def.magnitude();
-            }
+            bonus += loot(GearHolder.defOf(stack));
         }
 
         if (shockwave) {
-            shockwave(killer, victim, shockwaveMagnitude);
+            shockwave(killer, victim, shockwaveMagnitude, shockwaveRadius);
         }
         // Spawned as coin entities rather than credited straight to the purse: the magnet sweep is
         // what turns coins into money, and it is also the feedback that says the ability fired.
@@ -132,9 +148,18 @@ public final class GearEvents {
         }
     }
 
+    /** Coins this piece adds to a kill, or zero. Summed across every slot that carries BOTIN. */
+    private static int loot(GearDef def) {
+        AbilityDef botin = def == null ? null : def.ability(GearAbility.BOTIN);
+        return botin == null ? 0 : (int) botin.magnitude(GearAbility.BOTIN.defaultMagnitude());
+    }
+
+    /** Where the shockwave's reach lived before {@code radio} could be written down. */
+    private static final double DEFAULT_SHOCKWAVE_RADIUS = 2.5;
+
     /** The hammer's reward for the kill: everything nearby takes a share and gets pushed off. */
-    private static void shockwave(ServerPlayer killer, LivingEntity victim, double fraction) {
-        double radius = 2.5;
+    private static void shockwave(ServerPlayer killer, LivingEntity victim, double fraction,
+                                  double radius) {
         float damage = (float) (victim.getMaxHealth() * fraction);
         for (LivingEntity nearby : victim.level().getEntitiesOfClass(LivingEntity.class,
                 victim.getBoundingBox().inflate(radius))) {
@@ -162,13 +187,19 @@ public final class GearEvents {
         // sword with a teras:gear_id component) has no inventoryTick of ours, worn armour is never
         // ticked by vanilla at all, and both must pick up a `/teras dungeon reload` while held.
         // A generation compare per stack every two seconds is as cheap as scans get.
-        for (ItemStack stack : player.getInventory().items) {
-            GearStamp.refresh(stack);
+        // Migration rides the same scan. A piece pulled out of a chest mid-session is the case
+        // login and reload both miss, and this is the cheapest place to catch it: the test is a
+        // component lookup and an item compare, on a scan that already happens.
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            ItemStack migrated = es.boffmedia.teras.dungeon.gear.GearItems.migrate(stack);
+            if (migrated != stack) {
+                inventory.setItem(slot, migrated);
+            } else {
+                GearStamp.refresh(stack);
+            }
         }
-        for (ItemStack worn : player.getArmorSlots()) {
-            GearStamp.refresh(worn);
-        }
-        GearStamp.refresh(player.getOffhandItem());
 
         DungeonRun run = DungeonRunManager.runOf(player.getUUID());
         if (run == null || !DungeonHealth.isInRun(player)) {
@@ -203,13 +234,38 @@ public final class GearEvents {
     }
 
     private static boolean wears(ServerPlayer player, GearAbility ability) {
-        for (ItemStack stack : player.getArmorSlots()) {
+        for (ItemStack stack : bearing(player, player.getArmorSlots())) {
             GearDef def = GearHolder.defOf(stack);
-            if (def != null && def.ability() == ability) {
+            if (def != null && def.has(ability)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * The given stacks plus whatever the player is wearing in Curios slots.
+     *
+     * <p>Every hook that looks for an ability goes through here. The slot rules each hook already
+     * had are unchanged — hands for on-hit, armour for on-hurt — and curios are added to all of
+     * them, because a charm is worn no matter which hook is asking and there is no slot it
+     * "belongs" to any more.</p>
+     *
+     * <p>Returns the stacks unchanged when Curios is absent, which is the offhand fallback working
+     * by itself: the charm is simply in the offhand and the hand scans find it.</p>
+     */
+    private static Iterable<ItemStack> bearing(ServerPlayer player, ItemStack... base) {
+        return bearing(player, java.util.Arrays.asList(base));
+    }
+
+    private static Iterable<ItemStack> bearing(ServerPlayer player, Iterable<ItemStack> base) {
+        if (!es.boffmedia.teras.dungeon.gear.GearCurios.available()) {
+            return base;
+        }
+        java.util.List<ItemStack> all = new java.util.ArrayList<>();
+        base.forEach(all::add);
+        all.addAll(es.boffmedia.teras.dungeon.gear.GearCurios.wornCurios(player));
+        return all;
     }
 
     private static ItemStack[] held(ServerPlayer player) {

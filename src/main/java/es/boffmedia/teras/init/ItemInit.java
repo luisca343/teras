@@ -69,6 +69,85 @@ public final class ItemInit {
             new Item.Properties().stacksTo(4)
     );
 
+    // --- dungeon gear -------------------------------------------------------------------------
+    //
+    // Eight items, one per GearKind — not one per piece. Which piece a stack IS stays the
+    // `teras:gear_id` component, so the catalog remains config-defined: a new piece is an entry in
+    // gear.json, not a new registered item plus assets plus a code change.
+    //
+    // They replace riding on vanilla bases. A piece used to be a real diamond chestplate, which
+    // meant it was a diamond chestplate to anvils, enchanting, recipes and every other mod on the
+    // server — and since gear leaves the dungeon and is kept forever, that leaked into the whole
+    // item economy. Behaviourally this changes nothing: GearStamp replaces each stack's attribute
+    // modifiers outright, so the numbers were always gear.json's and never the base item's.
+
+    /** The sword. Grey until an Armourer's Workshop skin is configured for the piece. */
+    public static final DeferredItem<Item> ARMA_ESPADA = ITEMS.registerItem(
+            "gear_espada",
+            props -> new net.minecraft.world.item.SwordItem(GearMaterialInit.TIER, props),
+            new Item.Properties().stacksTo(1)
+    );
+
+    /** The axe: the slower, harder-hitting melee profile. */
+    public static final DeferredItem<Item> ARMA_HACHA = ITEMS.registerItem(
+            "gear_hacha",
+            props -> new net.minecraft.world.item.AxeItem(GearMaterialInit.TIER, props),
+            new Item.Properties().stacksTo(1)
+    );
+
+    /**
+     * The shield. Possible only because charms move to a Curios slot and stop occupying the
+     * offhand — one decision paid for the other.
+     */
+    public static final DeferredItem<Item> ARMA_ESCUDO = ITEMS.registerItem(
+            "gear_escudo",
+            net.minecraft.world.item.ShieldItem::new,
+            new Item.Properties().stacksTo(1).durability(336)
+    );
+
+    public static final DeferredItem<Item> GEAR_YELMO = ITEMS.registerItem(
+            "gear_yelmo",
+            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+                    net.minecraft.world.item.ArmorItem.Type.HELMET, props),
+            new Item.Properties().stacksTo(1).durability(
+                    net.minecraft.world.item.ArmorItem.Type.HELMET.getDurability(GearMaterialInit.ARMOR_DURABILITY))
+    );
+
+    public static final DeferredItem<Item> GEAR_CORAZA = ITEMS.registerItem(
+            "gear_coraza",
+            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+                    net.minecraft.world.item.ArmorItem.Type.CHESTPLATE, props),
+            new Item.Properties().stacksTo(1).durability(
+                    net.minecraft.world.item.ArmorItem.Type.CHESTPLATE.getDurability(GearMaterialInit.ARMOR_DURABILITY))
+    );
+
+    public static final DeferredItem<Item> GEAR_GREBAS = ITEMS.registerItem(
+            "gear_grebas",
+            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+                    net.minecraft.world.item.ArmorItem.Type.LEGGINGS, props),
+            new Item.Properties().stacksTo(1).durability(
+                    net.minecraft.world.item.ArmorItem.Type.LEGGINGS.getDurability(GearMaterialInit.ARMOR_DURABILITY))
+    );
+
+    public static final DeferredItem<Item> GEAR_BOTAS = ITEMS.registerItem(
+            "gear_botas",
+            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+                    net.minecraft.world.item.ArmorItem.Type.BOOTS, props),
+            new Item.Properties().stacksTo(1).durability(
+                    net.minecraft.world.item.ArmorItem.Type.BOOTS.getDurability(GearMaterialInit.ARMOR_DURABILITY))
+    );
+
+    /**
+     * The charm. Worn in a Curios slot where Curios is installed, and in the offhand where it is
+     * not — Curios is a soft dependency for the same reason AW is: a server that wants Teras
+     * without dungeons should not have to install it.
+     */
+    public static final DeferredItem<Item> GEAR_AMULETO = ITEMS.registerItem(
+            "gear_amuleto",
+            Item::new,
+            new Item.Properties().stacksTo(1)
+    );
+
     public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, Teras.MOD_ID);
 

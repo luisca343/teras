@@ -24,6 +24,23 @@ import net.minecraft.world.item.component.ItemAttributeModifiers;
 public final class GearStamp {
     private GearStamp() {}
 
+    /**
+     * What a piece is called.
+     *
+     * <p>An explicit {@code nombre} wins; otherwise the lang key, <b>with the id-derived name as a
+     * fallback</b>. That fallback is the whole point: lang entries only exist for the pieces shipped
+     * in code, so a piece defined in {@code gear.json} used to render as the raw key
+     * {@code item.teras.escudo_hyliano} in a player's hand. The fallback travels inside the
+     * component, so no resource pack is involved and a real lang entry still takes precedence.</p>
+     */
+    static net.minecraft.network.chat.Component nameOf(GearDef def) {
+        if (def.hasName()) {
+            return net.minecraft.network.chat.Component.literal(def.nombre());
+        }
+        return net.minecraft.network.chat.Component.translatableWithFallback(
+                "item.teras." + def.id(), def.derivedName());
+    }
+
     /** The attribute lines for {@code def} — also the item default, for an unstamped preview. */
     public static ItemAttributeModifiers modifiersFor(GearDef def) {
         ItemAttributeModifiers.Builder builder = ItemAttributeModifiers.builder();
@@ -51,13 +68,16 @@ public final class GearStamp {
             return stack;
         }
         stack.set(DataComponents.ATTRIBUTE_MODIFIERS, modifiersFor(def));
-        stack.set(ComponentInit.GEAR_MAGNITUDE.get(), def.magnitude());
+        // The first ability's primary number, which is what the tooltip renders. A piece with
+        // several is described by the catalog rather than by one stamped double; this stays for the
+        // tooltip's benefit and for pieces that have exactly one, which is nearly all of them.
+        stack.set(ComponentInit.GEAR_MAGNITUDE.get(), def.abilities().isEmpty() ? 0.0
+                : def.abilities().get(0).magnitude(def.abilities().get(0).ability().defaultMagnitude()));
         stack.set(ComponentInit.GEAR_GENERATION.get(), GearDefs.generation());
         // The base item supplies nothing but the silhouette: name, rarity colour and stack size
         // come from the stamp. ITEM_NAME (not CUSTOM_NAME) renames without the anvil italics and
         // stays translatable per client language.
-        stack.set(DataComponents.ITEM_NAME,
-                net.minecraft.network.chat.Component.translatable("item.teras." + def.id()));
+        stack.set(DataComponents.ITEM_NAME, nameOf(def));
         stack.set(DataComponents.RARITY, GearVanilla.rarity(def.rarity()));
         stack.set(DataComponents.MAX_STACK_SIZE, 1);
         if (stack.isDamageableItem()) {

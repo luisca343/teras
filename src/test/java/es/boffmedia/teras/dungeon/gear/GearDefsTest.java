@@ -43,7 +43,7 @@ class GearDefsTest {
             assertEquals(entry.getKey(), def.id(), "map key and id must agree");
             assertNotNull(def.kind(), def.id() + " has no slot");
             assertNotNull(def.rarity(), def.id() + " has no rarity");
-            assertNotNull(def.ability(), def.id() + " has no ability");
+            assertNotNull(def.abilities(), def.id() + " has no ability list");
             assertNotNull(def.stats(), def.id() + " has no stat list");
             assertFalse(def.effectiveSkinType().isBlank(), def.id() + " has no skin type");
         }
@@ -52,11 +52,22 @@ class GearDefsTest {
     @Test
     void everyAbilityCarriesItsNumber() {
         for (GearDef def : GearDefs.defaults().values()) {
-            if (def.ability() != GearAbility.NINGUNA) {
-                assertTrue(def.magnitude() > 0,
-                        def.id() + " has ability " + def.ability() + " but no magnitude");
+            for (AbilityDef ability : def.abilities()) {
+                assertTrue(ability.magnitude(ability.ability().defaultMagnitude()) > 0,
+                        def.id() + " has ability " + ability.ability() + " but no magnitude, and "
+                                + "the ability's own default is zero too");
             }
         }
+    }
+
+    /** The first ability's enum, for the assertions that predate a piece being able to carry several. */
+    private static GearAbility abilityOf(GearDef def) {
+        return def.abilities().isEmpty() ? GearAbility.NINGUNA : def.abilities().get(0).ability();
+    }
+
+    private static double magnitudeOf(GearDef def) {
+        return def.abilities().isEmpty() ? 0
+                : def.abilities().get(0).magnitude(abilityOf(def).defaultMagnitude());
     }
 
     /** A piece no table lists is a piece no player can ever hold. */
@@ -84,9 +95,21 @@ class GearDefsTest {
         }
     }
 
-    /** The non-gear Teras items the dungeon tables are allowed to name. */
-    private static final Set<String> NON_GEAR_ITEMS = Set.of(
-            "moneda_mazmorra", "carga_rompemuros", "pocion_vital", "pocion_vital_mayor");
+    /**
+     * The non-gear Teras items the dungeon tables are allowed to name — plus the eight first-party
+     * items gear itself is now built on. A gear drop names {@code teras:gear_espada} and carries the
+     * piece's identity in a component; the id is no longer the item.
+     */
+    private static final Set<String> NON_GEAR_ITEMS = nonGearItems();
+
+    private static Set<String> nonGearItems() {
+        Set<String> allowed = new TreeSet<>(Set.of(
+                "moneda_mazmorra", "carga_rompemuros", "pocion_vital", "pocion_vital_mayor"));
+        for (GearKind kind : GearKind.values()) {
+            allowed.add(kind.itemPath());
+        }
+        return allowed;
+    }
 
     @Test
     void everyPieceHasItsAssets() {
@@ -127,11 +150,11 @@ class GearDefsTest {
         GearDef merged = GearDefs.merge(root).defs().get("espada_abisal");
         GearDef base = GearDefs.defaults().get("espada_abisal");
 
-        assertEquals(0.5, merged.magnitude(), "magnitude comes from the file");
+        assertEquals(0.5, magnitudeOf(merged), "magnitude comes from the file");
         assertEquals(99.0, statOf(merged, GearStat.ATTACK_DAMAGE), "stat comes from the file");
         assertEquals(statOf(base, GearStat.ATTACK_SPEED), statOf(merged, GearStat.ATTACK_SPEED),
                 "a stat the file omits keeps its built-in value");
-        assertEquals(base.ability(), merged.ability(),
+        assertEquals(abilityOf(base), abilityOf(merged),
                 "an ability the file omits keeps its built-in value");
     }
 
@@ -153,8 +176,8 @@ class GearDefsTest {
 
         GearDef merged = GearDefs.merge(root).defs().get("espada_abisal");
 
-        assertEquals(GearAbility.QUEMAZON, merged.ability(), "the file names the ability");
-        assertEquals(4.0, merged.magnitude());
+        assertEquals(GearAbility.QUEMAZON, abilityOf(merged), "the file names the ability");
+        assertEquals(4.0, magnitudeOf(merged));
         assertEquals(GearDefs.defaults().get("espada_abisal").stats(), merged.stats(),
                 "changing the ability leaves the stat line alone");
     }
@@ -171,7 +194,7 @@ class GearDefsTest {
             GearDefs.Merge merge = GearDefs.merge(root);
 
             assertTrue(merge.warnings().isEmpty(), ability + " warned: " + merge.warnings());
-            assertEquals(ability, merge.defs().get("espada_abisal").ability());
+            assertEquals(ability, abilityOf(merge.defs().get("espada_abisal")));
         }
     }
 
@@ -186,8 +209,8 @@ class GearDefsTest {
         GearDefs.Merge merge = GearDefs.merge(root);
 
         assertEquals(1, merge.warnings().size(), merge.warnings().toString());
-        assertEquals(GearDefs.defaults().get("espada_abisal").ability(),
-                merge.defs().get("espada_abisal").ability());
+        assertEquals(abilityOf(GearDefs.defaults().get("espada_abisal")),
+                abilityOf(merge.defs().get("espada_abisal")));
     }
 
     /** The rendered file shows the ability, or nobody discovers they can change it. */
@@ -195,7 +218,7 @@ class GearDefsTest {
     void theDefaultFileNamesEveryPiecesAbility() {
         JsonObject rendered = GearDefs.renderDefaults();
         for (GearDef def : GearDefs.defaults().values()) {
-            assertEquals(def.ability().name(),
+            assertEquals(abilityOf(def).name(),
                     rendered.getAsJsonObject(def.id()).get("habilidad").getAsString(), def.id());
         }
     }
@@ -300,20 +323,19 @@ class GearDefsTest {
      */
     @Test
     void everyPieceRidesAWellFormedVanillaBase() {
-        Set<String> behaviorful = Set.of("minecraft:mace", "minecraft:totem_of_undying",
-                "minecraft:elytra", "minecraft:shield", "minecraft:trident", "minecraft:crossbow",
-                "minecraft:bow");
-        for (GearDef def : GearDefs.defaults().values()) {
-            assertTrue(def.hasBaseItem(), def.id() + " has no base item");
-            assertTrue(def.baseItem().matches("[a-z0-9_.-]+:[a-z0-9_/.-]+"),
-                    def.id() + " has a malformed base item id: " + def.baseItem());
-            assertFalse(def.baseItem().startsWith("teras:"),
-                    def.id() + " cannot use a teras: item as a base — gear registers no items");
-            assertFalse(behaviorful.contains(def.baseItem()),
-                    def.id() + " rides " + def.baseItem() + ", whose coded behaviour would leak");
+        // Gear no longer rides a vanilla base, so there is no base id to validate. What matters
+        // now is that every piece resolves to one of the eight first-party items, which is what
+        // GearItems.create and the migration both key on.
+        Set<String> items = new TreeSet<>();
+        for (GearKind kind : GearKind.values()) {
+            items.add(kind.itemPath());
         }
-        assertEquals("minecraft:diamond_sword",
-                GearDefs.defaults().get("espada_abisal").baseItem());
+        assertEquals(GearKind.values().length, items.size(), "two kinds share an item path");
+        for (GearDef def : GearDefs.defaults().values()) {
+            assertTrue(items.contains(def.kind().itemPath()),
+                    def.id() + " has no first-party item for kind " + def.kind());
+        }
+        assertEquals("gear_espada", GearDefs.defaults().get("espada_abisal").kind().itemPath());
     }
 
     /**

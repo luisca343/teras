@@ -33,8 +33,34 @@ public final class TerasClient {
         // Config is loaded in common setup (both sides); here we only do the client-only MCEF wiring.
         event.enqueueWork(() -> {
             TerasMCEF.init();
+            registerShieldBlocking();
             Teras.LOGGER.info("Teras client setup complete");
         });
+    }
+
+    /**
+     * Teaches the client that the dungeon shield can be raised.
+     *
+     * <p>{@code blocking} is not a predicate the game knows in general — vanilla registers it for
+     * {@code Items.SHIELD} and nothing else:</p>
+     *
+     * <pre>register(Items.SHIELD, "blocking", (stack, level, entity, seed) -&gt; …)</pre>
+     *
+     * <p>So the {@code "predicate": {"blocking": 1}} override on our shield's model could never
+     * match, and the raised model was dead JSON no matter what it contained. The shield blocked
+     * correctly — {@code ShieldItem} supplies {@code UseAnim.BLOCK} and the arm pose comes from
+     * that — it simply never changed its own pose while doing so.</p>
+     *
+     * <p>The lambda is vanilla's, verbatim: the item is raised when its holder is using <i>this</i>
+     * stack.</p>
+     */
+    private static void registerShieldBlocking() {
+        net.minecraft.client.renderer.item.ItemProperties.register(
+                es.boffmedia.teras.init.ItemInit.ARMA_ESCUDO.get(),
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace("blocking"),
+                (stack, level, entity, seed) ->
+                        entity != null && entity.isUsingItem() && entity.getUseItem() == stack
+                                ? 1.0F : 0.0F);
     }
 
     /**

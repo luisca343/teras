@@ -1,5 +1,6 @@
 package es.boffmedia.teras.dungeon.gear;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
@@ -32,6 +33,30 @@ public final class GearDefs {
 
     private static Map<String, GearDef> defs = defaults();
 
+    /** A stat value is a bare number, or {@code {"amount": x, "op": "fraction_of_base"}}. */
+    private static double amountOf(com.google.gson.JsonElement element) {
+        if (element.isJsonObject()) {
+            JsonObject json = element.getAsJsonObject();
+            return json.has("amount") ? json.get("amount").getAsDouble() : 0;
+        }
+        return element.getAsDouble();
+    }
+
+    private static GearOp operationOf(com.google.gson.JsonElement element, GearOp fallback) {
+        if (!element.isJsonObject()) {
+            return fallback;
+        }
+        JsonObject json = element.getAsJsonObject();
+        if (!json.has("op")) {
+            return fallback;
+        }
+        try {
+            return GearOp.valueOf(json.get("op").getAsString().trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return fallback;
+        }
+    }
+
     /**
      * Bumped by every load. Stamped onto each piece so an already-made one can tell it was cut
      * against an older catalog and re-stamp itself — the mechanism that lets a retune reach gear
@@ -58,8 +83,19 @@ public final class GearDefs {
     }
 
     private static GearDef sword(String id, GearDef.Rarity rarity, double damage, double speed,
-                                 GearAbility ability, double magnitude) {
-        return new GearDef(id, GearKind.SWORD, rarity, List.of(
+                                GearAbility ability, double magnitude) {
+        return melee(id, GearKind.SWORD, rarity, damage, speed, ability, magnitude);
+    }
+
+    /** The axe profile: same shape as a sword, different item and a heavier, slower stat line. */
+    private static GearDef axe(String id, GearDef.Rarity rarity, double damage, double speed,
+                               GearAbility ability, double magnitude) {
+        return melee(id, GearKind.AXE, rarity, damage, speed, ability, magnitude);
+    }
+
+    private static GearDef melee(String id, GearKind kind, GearDef.Rarity rarity, double damage,
+                                 double speed, GearAbility ability, double magnitude) {
+        return new GearDef(id, kind, rarity, List.of(
                 new GearDef.Stat(GearStat.ATTACK_DAMAGE, damage, FLAT),
                 new GearDef.Stat(GearStat.ATTACK_SPEED, speed, FLAT)),
                 ability, magnitude, "", "");
@@ -83,8 +119,11 @@ public final class GearDefs {
                 sword("espada_abisal", RARO, 6.0, 0.2, GearAbility.VAMPIRISMO, 0.10));
         put(map, "minecraft:netherite_sword",
                 sword("colmillo_diablo", EPICO, 5.0, 0.6, GearAbility.DESGARRO, 3.0));
+        // An axe, not a sword: it is a hammer, it rode on a netherite axe, and now that AXE is a
+        // kind of its own the def can say so. It was SWORD only because that was the only melee
+        // kind that existed.
         put(map, "minecraft:netherite_axe",
-                sword("martillo_rompemuros", EPICO, 9.0, -0.4, GearAbility.ONDA, 0.15));
+                axe("martillo_rompemuros", EPICO, 9.0, -0.4, GearAbility.ONDA, 0.15));
         put(map, "minecraft:golden_sword", new GearDef("hoja_maldita", GearKind.SWORD, RARO, List.of(
                 new GearDef.Stat(GearStat.ATTACK_DAMAGE, 8.0, FLAT),
                 // The curse: it hits hard and leaves you softer for carrying it.
@@ -126,8 +165,53 @@ public final class GearDefs {
         return map;
     }
 
-    private static void put(Map<String, GearDef> map, String baseItem, GearDef def) {
-        map.put(def.id(), def.withBaseItem(baseItem));
+    /**
+     * The first argument used to be the vanilla item the piece rode on. Gear has its own items now
+     * ({@code GearItems}), derived from the kind, so it is kept only as a comment on where each
+     * piece came from — and ignored.
+     */
+    /**
+     * One entry of {@code habilidades}. Accepts a bare name ({@code "ONDA"}) as well as the object
+     * form, because an ability with no numbers is a legitimate and common thing to write and should
+     * not need an empty params block.
+     */
+    private static AbilityDef readAbility(com.google.gson.JsonElement element, String gearId,
+                                          List<String> warnings) {
+        String name;
+        Map<String, String> params = new LinkedHashMap<>();
+        if (element.isJsonPrimitive()) {
+            name = element.getAsString();
+        } else if (element.isJsonObject()) {
+            JsonObject json = element.getAsJsonObject();
+            name = json.has("id") ? json.get("id").getAsString() : "";
+            if (json.has("params") && json.get("params").isJsonObject()) {
+                JsonObject raw = json.getAsJsonObject("params");
+                for (String key : raw.keySet()) {
+                    try {
+                        params.put(key, raw.get(key).getAsString());
+                    } catch (Exception e) {
+                        warnings.add("gear '" + gearId + "' ability param '" + key
+                                + "' is not a value; skipped");
+                    }
+                }
+            }
+        } else {
+            warnings.add("gear '" + gearId + "' has an habilidades entry that is neither a name "
+                    + "nor an object; skipped");
+            return null;
+        }
+        try {
+            GearAbility ability = GearAbility.valueOf(name.trim().toUpperCase(Locale.ROOT));
+            return ability == GearAbility.NINGUNA ? null : new AbilityDef(ability, params);
+        } catch (IllegalArgumentException e) {
+            warnings.add("gear '" + gearId + "' names unknown habilidad '" + name + "'. Valid: "
+                    + java.util.Arrays.toString(GearAbility.values()));
+            return null;
+        }
+    }
+
+    private static void put(Map<String, GearDef> map, String formerBase, GearDef def) {
+        map.put(def.id(), def);
     }
 
     /**
@@ -144,12 +228,20 @@ public final class GearDefs {
             return new Merge(loaded, warnings);
         }
         for (String id : root.keySet()) {
-            GearDef base = loaded.get(id);
-            if (base == null) {
-                warnings.add("gear.json mentions unknown gear '" + id + "', ignoring");
-                continue;
-            }
             try {
+                GearDef base = loaded.get(id);
+                if (base == null) {
+                    // A piece the code does not know is a NEW piece, not a typo. This used to be
+                    // ignored with a warning, which made gear.json an override layer over a
+                    // code-authored catalog and nothing more — you could retune a piece and never
+                    // add one, in a design whose whole point was that a piece is a component on a
+                    // shared item and therefore needs no code at all.
+                    GearDef created = create(id, root.getAsJsonObject(id), warnings);
+                    if (created != null) {
+                        loaded.put(id, created);
+                    }
+                    continue;
+                }
                 loaded.put(id, apply(base, root.getAsJsonObject(id), warnings));
             } catch (Exception e) {
                 warnings.add("skipping bad gear.json entry '" + id + "': " + e);
@@ -159,6 +251,54 @@ public final class GearDefs {
     }
 
     public record Merge(Map<String, GearDef> defs, List<String> warnings) {}
+
+    /**
+     * A piece that exists only in {@code gear.json}.
+     *
+     * <p>{@code tipo} is the one field with no sensible default: it decides which of the eight
+     * first-party items the piece is built on, which slot it applies from, and which Armourer's
+     * Workshop skin type it takes. Everything else falls back — a stat-less, ability-less common is
+     * a legal, if dull, piece.</p>
+     *
+     * <p>A new piece is mechanically complete the moment it is written. It has no <b>look</b> until
+     * someone authors its AW skin, which is the one thing config genuinely cannot supply.</p>
+     */
+    private static GearDef create(String id, JsonObject json, List<String> warnings) {
+        String rawKind = json.has("tipo") ? json.get("tipo").getAsString()
+                : json.has("kind") ? json.get("kind").getAsString() : "";
+        GearKind kind = null;
+        if (!rawKind.isBlank()) {
+            try {
+                kind = GearKind.valueOf(rawKind.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                warnings.add("gear.json gives new gear '" + id + "' unknown tipo '" + rawKind
+                        + "'. Valid: " + java.util.Arrays.toString(GearKind.values()));
+                return null;
+            }
+        } else if (json.has("skinType")) {
+            // Inferred, because a skinType has already said what the piece is. Every kind has a
+            // distinct AW skin type, so this cannot be ambiguous.
+            kind = GearKind.bySkinType(canonicalSkinType(json.get("skinType").getAsString()));
+        }
+        if (kind == null) {
+            warnings.add("gear.json defines new gear '" + id + "' with no 'tipo' and no usable "
+                    + "'skinType' — it needs one of "
+                    + java.util.Arrays.toString(GearKind.values()) + " to know what it is");
+            return null;
+        }
+        GearDef.Rarity rarity = GearDef.Rarity.COMUN;
+        if (json.has("rareza")) {
+            try {
+                rarity = GearDef.Rarity.valueOf(
+                        json.get("rareza").getAsString().trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                warnings.add("gear '" + id + "' has unknown rareza '" + json.get("rareza")
+                        + "', using " + rarity);
+            }
+        }
+        GearDef skeleton = new GearDef(id, kind, rarity, List.of(), List.of(), "", "", "");
+        return apply(skeleton, json, warnings);
+    }
 
     private static GearDef apply(GearDef base, JsonObject json, List<String> warnings) {
         GearDef def = base;
@@ -171,13 +311,32 @@ public final class GearDefs {
         // reaching "of what". Both halves of a piece's behaviour belong to the same file.
         if (json.has("habilidad")) {
             String name = json.get("habilidad").getAsString().trim().toUpperCase(Locale.ROOT);
+            // Blank means "no ability", the same as NINGUNA. It is what an admin writes for a piece
+            // that is a pure stat stick, and warning about it would be noise on a correct file.
+            if (name.isEmpty()) {
+                name = GearAbility.NINGUNA.name();
+            }
             try {
                 def = def.withAbility(GearAbility.valueOf(name));
             } catch (IllegalArgumentException e) {
                 warnings.add("gear '" + def.id() + "' names unknown habilidad '" + name
-                        + "' — keeping " + def.ability() + ". Valid: "
+                        + "' — keeping " + def.abilities() + ". Valid: "
                         + java.util.Arrays.toString(GearAbility.values()));
             }
+        }
+        // The list form, read after the legacy pair so it wins when a file carries both.
+        if (json.has("habilidades") && json.get("habilidades").isJsonArray()) {
+            List<AbilityDef> parsed = new ArrayList<>();
+            for (var element : json.getAsJsonArray("habilidades")) {
+                AbilityDef ability = readAbility(element, def.id(), warnings);
+                if (ability != null) {
+                    parsed.add(ability);
+                }
+            }
+            def = def.withAbilities(parsed);
+        }
+        if (json.has("nombre")) {
+            def = def.withNombre(json.get("nombre").getAsString());
         }
         if (json.has("skin")) {
             String skinId = normalizeSkinId(json.get("skin").getAsString(), base.id(), warnings);
@@ -187,17 +346,30 @@ public final class GearDefs {
         }
         if (json.has("stats")) {
             JsonObject stats = json.getAsJsonObject("stats");
-            for (String key : stats.keySet()) {
-                if (GearStat.byKey(key) == null) {
-                    warnings.add("gear '" + def.id() + "' names unknown stat '" + key + "'");
-                }
-            }
             List<GearDef.Stat> replacement = new ArrayList<>();
+            java.util.Set<String> handled = new java.util.LinkedHashSet<>();
+            // Existing lines first, keeping their operation: a retune says "how much", not "how".
             for (GearDef.Stat stat : def.stats()) {
                 String key = stat.stat().key();
+                handled.add(key);
                 replacement.add(stats.has(key)
-                        ? new GearDef.Stat(stat.stat(), stats.get(key).getAsDouble(), stat.operation())
+                        ? new GearDef.Stat(stat.stat(), amountOf(stats.get(key)),
+                                operationOf(stats.get(key), stat.operation()))
                         : stat);
+            }
+            // Then anything the piece did not already have. Without this a new piece could never
+            // get a stat line at all — it starts with none — and an existing one could only ever be
+            // retuned, never given something it lacked.
+            for (String key : stats.keySet()) {
+                GearStat stat = GearStat.byKey(key);
+                if (stat == null) {
+                    warnings.add("gear '" + def.id() + "' names unknown stat '" + key + "'");
+                    continue;
+                }
+                if (!handled.contains(stat.key())) {
+                    replacement.add(new GearDef.Stat(stat, amountOf(stats.get(key)),
+                            operationOf(stats.get(key), GearOp.FLAT)));
+                }
             }
             def = def.withStats(List.copyOf(replacement));
         }
@@ -268,10 +440,37 @@ public final class GearDefs {
         JsonObject root = new JsonObject();
         for (GearDef def : defaults().values()) {
             JsonObject entry = new JsonObject();
+            // Written so an admin copying an entry as the template for a new piece gets the one
+            // field a new piece cannot do without.
+            entry.addProperty("tipo", def.kind().name());
+            // Blank means "use the lang entry, or a name derived from the id" — written out so the
+            // field is discoverable rather than folklore.
+            entry.addProperty("nombre", def.nombre());
             // Written out even though it is the built-in value: an override an admin cannot see is
             // one they will never use, and the ability is the half of a piece worth discovering.
-            entry.addProperty("habilidad", def.ability().name());
-            entry.addProperty("magnitud", def.magnitude());
+            // Both forms. `habilidades` is the real one; `habilidad`/`magnitud` are still written
+            // for a piece with exactly one ability so an admin's existing edits keep working and
+            // the file does not change shape under them.
+            JsonArray abilities = new JsonArray();
+            for (AbilityDef ability : def.abilities()) {
+                JsonObject one = new JsonObject();
+                one.addProperty("id", ability.ability().name());
+                JsonObject params = new JsonObject();
+                ability.params().forEach(params::addProperty);
+                if (params.size() > 0) {
+                    one.add("params", params);
+                }
+                abilities.add(one);
+            }
+            entry.add("habilidades", abilities);
+            if (def.abilities().size() == 1) {
+                AbilityDef only = def.abilities().get(0);
+                entry.addProperty("habilidad", only.ability().name());
+                entry.addProperty("magnitud", only.magnitude(only.ability().defaultMagnitude()));
+            } else if (def.abilities().isEmpty()) {
+                entry.addProperty("habilidad", GearAbility.NINGUNA.name());
+                entry.addProperty("magnitud", 0);
+            }
             entry.addProperty("skin", def.skinId());
             entry.addProperty("skinType", def.effectiveSkinType());
             JsonObject stats = new JsonObject();

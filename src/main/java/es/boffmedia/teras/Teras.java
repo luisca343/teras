@@ -43,6 +43,7 @@ public class Teras {
         BlockEntityInit.BLOCK_ENTITIES.register(modBus);
         FluidInit.FLUID_TYPES.register(modBus);
         FluidInit.FLUIDS.register(modBus);
+        es.boffmedia.teras.init.GearMaterialInit.ARMOR_MATERIALS.register(modBus);
         ItemInit.ITEMS.register(modBus);
         ItemInit.CREATIVE_TABS.register(modBus);
         ComponentInit.COMPONENTS.register(modBus);
@@ -57,6 +58,10 @@ public class Teras {
     }
 
     private void onCommonSetup(FMLCommonSetupEvent event) {
+        // Charms as Curios items. A no-op without Curios, which is a soft dependency: a server
+        // running Teras for regions or starbank should not need a trinket mod for a system it does
+        // not use. Charms fall back to the offhand there.
+        event.enqueueWork(es.boffmedia.teras.dungeon.gear.GearCurios::register);
         event.enqueueWork(() -> {
             // Quest system: no-op unless CustomNPCs is installed. QuestBridge is the only class named
             // here, so no `noppes` class is loaded on a server without it.

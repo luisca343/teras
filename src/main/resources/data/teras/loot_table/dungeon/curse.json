@@ -51,7 +51,7 @@
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:golden_sword",
+          "name": "teras:gear_espada",
           "weight": 1,
           "functions": [
             {
@@ -64,7 +64,7 @@
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:diamond_boots",
+          "name": "teras:gear_botas",
           "weight": 1,
           "functions": [
             {
@@ -77,7 +77,7 @@
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:emerald",
+          "name": "teras:gear_amuleto",
           "weight": 1,
           "functions": [
             {

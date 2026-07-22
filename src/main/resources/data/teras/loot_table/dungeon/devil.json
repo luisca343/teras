@@ -6,7 +6,7 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "minecraft:golden_chestplate",
+          "name": "teras:gear_coraza",
           "weight": 2,
           "functions": [
             {
@@ -19,7 +19,7 @@
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:heart_of_the_sea",
+          "name": "teras:gear_amuleto",
           "weight": 2,
           "functions": [
             {
@@ -47,7 +47,7 @@
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:netherite_sword",
+          "name": "teras:gear_espada",
           "weight": 3,
           "functions": [
             {

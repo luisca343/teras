@@ -98,5 +98,13 @@
   "biome.teras.pueblo_yume": "Pueblo Yume",
   "biome.teras.puerto_wingull": "Puerto de los Wingull",
   "biome.teras.vacio": "Vacío",
-  "entity.teras.dungeon_enemy": "Guardián de Mazmorra"
+  "entity.teras.dungeon_enemy": "Guardián de Mazmorra",
+  "item.teras.gear_espada": "Espada de mazmorra",
+  "item.teras.gear_hacha": "Hacha de mazmorra",
+  "item.teras.gear_escudo": "Escudo de mazmorra",
+  "item.teras.gear_yelmo": "Yelmo de mazmorra",
+  "item.teras.gear_coraza": "Coraza de mazmorra",
+  "item.teras.gear_grebas": "Grebas de mazmorra",
+  "item.teras.gear_botas": "Botas de mazmorra",
+  "item.teras.gear_amuleto": "Amuleto de mazmorra"
 }

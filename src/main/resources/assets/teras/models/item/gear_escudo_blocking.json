@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "teras:item/gear_escudo"
+  },
+  "display": {
+    "thirdperson_righthand": { "rotation": [0, -55, 0], "translation": [1, 4.5, -1.5], "scale": [1.1, 1.1, 1.1] },
+    "thirdperson_lefthand":  { "rotation": [0, 55, 0], "translation": [-1, 4.5, -1.5], "scale": [1.1, 1.1, 1.1] },
+    "firstperson_righthand": { "rotation": [0, -20, 0], "translation": [-2, 4, -3], "scale": [1.2, 1.2, 1.2] },
+    "firstperson_lefthand":  { "rotation": [0, 20, 0], "translation": [2, 4, -3], "scale": [1.2, 1.2, 1.2] }
+  }
+}

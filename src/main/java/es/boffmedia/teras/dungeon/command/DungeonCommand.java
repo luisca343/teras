@@ -318,15 +318,11 @@ public final class DungeonCommand {
             ctx.getSource().sendFailure(Component.literal("No existe el equipo '" + id + "'."));
             return 0;
         }
+        // GearItems.create, not the vanilla base: this is the one place an admin makes a piece by
+        // hand, and it handing out a legacy stack that migration then rebuilds would be a command
+        // that quietly disagrees with every other way gear enters the world.
         net.minecraft.world.item.ItemStack stack =
-                new net.minecraft.world.item.ItemStack(es.boffmedia.teras.dungeon.gear.GearVanilla.itemFor(def));
-        if (stack.isEmpty()) {
-            ctx.getSource().sendFailure(Component.literal(
-                    "El item base '" + def.baseItem() + "' no existe."));
-            return 0;
-        }
-        stack.set(es.boffmedia.teras.init.ComponentInit.GEAR_ID.get(), def.id());
-        es.boffmedia.teras.dungeon.gear.GearStamp.decorate(stack);
+                es.boffmedia.teras.dungeon.gear.GearItems.create(def);
         if (!player.getInventory().add(stack)) {
             player.drop(stack, false);
         }
@@ -1130,6 +1126,13 @@ public final class DungeonCommand {
                 ctx.getSource().getServer().getStructureManager());
         es.boffmedia.teras.dungeon.encounter.SpawnTables.load();
         es.boffmedia.teras.dungeon.gear.GearConfig.load();
+        // After the catalog, because a piece's kind decides which item it migrates onto.
+        int migrated = es.boffmedia.teras.dungeon.gear.GearMigration.sweepAll(
+                ctx.getSource().getServer());
+        if (migrated > 0) {
+            ctx.getSource().sendSystemMessage(Component.literal(
+                    "§7Equipo migrado a los objetos propios: " + migrated + " pieza(s)."));
+        }
         // config/teras/config.yml too, not just the dungeon files: a run's result is posted with
         // apiURL, apiToken and id from there, so a reload that left them stale meant fixing the
         // backend URL and watching the next run vanish anyway, with nothing saying why.
