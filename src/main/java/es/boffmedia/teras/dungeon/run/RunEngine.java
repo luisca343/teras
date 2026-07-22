@@ -124,6 +124,10 @@ public final class RunEngine {
         final java.util.Set<Room> arcadeBroken = new java.util.HashSet<>();
         /** Devil pedestals already claimed. */
         final java.util.Set<Room> devilClaimed = new java.util.HashSet<>();
+        /** Who has already bled to get through a curse door. Per floor, so descending resets it. */
+        final java.util.Set<UUID> curseTollPaid = new java.util.HashSet<>();
+        /** The curse room's market: its offers, and the pedestal that undoes them. */
+        final CurseMarket market = new CurseMarket();
         /** Missing-marker warnings already logged, so the tick loop cannot repeat one. */
         final java.util.Set<String> warnedMarkers = new java.util.HashSet<>();
         boolean advancing;
@@ -165,6 +169,7 @@ public final class RunEngine {
             // discards the old pad a moment after this: clearing them here closes that window.
             floor.shop.despawnDisplays(floor);
             floor.pedestals.despawn(floor);
+            floor.market.despawnDisplays(floor);
             floor.bossBars.clear();
             for (UUID member : floor.run.party().keySet()) {
                 ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
@@ -199,14 +204,37 @@ public final class RunEngine {
         }
     }
 
-    /** The party's purse, to every member's HUD. Called on every change — the wallet is shared. */
+    /**
+     * The party's purse and each member's afflictions, to their HUD. Called on every change — the
+     * wallet is shared, so one player's purchase moves everyone's counter.
+     *
+     * <p>Built per member rather than once: the purse is common but afflictions are not. A player
+     * carrying Plomo must see it and nobody else must, so the packet cannot be a single broadcast.</p>
+     */
     static void broadcastWallet(ActiveFloor floor) {
-        DungeonWalletPayload payload = new DungeonWalletPayload(true,
-                floor.run.wallet().coins(), floor.run.wallet().wallCharges());
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player == null) {
+                continue;
+            }
+            List<String> carried = new java.util.ArrayList<>();
+            floor.run.afflictions().carried().forEach(a -> carried.add(a.nombre()));
+            floor.run.stateOf(member).afflictions().carried().forEach(a -> carried.add(a.nombre()));
+            PacketDistributor.sendToPlayer(player, new DungeonWalletPayload(true,
+                    floor.run.wallet().coins(), floor.run.wallet().wallCharges(), carried));
+        }
+    }
+
+    /**
+     * Afflictions changed. Same packet as the purse, because they change on the same events — the
+     * curse room pays coins for taking one and charges coins to shed one.
+     */
+    static void syncAfflictions(ActiveFloor floor) {
+        broadcastWallet(floor);
         for (UUID member : floor.run.party().keySet()) {
             ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
             if (player != null) {
-                PacketDistributor.sendToPlayer(player, payload);
+                Afflictions.apply(floor.run, player);
             }
         }
     }
@@ -390,12 +418,16 @@ public final class RunEngine {
 
     /** Pulls a broken run out of the world without trusting any more of its state. */
     private static void abandon(ActiveFloor floor) {
-        FLOORS.remove(floor.run.id());
         try {
             DungeonRunManager.end(floor.level.getServer(), floor.run.id());
         } catch (Throwable t) {
             Teras.LOGGER.error("Dungeons: could not cleanly end run {}", floor.run.id(), t);
         }
+        // After, not before. Removing the floor first meant end()'s unregister found nothing and
+        // took nothing down — so a run that broke mid-boss left its bar on every screen until relog.
+        // Idempotent, so it costs nothing when end() already did it, and it still guarantees the
+        // broken floor cannot tick again when end() refused the run.
+        unregister(floor.run.id());
     }
 
     @SubscribeEvent
@@ -458,8 +490,9 @@ public final class RunEngine {
                 player.getYRot(), player.getXRot());
         land(player);
         // A respawn is a fresh player entity with vanilla attributes: hearts sold to a devil deal
-        // have to be taken again, or dying would be the cheapest way to buy one back.
-        DungeonHealth.applyHpDebt(player, floor.run.stateOf(player.getUUID()).hpDebt());
+        // — or accepted as an affliction — have to be taken again, or dying would be the cheapest
+        // way to buy them back.
+        Afflictions.apply(floor.run, player);
 
         int coinPct = floor.seguro ? DungeonsConfig.coinDeathPenaltyPct() / 2
                 : DungeonsConfig.coinDeathPenaltyPct();
@@ -525,6 +558,11 @@ public final class RunEngine {
         }
         if (room != null && room.type() == RoomType.DEVIL_DEAL
                 && DevilDeal.tryClaim(floor, player, room, pos, player.isShiftKeyDown())) {
+            event.setCanceled(true);
+            return;
+        }
+        if (room != null && room.type() == RoomType.CURSE
+                && floor.market.tryUse(floor, player, pos)) {
             event.setCanceled(true);
             return;
         }
@@ -817,11 +855,13 @@ public final class RunEngine {
                 continue;
             }
             DungeonHealth.holdHunger(player);
+            Afflictions.tick(floor.run, player);
             collectPickups(floor, player);
             GridPos cell = cellOf(floor, player);
             floor.core.playerEnteredCell(member, cell, isClearOfDoors(floor, cell, player));
             if (!cell.equals(floor.lastCell.put(member, cell))) {
                 sendMap(floor, player);
+                chargeCurseDoor(floor, player, cell);
             }
             checkPlates(floor, player, cell);
         }
@@ -882,6 +922,54 @@ public final class RunEngine {
                 Math.floorDiv(player.blockPosition().getZ() - origin.getZ(), roomSize));
     }
 
+    /**
+     * The blood price for stepping into a curse room.
+     *
+     * <p>Charged on <b>crossing</b>, per player, rather than on discovery to whoever happened to be
+     * first — the spikes over the doorway are a promise made to everyone who walks under them, and
+     * a room that bills one member for four people's entry is not the deal it advertised.</p>
+     *
+     * <p>Once per player per floor: stepping out to finish a fight and coming back is not a second
+     * decision, and charging for it would turn the room into somewhere you dare not leave.</p>
+     *
+     * <p><b>It can never kill.</b> The toll is floored at half a heart remaining. A price that can
+     * end the run is one no party ever pays, which would make the whole room dead content — and
+     * dying to a doorway reads as a bug however it is documented.</p>
+     */
+    private static void chargeCurseDoor(ActiveFloor floor, ServerPlayer player, GridPos cell) {
+        Room room = floor.built.layout().grid().roomAt(cell);
+        if (room == null || room.type() != RoomType.CURSE) {
+            return;
+        }
+        if (!floor.curseTollPaid.add(player.getUUID())) {
+            return;
+        }
+        float toll = DungeonsConfig.curseDoorTollHearts() * 2.0f;
+        if (toll <= 0) {
+            return;
+        }
+        float survivable = Math.max(0f, player.getHealth() - 1.0f);
+        float damage = Math.min(toll, survivable);
+        if (damage <= 0) {
+            player.displayClientMessage(Component.literal(
+                    "§4Los pinchos te dejan pasar — no te queda sangre que cobrar."), true);
+            return;
+        }
+        // magic() is in BYPASSES_ARMOR, so the toll is the toll — a party in full plate does not
+        // get in cheaper. Same source the sacrifice plate uses.
+        player.hurt(player.damageSources().magic(), damage);
+        playAt(floor, player.blockPosition(), DungeonSound.SACRIFICE, 1.0f);
+        player.displayClientMessage(Component.literal(
+                "§4Los pinchos cobran su peaje."), true);
+    }
+
+    /** What the party's afflictions do to a wave it is about to meet. */
+    private static EnemySpawner.WaveModifier swarm(ActiveFloor floor) {
+        return new EnemySpawner.WaveModifier(
+                Afflictions.waveCountMultiplier(floor.run),
+                Afflictions.waveStatMultiplier(floor.run));
+    }
+
     private static boolean isClearOfDoors(ActiveFloor floor, GridPos cell, ServerPlayer player) {
         Room room = floor.built.layout().grid().roomAt(cell);
         return room != null && doorwayHolding(floor, room, player) == null;
@@ -891,7 +979,7 @@ public final class RunEngine {
     private static DoorEdge doorwayHolding(ActiveFloor floor, Room room, ServerPlayer player) {
         AABB body = player.getBoundingBox();
         for (DoorEdge door : floor.built.layout().doorsOf(room)) {
-            if (door.kind() != DoorKind.OPEN && door.kind() != DoorKind.BOSS) {
+            if (!door.kind().walkable()) {
                 continue;
             }
             if (body.intersects(doorwayBox(floor.built, door))) {
@@ -1013,7 +1101,10 @@ public final class RunEngine {
                 }
             }
         }
-        boolean mapHidden = floor.run.curses().contains(es.boffmedia.teras.dungeon.model.Curse.LOST);
+        // Two ways to lose the map: the floor was generated LOST, or the party sold its sight to
+        // the curse room. Same darkness, different reasons, so the same flag carries both.
+        boolean mapHidden = floor.run.curses().contains(es.boffmedia.teras.dungeon.model.Curse.LOST)
+                || Afflictions.mapHidden(floor.run);
         PacketDistributor.sendToPlayer(player, new DungeonMapPayload(true,
                 floor.built.layout().grid().size(), floor.run.stage(), mapHidden, cells));
     }
@@ -1112,8 +1203,8 @@ public final class RunEngine {
     /**
      * Plays a cue for a room: once at every doorway, and once from the middle of the room. Both
      * halves matter — the doorway copies are what make a seal read as <i>these</i> doors shutting
-     * on you rather than an ambient noise, and the body sound carries the weight of it. Only OPEN
-     * and BOSS edges are used, the same set {@link DoorCarver} fills.
+     * on you rather than an ambient noise, and the body sound carries the weight of it. Only
+     * walkable edges are used, the same set {@link DoorCarver} fills.
      */
     private static void playCue(ActiveFloor floor, Room room, String cue, float pitch) {
         SoundEvent event = soundEvent(cue);
@@ -1122,7 +1213,7 @@ public final class RunEngine {
         }
         float volume = DungeonsConfig.soundVolume();
         for (DoorEdge door : floor.built.layout().doorsOf(room)) {
-            if (door.kind() != DoorKind.OPEN && door.kind() != DoorKind.BOSS) {
+            if (!door.kind().walkable()) {
                 continue;
             }
             Vec3 at = doorwayBox(floor.built, door).getCenter();
@@ -1177,8 +1268,10 @@ public final class RunEngine {
                                 ? ClaimPolicy.Kind.ONE_OF_N : ClaimPolicy.Kind.PER_PLAYER,
                         lootTable(loot));
             }
-            if (room.type() == RoomType.CURSE && discoverer != null) {
-                chargeToll(room, discoverer);
+            if (room.type() == RoomType.CURSE) {
+                // No toll here any more: the price is a heart at the spiked doorway, paid by
+                // everyone who walks under it. Inside, nothing is taken that was not offered.
+                floor.market.open(floor, room);
             }
         }
 
@@ -1189,7 +1282,6 @@ public final class RunEngine {
                 case TESORO -> DungeonsConfig.treasureLootTable();
                 case SECRETA -> DungeonsConfig.secretLootTable();
                 case SUPERSECRETA -> DungeonsConfig.superSecretLootTable();
-                case MALDICION -> DungeonsConfig.curseLootTable();
             };
         }
 
@@ -1247,7 +1339,8 @@ public final class RunEngine {
         @Override
         public int spawnEncounter(Room room) {
             int roomIndex = floor.built.layout().rooms().indexOf(room);
-            List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room, roomIndex, floor.run.party().size());
+            List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room, roomIndex,
+                    1.0f, floor.run.party().size(), swarm(floor));
             for (Entity enemy : spawned) {
                 floor.enemyRooms.put(enemy.getUUID(), room);
             }
@@ -1296,7 +1389,7 @@ public final class RunEngine {
             float growth = (float) Math.pow(
                     1.0 + DungeonsConfig.challengeWaveGrowthPct() / 100.0, wave);
             List<Entity> spawned = EnemySpawner.spawn(floor.level, floor.built, room,
-                    roomIndex + wave * 1000, growth, floor.run.party().size());
+                    roomIndex + wave * 1000, growth, floor.run.party().size(), swarm(floor));
             for (Entity enemy : spawned) {
                 floor.enemyRooms.put(enemy.getUUID(), room);
             }
@@ -1420,28 +1513,5 @@ public final class RunEngine {
          * zero. Being unable to pay costs blood instead, and under the health lockdown that bite
          * does not heal off.</p>
          */
-        private void chargeToll(Room room, UUID player) {
-            ServerPlayer online = floor.level.getServer().getPlayerList().getPlayer(player);
-            int coinToll = DungeonsConfig.curseCoinToll();
-            if (coinToll > 0) {
-                if (floor.run.wallet().trySpend(coinToll)) {
-                    broadcastWallet(floor);
-                    if (online != null) {
-                        online.sendSystemMessage(Component.literal(
-                                "§5La sala maldita cobra su peaje: " + coinToll + " monedas."));
-                    }
-                } else if (online != null) {
-                    online.hurt(online.damageSources().magic(), 6.0f);
-                    online.sendSystemMessage(Component.literal(
-                            "§5No podéis pagar el peaje — la maldición muerde."));
-                }
-            }
-            BigDecimal toll = BigDecimal.valueOf(DungeonsConfig.curseToll());
-            if (toll.signum() > 0 && EconomyStore.withdraw(player, toll) && online != null) {
-                online.sendSystemMessage(Component.literal(
-                        "§5La maldición también cobra " + toll + " ₽."));
-            }
-            // The loot itself is rolled by roomDiscovered through the contract; this only charges.
-        }
     }
 }

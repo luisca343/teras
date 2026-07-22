@@ -43,7 +43,7 @@ public final class DevilDeal {
             }
             PlayerRunState state = floor.run().stateOf(player.getUUID());
             state.addHpDebt(hearts * 2);
-            DungeonHealth.applyHpDebt(player, state.hpDebt());
+            Afflictions.apply(floor.run(), player);
             claim(floor, player, room, pedestal,
                     "§4−" + hearts + " corazones hasta el final de la partida");
             return true;

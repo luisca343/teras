@@ -67,7 +67,12 @@ public final class DungeonHealth {
         if (amount <= 0) {
             return;
         }
-        player.setHealth(Math.min(player.getMaxHealth(), player.getHealth() + amount));
+        // Sangría lands here rather than at each caller: this is the one place healing happens at
+        // all, so an affliction that halves it cannot be forgotten by a future potion.
+        var run = es.boffmedia.teras.dungeon.instance.DungeonRunManager.runOf(player.getUUID());
+        float healed = run == null ? amount
+                : amount * es.boffmedia.teras.dungeon.run.Afflictions.healMultiplier(run);
+        player.setHealth(Math.min(player.getMaxHealth(), player.getHealth() + healed));
     }
 
     /** Restores the player to full within their current maximum. */
@@ -87,8 +92,14 @@ public final class DungeonHealth {
      * Applies the run's accumulated max-health debt. Re-applied after every respawn: a fresh player
      * entity comes back with vanilla attributes, and a deal paid in hearts that a death refunded
      * would make dying the cheapest way to settle it.
+     *
+     * <p><b>Deliberately not public.</b> The debt is no longer one number — a devil deal's hearts
+     * and a Pulso débil accepted at a curse room are both maximum health the run has taken — so a
+     * caller that passes {@code hpDebt()} raw silently undoes the other one. Three callers did
+     * exactly that. {@link Afflictions#apply} is the way in, and the package boundary is what stops
+     * a fourth from being written.</p>
      */
-    public static void applyHpDebt(ServerPlayer player, int halfHearts) {
+    static void applyHpDebt(ServerPlayer player, int halfHearts) {
         AttributeInstance attribute = player.getAttribute(Attributes.MAX_HEALTH);
         if (attribute == null) {
             return;

@@ -84,7 +84,8 @@ public final class DungeonShop {
             int stage = floor.run().stage();
             for (int i = 0; i < pedestals.size(); i++) {
                 BlockPos pos = floor.built().clampInside(room, pedestals.get(i), 1);
-                Slot slot = new Slot(pos, rolled.get(i), priceOf(rolled.get(i), stage));
+                Slot slot = new Slot(pos, rolled.get(i),
+                        priceOf(rolled.get(i), stage, floor.run()));
                 slots.add(slot);
                 spawnDisplays(floor.level(), slot);
             }
@@ -92,8 +93,13 @@ public final class DungeonShop {
     }
 
     /** Prices climb with the floor by the same rate coin drops do, so the shop keeps its bite. */
-    private static int priceOf(ShopStock.StockKind kind, int stage) {
-        return CoinDrops.scaleToStage(DungeonsConfig.shopPrice(kind.configKey()), stage);
+    private static int priceOf(ShopStock.StockKind kind, int stage,
+                              es.boffmedia.teras.dungeon.instance.DungeonRun run) {
+        // Priced when the shop is stocked, so a party that takes Avaricia after seeing the shelf
+        // keeps the price it was quoted. Buying the drawback should not retroactively tax a
+        // decision already made.
+        return (int) Math.ceil(CoinDrops.scaleToStage(DungeonsConfig.shopPrice(kind.configKey()), stage)
+                * Afflictions.shopPriceMultiplier(run));
     }
 
     /**

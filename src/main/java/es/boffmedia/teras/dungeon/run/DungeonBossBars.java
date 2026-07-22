@@ -105,17 +105,26 @@ public final class DungeonBossBars {
         }
     }
 
-    /** Everyone in the party who is on this floor sees it, and nobody else does. */
+    /**
+     * Everyone in the party who is on this floor sees it, and nobody else does.
+     *
+     * <p>Driven from the <b>current viewers</b> and not only from the party, because the two ways a
+     * player stops being in the party — walking out, and disconnecting — both stop the party loop
+     * from ever reaching them again. The bar was then never taken off their screen: a client only
+     * removes one when it is told to, so leaving a boss fight left its bar there until relog.</p>
+     */
     private void syncViewers(RunEngine.ActiveFloor floor, Bar bar) {
+        for (ServerPlayer viewer : List.copyOf(bar.event.getPlayers())) {
+            if (viewer.hasDisconnected()
+                    || !floor.run().party().containsKey(viewer.getUUID())
+                    || viewer.serverLevel() != floor.level()) {
+                bar.event.removePlayer(viewer);
+            }
+        }
         for (UUID member : floor.run().party().keySet()) {
             ServerPlayer player = floor.level().getServer().getPlayerList().getPlayer(member);
-            if (player == null) {
-                continue;
-            }
-            if (player.serverLevel() == floor.level()) {
+            if (player != null && player.serverLevel() == floor.level()) {
                 bar.event.addPlayer(player);
-            } else {
-                bar.event.removePlayer(player);
             }
         }
     }
