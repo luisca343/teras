@@ -107,7 +107,7 @@ public final class ItemInit {
 
     public static final DeferredItem<Item> GEAR_YELMO = ITEMS.registerItem(
             "gear_yelmo",
-            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+            props -> new es.boffmedia.teras.dungeon.gear.GearArmorItem(GearMaterialInit.dungeon(),
                     net.minecraft.world.item.ArmorItem.Type.HELMET, props),
             new Item.Properties().stacksTo(1).durability(
                     net.minecraft.world.item.ArmorItem.Type.HELMET.getDurability(GearMaterialInit.ARMOR_DURABILITY))
@@ -115,7 +115,7 @@ public final class ItemInit {
 
     public static final DeferredItem<Item> GEAR_CORAZA = ITEMS.registerItem(
             "gear_coraza",
-            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+            props -> new es.boffmedia.teras.dungeon.gear.GearArmorItem(GearMaterialInit.dungeon(),
                     net.minecraft.world.item.ArmorItem.Type.CHESTPLATE, props),
             new Item.Properties().stacksTo(1).durability(
                     net.minecraft.world.item.ArmorItem.Type.CHESTPLATE.getDurability(GearMaterialInit.ARMOR_DURABILITY))
@@ -123,7 +123,7 @@ public final class ItemInit {
 
     public static final DeferredItem<Item> GEAR_GREBAS = ITEMS.registerItem(
             "gear_grebas",
-            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+            props -> new es.boffmedia.teras.dungeon.gear.GearArmorItem(GearMaterialInit.dungeon(),
                     net.minecraft.world.item.ArmorItem.Type.LEGGINGS, props),
             new Item.Properties().stacksTo(1).durability(
                     net.minecraft.world.item.ArmorItem.Type.LEGGINGS.getDurability(GearMaterialInit.ARMOR_DURABILITY))
@@ -131,7 +131,7 @@ public final class ItemInit {
 
     public static final DeferredItem<Item> GEAR_BOTAS = ITEMS.registerItem(
             "gear_botas",
-            props -> new net.minecraft.world.item.ArmorItem(GearMaterialInit.dungeon(),
+            props -> new es.boffmedia.teras.dungeon.gear.GearArmorItem(GearMaterialInit.dungeon(),
                     net.minecraft.world.item.ArmorItem.Type.BOOTS, props),
             new Item.Properties().stacksTo(1).durability(
                     net.minecraft.world.item.ArmorItem.Type.BOOTS.getDurability(GearMaterialInit.ARMOR_DURABILITY))
