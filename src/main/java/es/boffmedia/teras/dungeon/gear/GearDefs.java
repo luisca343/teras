@@ -114,13 +114,13 @@ public final class GearDefs {
     }
 
     /**
-     * Every piece is a vanilla base item plus a {@code teras:gear_id} component — no registered
-     * items, no sprites; the AW skin is the intended look and the base is the silhouette until one
-     * is authored. Bases are picked for shape and rarity, and deliberately avoid items with coded
-     * behaviour: no mace (fall-smash mechanics), no totem (death save), no elytra (flight).
+     * The built-in catalog. A piece is a {@code kind} plus a {@code teras:gear_id} component; the
+     * kind chooses which of the nine first-party items it is built on ({@link GearItems}), and the
+     * id carries its name, stats and abilities. No piece is a registered item of its own, so a new
+     * one is an entry here (or in {@code gear.json}), not an item plus assets plus a code change.
      *
-     * <p>Stamped modifiers REPLACE the base item's own attribute line, so the numbers here are
-     * each piece's full stat block — a diamond sword base contributes zero damage of its own.</p>
+     * <p>Stamped modifiers REPLACE the item's own attribute line, so the numbers here are each
+     * piece's full stat block — the base item contributes none of its own.</p>
      */
     public static Map<String, GearDef> defaults() {
         Map<String, GearDef> map = new LinkedHashMap<>();
@@ -133,18 +133,18 @@ public final class GearDefs {
         // A COMUN piece with an ability is the shape worth repeating here. A stat line alone is
         // legible but forgettable; one small rule attached to it is what makes a player choose
         // between two things that are numerically the same.
-        put(map, "minecraft:iron_sword",
+        put(map,
                 sword("machete_contrabandista", COMUN, 3.0, 0.9, GearAbility.NINGUNA, 0));
         // Slime on the blade. It does not kill faster, it decides who reaches whom — which is the
         // only kind of power a floor-1 weapon should have.
-        put(map, "minecraft:stone_sword",
+        put(map,
                 sword("fisga_enlimada", COMUN, 2.5, 0.3, GearAbility.VISCOSO, 2.5));
         // The cosh: the archer's answer. A shooter that keeps getting shoved never gets its
         // cooldown back, and that is worth more on this floor than two points of damage.
-        put(map, "minecraft:wooden_axe",
+        put(map,
                 axe("cachiporra", COMUN, 4.0, -0.6, GearAbility.EMPUJE, 1.1));
 
-        put(map, "minecraft:leather_helmet", new GearDef("casco_prospector", GearKind.HELMET, COMUN,
+        put(map, new GearDef("casco_prospector", GearKind.HELMET, COMUN,
                 List.of(new GearDef.Stat(GearStat.ARMOR, 1.0, FLAT)),
                 // The lamp, and the most valuable thing on a floor lit at 7 — Infestadas at 4. It
                 // is the piece that changes how the floor is played without touching a number, and
@@ -153,7 +153,7 @@ public final class GearDefs {
                 // fallback, because a magnitude of zero on a piece that has an ability is how you
                 // ship an ability that does nothing.
                 GearAbility.LINTERNA, 3, "", ""));
-        put(map, "minecraft:leather_boots", new GearDef("botas_limo", GearKind.BOOTS, COMUN,
+        put(map, new GearDef("botas_limo", GearKind.BOOTS, COMUN,
                 List.of(new GearDef.Stat(GearStat.ARMOR, 1.0, FLAT),
                         new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.05, FRACTION_OF_BASE)),
                 // Slime soles. The archers stand on ledges, and this is what makes going up there
@@ -161,80 +161,74 @@ public final class GearDefs {
                 GearAbility.CAIDA_SUAVE, 1.0, "", ""));
         // The plain one. Every floor needs a piece that is only a number, or the ones that are not
         // stop reading as special.
-        put(map, "minecraft:leather_leggings", new GearDef("rodilleras_espeleologo",
+        put(map, new GearDef("rodilleras_espeleologo",
                 GearKind.LEGGINGS, COMUN,
                 List.of(new GearDef.Stat(GearStat.ARMOR, 2.0, FLAT)),
                 GearAbility.NINGUNA, 0, "", ""));
         // A barrel lid with a handle nailed to it: blocks like a shield, weighs like a lid.
-        put(map, "minecraft:shield", new GearDef("tapa_barril", GearKind.SHIELD, COMUN,
+        put(map, new GearDef("tapa_barril", GearKind.SHIELD, COMUN,
                 List.of(new GearDef.Stat(GearStat.ARMOR, 1.0, FLAT),
                         new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.04, FRACTION_OF_BASE)),
                 GearAbility.NINGUNA, 0, "", ""));
 
         // The gadgets. Floor 1 is where the dungeon should teach that there is a button as well as
         // a swing, so all four are COMUN and all four are cheap: what they cost is a cooldown.
-        put(map, "minecraft:firework_rocket", gadget("bengala", GearAbility.BENGALA));
-        put(map, "minecraft:tnt", gadget("petardo_minero", GearAbility.PETARDO));
-        put(map, "minecraft:slime_ball", gadget("frasco_limo", GearAbility.FRASCO));
-        put(map, "minecraft:fishing_rod", gadget("garfio", GearAbility.GARFIO));
+        put(map, gadget("bengala", GearAbility.BENGALA));
+        put(map, gadget("petardo_minero", GearAbility.PETARDO));
+        put(map, gadget("frasco_limo", GearAbility.FRASCO));
+        put(map, gadget("garfio", GearAbility.GARFIO));
 
-        // Weapons. Attack speed is a delta on the vanilla base (-2.4 bare-handed), so the hammer's
+        // Weapons. Attack speed is a delta on the bare-handed baseline (-2.4), so the hammer's
         // -0.4 is a real cost and the fang's +0.6 is one paid for elsewhere.
-        put(map, "minecraft:diamond_sword",
+        put(map,
                 sword("espada_abisal", RARO, 6.0, 0.2, GearAbility.VAMPIRISMO, 0.10));
-        put(map, "minecraft:netherite_sword",
+        put(map,
                 sword("colmillo_diablo", EPICO, 5.0, 0.6, GearAbility.DESGARRO, 3.0));
-        // An axe, not a sword: it is a hammer, it rode on a netherite axe, and now that AXE is a
-        // kind of its own the def can say so. It was SWORD only because that was the only melee
-        // kind that existed.
-        put(map, "minecraft:netherite_axe",
+        // An axe, not a sword: it is a hammer, and AXE is a kind of its own now — it was SWORD only
+        // because that was once the only melee kind.
+        put(map,
                 axe("martillo_rompemuros", EPICO, 9.0, -0.4, GearAbility.ONDA, 0.15));
-        put(map, "minecraft:golden_sword", new GearDef("hoja_maldita", GearKind.SWORD, RARO, List.of(
+        put(map, new GearDef("hoja_maldita", GearKind.SWORD, RARO, List.of(
                 new GearDef.Stat(GearStat.ATTACK_DAMAGE, 8.0, FLAT),
                 // The curse: it hits hard and leaves you softer for carrying it.
                 new GearDef.Stat(GearStat.ARMOR, -2.0, FLAT)),
                 GearAbility.BOTIN, 4, "", ""));
 
-        // Armour. The base's worn model shows on the body until the AW skin covers it, so the
-        // material is picked to read right on its own: chainmail common, diamond rare, gold boss.
-        put(map, "minecraft:chainmail_helmet", new GearDef("yelmo_laberinto", GearKind.HELMET, COMUN, List.of(
+        // Armour. Each kind's first-party item carries the worn look until an AW skin covers it;
+        // rarity here is the stat weight, not a material.
+        put(map, new GearDef("yelmo_laberinto", GearKind.HELMET, COMUN, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 2.0, FLAT),
                 new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.10, FRACTION_OF_BASE)),
                 GearAbility.NINGUNA, 0, "", ""));
-        put(map, "minecraft:diamond_chestplate", new GearDef("coraza_abisal", GearKind.CHESTPLATE, RARO, List.of(
+        put(map, new GearDef("coraza_abisal", GearKind.CHESTPLATE, RARO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 6.0, FLAT),
                 new GearDef.Stat(GearStat.ARMOR_TOUGHNESS, 1.0, FLAT)),
                 GearAbility.ESPINAS, 0.15, "", ""));
-        put(map, "minecraft:chainmail_leggings", new GearDef("grebas_saqueador", GearKind.LEGGINGS, COMUN, List.of(
+        put(map, new GearDef("grebas_saqueador", GearKind.LEGGINGS, COMUN, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 4.0, FLAT)),
                 GearAbility.BOTIN, 3, "", ""));
-        put(map, "minecraft:diamond_boots", new GearDef("botas_fantasma", GearKind.BOOTS, RARO, List.of(
+        put(map, new GearDef("botas_fantasma", GearKind.BOOTS, RARO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 2.0, FLAT),
                 new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.15, FRACTION_OF_BASE)),
                 GearAbility.NINGUNA, 0, "", ""));
-        put(map, "minecraft:golden_helmet", new GearDef("corona_jefe", GearKind.HELMET, EPICO, List.of(
+        put(map, new GearDef("corona_jefe", GearKind.HELMET, EPICO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 3.0, FLAT),
                 new GearDef.Stat(GearStat.ARMOR_TOUGHNESS, 2.0, FLAT),
                 new GearDef.Stat(GearStat.MAX_HEALTH, 2.0, FLAT)),
                 GearAbility.NINGUNA, 0, "", ""));
-        put(map, "minecraft:golden_chestplate", new GearDef("alas_fenix", GearKind.CHESTPLATE, EPICO, List.of(
+        put(map, new GearDef("alas_fenix", GearKind.CHESTPLATE, EPICO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 4.0, FLAT)),
                 GearAbility.FENIX_MENOR, 1, "", ""));
 
         // Charms: no stat line at all, so the ability is the whole item.
-        put(map, "minecraft:heart_of_the_sea", new GearDef("talisman_sangre", GearKind.CHARM, EPICO, List.of(),
+        put(map, new GearDef("talisman_sangre", GearKind.CHARM, EPICO, List.of(),
                 GearAbility.VAMPIRISMO, 0.05, "", ""));
-        put(map, "minecraft:emerald", new GearDef("amuleto_avaro", GearKind.CHARM, COMUN, List.of(),
+        put(map, new GearDef("amuleto_avaro", GearKind.CHARM, COMUN, List.of(),
                 GearAbility.BOTIN, 2, "", ""));
 
         return map;
     }
 
-    /**
-     * The first argument used to be the vanilla item the piece rode on. Gear has its own items now
-     * ({@code GearItems}), derived from the kind, so it is kept only as a comment on where each
-     * piece came from — and ignored.
-     */
     /**
      * One entry of {@code habilidades}. Accepts a bare name ({@code "ONDA"}) as well as the object
      * form, because an ability with no numbers is a legitimate and common thing to write and should
@@ -275,7 +269,7 @@ public final class GearDefs {
         }
     }
 
-    private static void put(Map<String, GearDef> map, String formerBase, GearDef def) {
+    private static void put(Map<String, GearDef> map, GearDef def) {
         map.put(def.id(), def);
     }
 
@@ -409,6 +403,9 @@ public final class GearDefs {
                     json.has("skinType") ? json.get("skinType").getAsString() : def.skinType());
             def = def.withSkin(skinId, skinType);
         }
+        if (json.has("tint")) {
+            def = def.withTint(parseTint(json.get("tint").getAsString(), def.id(), warnings));
+        }
         if (json.has("stats")) {
             JsonObject stats = json.getAsJsonObject("stats");
             List<GearDef.Stat> replacement = new ArrayList<>();
@@ -500,6 +497,26 @@ public final class GearDefs {
         };
     }
 
+    /**
+     * A worn-armour colour as {@code #RRGGBB} (or bare {@code RRGGBB}), forced opaque. Blank is the
+     * common case and means "unset" — {@code 0}, which the renderer reads as "use the rarity colour".
+     */
+    static int parseTint(String raw, String gearId, List<String> warnings) {
+        String s = raw == null ? "" : raw.trim();
+        if (s.isEmpty()) {
+            return 0;
+        }
+        if (s.startsWith("#")) {
+            s = s.substring(1);
+        }
+        try {
+            return 0xFF000000 | (int) (Long.parseLong(s, 16) & 0xFFFFFF);
+        } catch (NumberFormatException e) {
+            warnings.add("gear '" + gearId + "' tint '" + raw + "' is not a #RRGGBB colour; ignored");
+            return 0;
+        }
+    }
+
     /** The starting point written on first run. */
     public static JsonObject renderDefaults() {
         JsonObject root = new JsonObject();
@@ -538,6 +555,9 @@ public final class GearDefs {
             }
             entry.addProperty("skin", def.skinId());
             entry.addProperty("skinType", def.effectiveSkinType());
+            // Blank means "colour a worn piece by its rarity"; an author sets #RRGGBB to override.
+            entry.addProperty("tint", def.tint() == 0 ? ""
+                    : String.format("#%06X", def.tint() & 0xFFFFFF));
             JsonObject stats = new JsonObject();
             for (GearDef.Stat stat : def.stats()) {
                 stats.addProperty(stat.stat().key(), stat.amount());

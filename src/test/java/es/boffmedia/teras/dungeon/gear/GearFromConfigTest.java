@@ -48,6 +48,40 @@ class GearFromConfigTest {
         assertTrue(made.abilities().isEmpty());
     }
 
+    @Test
+    void aWornTintReadsAsOpaqueArgbAndFallsBackWhenBlank() {
+        JsonObject entry = piece("chestplate");
+        entry.addProperty("tint", "#6FA8FF");
+        GearDef tinted = mergeOne("coraza_test", entry).defs().get("coraza_test");
+        assertEquals(0xFF6FA8FF, tinted.tint(), "a #RRGGBB tint is forced opaque");
+
+        JsonObject bare = piece("helmet");
+        bare.addProperty("tint", "");
+        GearDef untinted = mergeOne("yelmo_test", bare).defs().get("yelmo_test");
+        assertEquals(0, untinted.tint(), "blank means unset — the renderer uses the rarity colour");
+    }
+
+    @Test
+    void aMalformedTintWarnsAndStaysUnset() {
+        JsonObject entry = piece("boots");
+        entry.addProperty("tint", "not-a-colour");
+        GearDefs.Merge merge = mergeOne("botas_test", entry);
+        assertEquals(0, merge.defs().get("botas_test").tint());
+        assertTrue(merge.warnings().stream().anyMatch(w -> w.contains("tint")),
+                "a bad colour is worth a word: " + merge.warnings());
+    }
+
+    @Test
+    void anExplicitTintSurvivesRetuningAnotherField() {
+        JsonObject entry = piece("chestplate");
+        entry.addProperty("tint", "#123456");
+        JsonObject stats = new JsonObject();
+        stats.addProperty("armor", 5.0);
+        entry.add("stats", stats);
+        GearDef made = mergeOne("coraza_test", entry).defs().get("coraza_test");
+        assertEquals(0xFF123456, made.tint(), "a stat retune must not drop the tint");
+    }
+
     /** The built-ins have to survive a file that adds to them. */
     @Test
     void addingAPieceLeavesTheCatalogAlone() {

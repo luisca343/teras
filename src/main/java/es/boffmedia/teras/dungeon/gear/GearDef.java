@@ -25,6 +25,10 @@ import java.util.List;
  *                  is the normal case: the stamp then uses {@code item.teras.<id>} with a name
  *                  derived from the id as its fallback, so a piece defined only in {@code gear.json}
  *                  is never nameless and a lang entry still wins if one exists
+ * @param tint      ARGB colour for a worn armour piece with no AW skin — the grey layer is rendered
+ *                  multiplied by it, so the piece reads apart on the body. {@code 0} means "unset":
+ *                  the renderer falls back to a colour keyed on the piece's rarity. Item slots that
+ *                  are not worn armour ignore it
  */
 public record GearDef(
         String id,
@@ -34,12 +38,19 @@ public record GearDef(
         List<AbilityDef> abilities,
         String skinId,
         String skinType,
-        String nombre) {
+        String nombre,
+        int tint) {
 
     /** Without an explicit name, which is what nearly every piece wants. */
     public GearDef(String id, GearKind kind, Rarity rarity, List<Stat> stats,
                    List<AbilityDef> abilities, String skinId, String skinType) {
-        this(id, kind, rarity, stats, abilities, skinId, skinType, "");
+        this(id, kind, rarity, stats, abilities, skinId, skinType, "", 0);
+    }
+
+    /** With a name but no explicit tint — the rarity colour stands in. */
+    public GearDef(String id, GearKind kind, Rarity rarity, List<Stat> stats,
+                   List<AbilityDef> abilities, String skinId, String skinType, String nombre) {
+        this(id, kind, rarity, stats, abilities, skinId, skinType, nombre, 0);
     }
 
     public GearDef {
@@ -83,7 +94,11 @@ public record GearDef(
     }
 
     public GearDef withNombre(String value) {
-        return new GearDef(id, kind, rarity, stats, abilities, skinId, skinType, value);
+        return new GearDef(id, kind, rarity, stats, abilities, skinId, skinType, value, tint);
+    }
+
+    public GearDef withTint(int value) {
+        return new GearDef(id, kind, rarity, stats, abilities, skinId, skinType, nombre, value);
     }
 
     public boolean hasSkin() {
@@ -101,15 +116,15 @@ public record GearDef(
     }
 
     public GearDef withStats(List<Stat> replacement) {
-        return new GearDef(id, kind, rarity, replacement, abilities, skinId, skinType, nombre);
+        return new GearDef(id, kind, rarity, replacement, abilities, skinId, skinType, nombre, tint);
     }
 
     public GearDef withAbilities(List<AbilityDef> replacement) {
-        return new GearDef(id, kind, rarity, stats, replacement, skinId, skinType, nombre);
+        return new GearDef(id, kind, rarity, stats, replacement, skinId, skinType, nombre, tint);
     }
 
     public GearDef withSkin(String skin, String type) {
-        return new GearDef(id, kind, rarity, stats, abilities, skin, type, nombre);
+        return new GearDef(id, kind, rarity, stats, abilities, skin, type, nombre, tint);
     }
 
     /**
