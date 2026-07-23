@@ -56,5 +56,14 @@ public enum AbilityKind {
      * enemies carry the countdown, so a CustomNPCs clone declaring it does nothing — the state has
      * to live on the entity, and a clone has nowhere to put it.</p>
      */
-    ALERTA
+    ALERTA,
+    /**
+     * Enrages when struck from behind — the attacker inside {@code rearArc} degrees of directly
+     * astern: faster by {@code speedMult}, harder by {@code damageMult}, once, with the enrage cue.
+     *
+     * <p>A flank punished, not a health phase, so it reads as "do not hit its back" rather than as
+     * the boss cheating. The abdomen's own hit box is what makes the back reachable to strike in the
+     * first place — this is the payoff for the queen carrying one.</p>
+     */
+    FLANK_RAGE
 }

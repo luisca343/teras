@@ -59,6 +59,9 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     /** Whether a climber is against a wall right now, so the client can play the climb loop. */
     private static final EntityDataAccessor<Boolean> CLIMBING =
             SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.BOOLEAN);
+    /** Enraged, and synched so the client can tint it red, hurry its clips and trail particles. */
+    private static final EntityDataAccessor<Boolean> ENRAGED =
+            SynchedEntityData.defineId(DungeonGeoEnemy.class, EntityDataSerializers.BOOLEAN);
 
     /** What the client is being told to animate. Ordinals ride the wire — append only. */
     public enum Action { BITE, SHOOT, POUNCE, HOP, CAST }
@@ -118,7 +121,15 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
     /** A hit on any box damages the whole enemy the same — no per-part behaviour yet. */
     public boolean hurtPart(DungeonEnemyPart part, net.minecraft.world.damagesource.DamageSource source,
                             float amount) {
-        return hurt(source, amount);
+        boolean hit = hurt(source, amount);
+        // The base hurt-knockback already shoved her off the attacker; hurt() applies it. What a part
+        // loses is the attack's own bump — a sprint hit, which Player.attack routes to the struck
+        // entity, and a part is not a LivingEntity, so it pushes the box we replace every tick instead
+        // of the body. Re-apply it so flanking the abdomen shoves her like a hit to the face.
+        if (hit && source.getEntity() instanceof LivingEntity attacker && attacker.isSprinting()) {
+            knockback(0.5, attacker.getX() - getX(), attacker.getZ() - getZ());
+        }
+        return hit;
     }
 
     /** Places each part over the body for the current variant, or collapses the ones it does not use. */
@@ -340,7 +351,35 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
         builder.define(ATTACK_TICKS, 0);
         builder.define(ACTION, Action.BITE.ordinal());
         builder.define(CLIMBING, false);
+        builder.define(ENRAGED, false);
     }
+
+    /** Client-safe: the flag is synched. Drives the tint, the animation speed and the aura. */
+    public boolean isEnraged() {
+        return entityData.get(ENRAGED);
+    }
+
+    /**
+     * Enters the enraged state and telegraphs the moment once: a rear-up cast clip and a low growl
+     * under the roar the ability already played. Called server-side from {@link AbilityEngine} for
+     * either enrage; the second one to fire finds the flag already set and adds nothing.
+     */
+    public void markEnraged() {
+        if (entityData.get(ENRAGED)) {
+            return;
+        }
+        entityData.set(ENRAGED, true);
+        triggerAction(Action.CAST, ENRAGE_GESTURE_TICKS);
+        level().playSound(null, getX(), getY(), getZ(),
+                net.minecraft.sounds.SoundEvents.WARDEN_ANGRY,
+                net.minecraft.sounds.SoundSource.HOSTILE, 1.1f, 0.7f);
+    }
+
+    /** How long the one-shot rear-up plays on enrage. */
+    private static final int ENRAGE_GESTURE_TICKS = 24;
+
+    /** Ticks between puffs of the enraged aura. */
+    private static final int AURA_INTERVAL = 6;
 
     public String variantId() {
         return entityData.get(VARIANT);
@@ -476,6 +515,14 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
             // The same ability set CustomNPCs enemies run, so a server without that mod still
             // fights something with phases rather than a health bar that walks at you.
             AbilityEngine.tick(this);
+            if (isEnraged() && tickCount % AURA_INTERVAL == 0
+                    && level() instanceof net.minecraft.server.level.ServerLevel server) {
+                float height = variant().scaledHeight();
+                server.sendParticles(net.minecraft.core.particles.ParticleTypes.ANGRY_VILLAGER,
+                        getX(), getY() + height * 0.85, getZ(), 2, 0.25, 0.2, 0.25, 0.0);
+                server.sendParticles(net.minecraft.core.particles.ParticleTypes.SOUL_FIRE_FLAME,
+                        getX(), getY() + height * 0.4, getZ(), 3, 0.3, 0.3, 0.3, 0.005);
+            }
         }
     }
 
@@ -663,8 +710,11 @@ public class DungeonGeoEnemy extends Monster implements GeoEntity,
                 return state.setAndContinue(IDLE);
             }
             return state.setAndContinue(state.isMoving() ? WALK : IDLE);
-        }));
+        }).setAnimationSpeedHandler(e -> e.isEnraged() ? ENRAGE_ANIM_SPEED : 1.0));
     }
+
+    /** Enraged clips run this much faster, so the model reads as harried, not just quicker on foot. */
+    private static final double ENRAGE_ANIM_SPEED = 1.4;
 
     private int actionOrdinal() {
         int a = entityData.get(ACTION);

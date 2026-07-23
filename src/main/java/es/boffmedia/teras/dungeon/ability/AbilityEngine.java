@@ -42,6 +42,10 @@ public final class AbilityEngine {
             ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_enrage_speed");
     private static final ResourceLocation ENRAGE_DAMAGE =
             ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_enrage_damage");
+    private static final ResourceLocation FLANK_SPEED =
+            ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_flank_speed");
+    private static final ResourceLocation FLANK_DAMAGE =
+            ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_flank_damage");
 
     /**
      * Whether {@code self} has already crossed an enrage threshold — read by the CNPC damage hook.
@@ -133,13 +137,43 @@ public final class AbilityEngine {
             return;
         }
         for (AbilityDef def : Abilities.of(self)) {
-            if (def.kind() != AbilityKind.THORNS) {
-                continue;
+            switch (def.kind()) {
+                case THORNS -> {
+                    float reflected = (float) (amount * def.param("fraction", 0.25));
+                    if (reflected > 0) {
+                        attacker.hurt(self.damageSources().thorns(self), reflected);
+                    }
+                }
+                case FLANK_RAGE -> {
+                    if (self.level() instanceof ServerLevel level
+                            && Flank.isRear(self.getX(), self.getZ(), self.yBodyRot,
+                                    attacker.getX(), attacker.getZ(), def.param("rearArc", 120.0))
+                            && fireOnce(self, AbilityKind.FLANK_RAGE, 0)) {
+                        flankRage(level, self, def);
+                    }
+                }
+                default -> { }
             }
-            float reflected = (float) (amount * def.param("fraction", 0.25));
-            if (reflected > 0) {
-                attacker.hurt(self.damageSources().thorns(self), reflected);
-            }
+        }
+    }
+
+    /** The flank punished: the same telegraphed speed and damage as {@link #enrage}, its own tuning. */
+    private static void flankRage(ServerLevel level, LivingEntity self, AbilityDef def) {
+        addModifier(self, Attributes.MOVEMENT_SPEED, FLANK_SPEED, def.param("speedMult", 0.4));
+        addModifier(self, Attributes.ATTACK_DAMAGE, FLANK_DAMAGE, def.param("damageMult", 0.3));
+        onEnrageFeedback(level, self);
+    }
+
+    /**
+     * The shared onset: a burst of anger, a lower, louder roar, and — for an animated enemy — the
+     * synched flag that carries the tint, the hurried clips and the aura, plus a rear-up gesture.
+     */
+    private static void onEnrageFeedback(ServerLevel level, LivingEntity self) {
+        level.sendParticles(ParticleTypes.ANGRY_VILLAGER, self.getX(), self.getY(1.0), self.getZ(),
+                16, 0.4, 0.5, 0.4, 0.0);
+        RunEngine.playAbilityCue(self, DungeonSound.ENEMY_ENRAGED, 1.6f, 0.8f);
+        if (self instanceof es.boffmedia.teras.dungeon.entity.DungeonGeoEnemy geo) {
+            geo.markEnraged();
         }
     }
 
@@ -264,9 +298,7 @@ public final class AbilityEngine {
     private static void enrage(ServerLevel level, LivingEntity self, AbilityDef def) {
         addModifier(self, Attributes.MOVEMENT_SPEED, ENRAGE_SPEED, def.param("speedMult", 0.3));
         addModifier(self, Attributes.ATTACK_DAMAGE, ENRAGE_DAMAGE, def.param("damageMult", 0.5));
-        level.sendParticles(ParticleTypes.ANGRY_VILLAGER, self.getX(), self.getY(1.0), self.getZ(),
-                12, 0.4, 0.4, 0.4, 0.0);
-        RunEngine.playAbilityCue(self, DungeonSound.ENEMY_ENRAGED);
+        onEnrageFeedback(level, self);
     }
 
     private static void addModifier(LivingEntity self,

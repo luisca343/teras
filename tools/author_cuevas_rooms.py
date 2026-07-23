@@ -785,7 +785,11 @@ MAX_PARTY_FACTOR = 2.05
 
 
 def wave_bar(key):
-    base = {'normal': 5, 'challenge': 7, 'normal_large': 6,
+    # The base is the largest countMax any piso throws at a room of this shape — a shared template
+    # has to satisfy its strictest floor. Single 'normal' rooms are used by Cuevas (countMax 5) and
+    # Cuevas Infestadas (countMax 6), so the base is 6: at 5 the infested single rooms held 11 where
+    # a full party's wave is 13, and the game's own audit flagged them.
+    base = {'normal': 6, 'challenge': 7, 'normal_large': 6,
             'normal_l': 8, 'normal_big': 11}.get(key, 0)
     if base == 0:
         return 0

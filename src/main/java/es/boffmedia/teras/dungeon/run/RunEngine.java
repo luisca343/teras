@@ -349,10 +349,15 @@ public final class RunEngine {
 
     /** Plays a cue positioned on an enemy, for the ability layer's telegraphs. */
     public static void playAbilityCue(Entity source, DungeonSound cue) {
+        playAbilityCue(source, cue, 1.0f, 1.0f);
+    }
+
+    /** {@code volumeMul} scales the configured volume; {@code pitch} drops it for menace. */
+    public static void playAbilityCue(Entity source, DungeonSound cue, float volumeMul, float pitch) {
         SoundEvent event = soundEvent(cue.name());
         if (event != null && source.level() instanceof ServerLevel level) {
             level.playSound(null, source.getX(), source.getY(), source.getZ(), event,
-                    SoundSource.HOSTILE, DungeonsConfig.soundVolume(), 1.0f);
+                    SoundSource.HOSTILE, DungeonsConfig.soundVolume() * volumeMul, pitch);
         }
     }
 

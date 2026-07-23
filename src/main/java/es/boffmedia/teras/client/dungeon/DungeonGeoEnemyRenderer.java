@@ -7,6 +7,7 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
+import software.bernie.geckolib.util.Color;
 
 /**
  * Draws the animated dungeon enemy. Scale comes from the variant rather than the renderer, so one
@@ -46,5 +47,17 @@ public class DungeonGeoEnemyRenderer extends GeoEntityRenderer<DungeonGeoEnemy> 
         }
         super.preRender(poseStack, enemy, model, bufferSource, buffer, isReRender,
                 partialTick, packedLight, packedOverlay, colour);
+    }
+
+    @Override
+    public Color getRenderColor(DungeonGeoEnemy enemy, float partialTick, int packedLight) {
+        if (!enemy.isEnraged()) {
+            return super.getRenderColor(enemy, partialTick, packedLight);
+        }
+        // Red stays full while green and blue pulse down, so the model reddens and breathes rather
+        // than going dark. ~1.5s period off the entity's own tick, so every enraged enemy is in step.
+        float phase = (enemy.tickCount + partialTick) * 0.3f;
+        float dip = 0.35f + 0.25f * (float) Math.sin(phase);
+        return Color.ofRGB(1.0f, dip, dip);
     }
 }

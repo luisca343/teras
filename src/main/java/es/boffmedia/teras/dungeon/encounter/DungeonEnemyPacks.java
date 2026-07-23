@@ -223,7 +223,12 @@ public final class DungeonEnemyPacks {
         table.put("cazadora", List.of(
                 new AbilityDef(AbilityKind.CLEAVE, "", Map.of("radius", 3.0, "fraction", 0.5)),
                 new AbilityDef(AbilityKind.ENRAGE, "",
-                        Map.of("healthPct", 0.35, "speedMult", 0.5, "damageMult", 0.2))));
+                        Map.of("healthPct", 0.35, "speedMult", 0.5, "damageMult", 0.2)),
+                // Her abdomen is a hit box too, so she can be flanked — but she is already the fast
+                // one, so a flank spends itself on bite, not more speed, and the arc is tighter
+                // because a mini-boss this nimble is meant to be hard to get behind in the first place.
+                new AbilityDef(AbilityKind.FLANK_RAGE, "",
+                        Map.of("rearArc", 100.0, "speedMult", 0.2, "damageMult", 0.5))));
 
         table.put("reina_madre", List.of(
                 new AbilityDef(AbilityKind.SUMMON, "geo:cria",
@@ -231,7 +236,11 @@ public final class DungeonEnemyPacks {
                 new AbilityDef(AbilityKind.ON_HIT, "minecraft:poison",
                         Map.of("duration", 80.0, "amplifier", 0.0)),
                 new AbilityDef(AbilityKind.ENRAGE, "",
-                        Map.of("healthPct", 0.3, "speedMult", 0.3, "damageMult", 0.45))));
+                        Map.of("healthPct", 0.3, "speedMult", 0.3, "damageMult", 0.45)),
+                // Her abdomen is now a hit box, so flanking the queen is a real option — and one she
+                // answers. Stacks on top of the health enrage; a wounded, flanked queen is both.
+                new AbilityDef(AbilityKind.FLANK_RAGE, "",
+                        Map.of("rearArc", 120.0, "speedMult", 0.5, "damageMult", 0.35))));
 
         // The animated enemies are reachable from enemies.json as `geo` entries, so they get the
         // same treatment; their ids are GeoEnemyVariant's, not clone names.
