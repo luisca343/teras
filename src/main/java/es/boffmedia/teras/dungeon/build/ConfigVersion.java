@@ -76,9 +76,19 @@ public final class ConfigVersion {
      *       {@code murcielago} becomes its first {@code ambientales} entry. All of it is new lines
      *       in the piso's tables, so an older file fields none of them — and the ambient block in
      *       particular has never existed on any config written before this</li>
+     *   <li>la sala del sello (§10.6 of the production draft; PISOS §59–60): every piso gains an
+     *       optional {@code exit} room key — a 2×2 chamber appended <i>after</i> generation
+     *       behind the boss, holding the pit, the seal glyph and the boss reward pedestal — and
+     *       the shipped Cuevas/Infestadas sets ship one. Room pools are folder-discovered from the
+     *       jar, so the new room appears on old worlds by itself; what an existing file misses is
+     *       {@code config.yml}'s new knobs ({@code bloqueRunaSello},
+     *       {@code bloqueRunaSelloEncendida}, {@code segundosDescenso}, two sound cues — all
+     *       defaulted when absent) and a piso file's say over the new key's {@code pesos}. The
+     *       {@code trapdoor} marker moved from the boss keys to {@code exit}; boss templates keep
+     *       carrying one for the fallback carve on a piso without an exit template</li>
      * </ol>
      */
-    public static final int CURRENT = 9;
+    public static final int CURRENT = 10;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

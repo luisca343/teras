@@ -64,7 +64,10 @@ final class SpecialRoomPlacer {
         if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.arcadeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.ARCADE);
         }
-        if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.devilDealChance())) {
+        // Only when the piso has no sala del sello to hang it off: with an exit, El Acreedor moves
+        // to the exit's flank ({@code PostRooms.appendDevilSatellite}) instead of the playfield.
+        if (index < deadEnds.size() && !depth.isFirst() && !config.exitRoom()
+                && rng.chance(config.devilDealChance())) {
             deadEnds.get(index++).setType(RoomType.DEVIL_DEAL);
         }
 

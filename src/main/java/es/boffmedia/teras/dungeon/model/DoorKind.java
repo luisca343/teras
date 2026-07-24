@@ -25,7 +25,21 @@ public enum DoorKind {
      * unmistakable from a room away, because crossing it costs blood and a price you cannot see
      * before you pay it is an ambush rather than a decision.
      */
-    CURSE;
+    CURSE,
+    /**
+     * The doorway into the EXIT room. Unlike DEVIL nothing is placed at build time — the wall
+     * stays solid, the chamber invisible — and the boss falling is what carves it open: the seal
+     * re-pins and the rock gives way. The sala del sello is generated with the floor but only
+     * ever <i>revealed</i>, never promised.
+     */
+    SELLO,
+    /**
+     * Barred doorway into the ORDEN room, the Acreedor's counter-pole. Placed shut like
+     * {@link #DEVIL} and carved open on the boss's death — but only when the party earned her
+     * (PISOS §63c). Its own kind rather than a reused DEVIL so the two satellite doors can read
+     * differently from inside the sala del sello, and so the reveal can tell them apart.
+     */
+    GRACIA;
 
     /**
      * Whether this is a doorway a player can walk through, and therefore one that has to be sealed
@@ -45,6 +59,16 @@ public enum DoorKind {
         }
         if (a == RoomType.SECRET || b == RoomType.SECRET) {
             return SECRET_CRACK;
+        }
+        // Safety net only: the exit room's one edge is appended by hand in PostRooms, after the
+        // door graph is derived. If a graph is ever rebuilt over a grid that already holds an
+        // exit, a sealed door is the failure mode that stays safe.
+        if (a == RoomType.EXIT || b == RoomType.EXIT) {
+            return SELLO;
+        }
+        // Same safety net as EXIT above: the Orden's one edge is appended by hand in PostRooms.
+        if (a == RoomType.ORDEN || b == RoomType.ORDEN) {
+            return GRACIA;
         }
         // Before the boss clause: a devil room next to the boss is still barred, not a boss door.
         if (a == RoomType.DEVIL_DEAL || b == RoomType.DEVIL_DEAL) {

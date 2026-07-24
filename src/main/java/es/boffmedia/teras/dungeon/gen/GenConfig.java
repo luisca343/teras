@@ -10,6 +10,19 @@ package es.boffmedia.teras.dungeon.gen;
  * longer "the last floor" — a dungeon declares its own length from its tramos — but the length the
  * room-count and difficulty curves are <i>authored against</i>. {@link FloorDepth} maps a floor of
  * any dungeon onto it.</p>
+ *
+ * <p>{@code gridSize} is the playfield — the diameter the carve, placement and validation see,
+ * untouched by anything below. {@code postMargin} is reserved space <i>around</i> it: the built
+ * grid is {@code gridSize + 2·postMargin}, and the ring only ever holds rooms appended after
+ * validation ({@link PostRooms} — the exit chamber today, red-room-style extras tomorrow), so a
+ * post room always has somewhere to stand and can never cost a generation attempt.</p>
+ *
+ * <p>{@code forceBossQuad} rejects any floor whose boss did not grow to a 2×2, rerolling for one
+ * that did. Set only for pisos that declare QUAD (and therefore authored {@code boss_big}): the
+ * boss is then always a 2×2 arena, which is both grander and what lets the exit share a full,
+ * aligned face for the centered ceremonial door. It costs a few percent more generation attempts
+ * — the boss already grows on ~92–95% of floors — and never bites a piso that does not build 2×2
+ * rooms.</p>
  */
 public record GenConfig(
         int gridSize,
@@ -31,7 +44,10 @@ public record GenConfig(
         int lostRoomBonus,
         int referenceLength,
         int finalStageRooms,
-        int maxAttempts) {
+        int maxAttempts,
+        boolean exitRoom,
+        int postMargin,
+        boolean forceBossQuad) {
 
     public GenConfig {
         if (gridSize < 5) {
@@ -69,7 +85,45 @@ public record GenConfig(
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
                 labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
-                referenceLength, finalStageRooms, maxAttempts);
+                referenceLength, finalStageRooms, maxAttempts, exitRoom, postMargin,
+                forceBossQuad);
+    }
+
+    /**
+     * This config generating (or not) the appended sala del sello. Decided per floor by whether
+     * the piso authored an {@code exit} template — the generator itself must not know what a piso
+     * is, and a layout with an exit room the build cannot furnish would be a sealed doorway into
+     * an empty cell.
+     */
+    public GenConfig withExitRoom(boolean exit) {
+        if (exit == exitRoom) {
+            return this;
+        }
+        return new GenConfig(gridSize,
+                chanceQuad, chanceHorizontal, chanceVertical, chanceLShape,
+                largeShapeDecay, shapeResetInterval,
+                curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
+                devilDealChance, miniBossChance, firstStageMiniBossBoost,
+                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                referenceLength, finalStageRooms, maxAttempts, exit, postMargin, forceBossQuad);
+    }
+
+    /**
+     * This config requiring (or not) a 2×2 boss. Set true only for pisos that declare QUAD — a
+     * piso without {@code boss_big} could never satisfy it and would reroll every floor to
+     * exhaustion.
+     */
+    public GenConfig withForceBossQuad(boolean force) {
+        if (force == forceBossQuad) {
+            return this;
+        }
+        return new GenConfig(gridSize,
+                chanceQuad, chanceHorizontal, chanceVertical, chanceLShape,
+                largeShapeDecay, shapeResetInterval,
+                curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
+                devilDealChance, miniBossChance, firstStageMiniBossBoost,
+                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                referenceLength, finalStageRooms, maxAttempts, exitRoom, postMargin, force);
     }
 
     private static double weight(
@@ -89,6 +143,6 @@ public record GenConfig(
                 0.25, 0.75,
                 1.8, 45, 4,
                 12, 50,
-                20);
+                20, false, 2, false);
     }
 }

@@ -36,6 +36,11 @@ public final class DungeonsConfig {
     private static int desertionGraceSeconds;
     private static int buildTimeoutSeconds;
     private static String sealBlock;
+    private static String sealRuneBlock;
+    private static String sealRuneLitBlock;
+    private static int descentSeconds;
+    private static int sealDoorWidth;
+    private static int sealDoorHeight;
     private static long clearReward;
     private static int deathPenaltyPct;
     private static String treasureLootTable;
@@ -159,7 +164,9 @@ public final class DungeonsConfig {
             Map.entry("ARCADE_BREAK", "minecraft:entity.item.break"),
             Map.entry("DEVIL_OPENED", "minecraft:entity.wither.ambient"),
             Map.entry("DEVIL_DEAL", "minecraft:entity.evoker.cast_spell"),
-            Map.entry("PHOENIX", "minecraft:item.totem.use"));
+            Map.entry("PHOENIX", "minecraft:item.totem.use"),
+            Map.entry("SEAL_RESTORED", "minecraft:block.beacon.activate"),
+            Map.entry("DESCENT_TICK", "minecraft:block.note_block.hat"));
 
     static {
         resetToDefaults();
@@ -200,6 +207,11 @@ public final class DungeonsConfig {
             desertionGraceSeconds = yaml.integer("graciaAbandonoSegundos", desertionGraceSeconds);
             buildTimeoutSeconds = yaml.integer("timeoutConstruccionSegundos", buildTimeoutSeconds);
             sealBlock = yaml.string("bloqueSello", sealBlock);
+            sealRuneBlock = yaml.string("bloqueRunaSello", sealRuneBlock);
+            sealRuneLitBlock = yaml.string("bloqueRunaSelloEncendida", sealRuneLitBlock);
+            descentSeconds = Math.max(3, yaml.integer("segundosDescenso", descentSeconds));
+            sealDoorWidth = Math.max(1, yaml.integer("anchoPuertaSello", sealDoorWidth));
+            sealDoorHeight = Math.max(1, yaml.integer("altoPuertaSello", sealDoorHeight));
             clearReward = yaml.longValue("recompensaSala", clearReward);
             deathPenaltyPct = yaml.integer("penalizacionMuertePct", deathPenaltyPct);
             treasureLootTable = yaml.string("lootTesoro", treasureLootTable);
@@ -297,6 +309,17 @@ public final class DungeonsConfig {
         // Too tight a timeout here would fail healthy runs on a busy server.
         buildTimeoutSeconds = 300;
         sealBlock = "minecraft:iron_bars";
+        // The seal glyph's rune inlay, dull while the boss lives and lit when the seal re-pins.
+        // The lit rune gets an invisible light block stamped over it, so any block works here.
+        sealRuneBlock = "minecraft:polished_basalt";
+        sealRuneLitBlock = "minecraft:amethyst_block";
+        // The straggler bell: the first member down the pit starts this countdown, and when it
+        // ends the rest of the party descends with them.
+        descentSeconds = 15;
+        // The grand ceremonial door the boss's death carves between the 2×2 arena and the 2×2
+        // sala del sello: one wide opening centered on the shared face, taller than a normal door.
+        sealDoorWidth = 7;
+        sealDoorHeight = 5;
         // Both zero by default: a run's income is coins now, converted in one lump when it is
         // completed. The ₽ knobs stay wired for servers that want to pay per room anyway.
         clearReward = 0;
@@ -391,6 +414,17 @@ public final class DungeonsConfig {
                 # Run loop: what seals doors in combat, and the wall a secret room hides behind.
                 bloqueSello: minecraft:iron_bars
                 bloqueGrieta: teras:muro_agrietado
+                # La sala del sello. The rune inlay of the seal glyph swaps dull -> lit when the
+                # boss falls (an invisible light block is stamped over each lit rune, so any block
+                # reads). segundosDescenso is the straggler bell: the first member down the pit
+                # starts it, and at zero the rest of the party descends with them.
+                bloqueRunaSello: minecraft:polished_basalt
+                bloqueRunaSelloEncendida: minecraft:amethyst_block
+                segundosDescenso: 15
+                # The grand ceremonial door between the 2x2 boss arena and the 2x2 sala del sello:
+                # one wide opening the boss's death carves, centered on their shared face.
+                anchoPuertaSello: 7
+                altoPuertaSello: 5
                 # The curse room is a market, not a tax: its doorway is framed in these spikes
                 # so the toll is visible from a room away, and crossing costs each player this
                 # many hearts once per floor (floored so it can never kill). Inside, offers
@@ -519,6 +553,8 @@ public final class DungeonsConfig {
                   devil_opened: minecraft:entity.wither.ambient
                   devil_deal: minecraft:entity.evoker.cast_spell
                   phoenix: minecraft:item.totem.use
+                  seal_restored: minecraft:block.beacon.activate
+                  descent_tick: minecraft:block.note_block.hat
                 # Enemy waves live in enemies.json next to this file.
                 """;
     }
@@ -569,6 +605,26 @@ public final class DungeonsConfig {
 
     public static String sealBlock() {
         return sealBlock;
+    }
+
+    public static String sealRuneBlock() {
+        return sealRuneBlock;
+    }
+
+    public static String sealRuneLitBlock() {
+        return sealRuneLitBlock;
+    }
+
+    public static int descentSeconds() {
+        return descentSeconds;
+    }
+
+    public static int sealDoorWidth() {
+        return sealDoorWidth;
+    }
+
+    public static int sealDoorHeight() {
+        return sealDoorHeight;
     }
 
     public static long clearReward() {

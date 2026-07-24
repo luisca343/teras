@@ -27,8 +27,19 @@ public final class DevilDeal {
         if (!RunEngine.isAtFixture(pedestal, clicked, RANGE)) {
             return false;
         }
+        offer(floor, player, room, payWithHearts);
+        return true;
+    }
+
+    /**
+     * The trade itself, with no question of <i>where</i> the player was standing — the pedestal
+     * asks that before calling, and El Acreedor asks nothing at all because the player clicked him.
+     */
+    static void offer(RunEngine.ActiveFloor floor, ServerPlayer player, Room room,
+                      boolean payWithHearts) {
+        BlockPos pedestal = RunEngine.markerPos(floor, room, "deal");
         if (floor.devilClaimed.contains(room)) {
-            return true;
+            return;
         }
         int hearts = DungeonsConfig.devilHeartPrice();
         int coins = CoinDrops.scaleToStage(DungeonsConfig.devilCoinPrice(), floor.run().stage());
@@ -39,29 +50,39 @@ public final class DevilDeal {
             if (player.getMaxHealth() - hearts * 2 < 2.0f) {
                 player.displayClientMessage(
                         Component.literal("§4No te queda suficiente vida que vender."), true);
-                return true;
+                return;
             }
             PlayerRunState state = floor.run().stateOf(player.getUUID());
             state.addHpDebt(hearts * 2);
+            // Trading flesh is the one purity signal the party gives away on purpose: it forfeits
+            // la Orden's bonus this floor and marks the run as one that will sell (PISOS §63c).
+            floor.soldHearts = true;
             Afflictions.apply(floor.run(), player);
             claim(floor, player, room, pedestal,
                     "§4−" + hearts + " corazones hasta el final de la partida");
-            return true;
+            return;
         }
         if (!floor.run().wallet().trySpend(coins)) {
-            player.displayClientMessage(Component.literal("§cEl trato cuesta " + coins
-                    + " monedas, o agáchate y haz clic para pagar con " + hearts + " corazones."), true);
+            // Says what is missing, never how to click: the same refusal is read at a pedestal, in
+            // El Acreedor's own dialogue and from a chat line, and only one of those is a sneak-click.
+            player.displayClientMessage(Component.literal("§cEl trato cuesta §f" + coins
+                    + "§c monedas y la bolsa tiene §f" + floor.run().wallet().coins()
+                    + "§c. También se paga con §4" + hearts + " corazones§c."), true);
             RunEngine.playAt(floor, pedestal, DungeonSound.PURCHASE_DENIED, 1.0f);
-            return true;
+            return;
         }
         RunEngine.broadcastWallet(floor);
         claim(floor, player, room, pedestal, "§7−" + coins + " monedas");
-        return true;
     }
 
     private static void claim(RunEngine.ActiveFloor floor, ServerPlayer player, Room room,
                               BlockPos pedestal, String priceLabel) {
         floor.devilClaimed.add(room);
+        // The ledger remembers: one deal makes him a regular visitor (+45 % from here on), and it
+        // means the party did NOT refuse him this floor, so la Orden stays unearned.
+        floor.run().recordAcreedorDeal();
+        // And her door shuts: both stood open, only one is walked through.
+        RunEngine.closeTheFork(floor, es.boffmedia.teras.dungeon.model.DoorKind.DEVIL);
         RunEngine.rollLootAt(floor, pedestal, DungeonsConfig.devilLootTable());
         RunEngine.playAt(floor, pedestal, DungeonSound.DEVIL_DEAL, 1.0f);
         DungeonTitles.send(player, "§5Trato cerrado", priceLabel);

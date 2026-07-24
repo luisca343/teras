@@ -256,7 +256,7 @@ public final class RunCore {
         return switch (room.type()) {
             case NORMAL, MINI_BOSS, BOSS -> true;
             case START, TREASURE, SHOP, SECRET, SUPER_SECRET, CURSE, CHALLENGE,
-                 SACRIFICE, ARCADE, DEVIL_DEAL -> false;
+                 SACRIFICE, ARCADE, DEVIL_DEAL, EXIT, ORDEN -> false;
         };
     }
 }

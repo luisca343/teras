@@ -46,5 +46,9 @@ public enum DungeonSound {
     /** A devil deal was struck. */
     DEVIL_DEAL,
     /** A phoenix charm burned to cancel a death. */
-    PHOENIX
+    PHOENIX,
+    /** The boss fell and the floor's seal re-pinned: runes lit, pit bars retracted. */
+    SEAL_RESTORED,
+    /** One second less on the straggler countdown's last stretch. */
+    DESCENT_TICK
 }

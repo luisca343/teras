@@ -10,8 +10,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Skips {@code teras.mixins.json}'s mixins unless Pixelmon is present — their targets are
- * {@code com.pixelmonmod.*} classes, and a missing target is a hard load error. {@link LoadingModList}
+ * Skips a mixin whose target mod is not installed — a missing target class is a hard load error,
+ * and every mixin here patches an optional dependency. The owner is read off the target's package:
+ * {@code com.pixelmonmod.*} needs Pixelmon, {@code noppes.*} needs CustomNPCs. {@link LoadingModList}
  * (not {@code ModList}) is used because mixins apply before {@code ModList} is populated.
  *
  * <p>Also registers {@link es.boffmedia.teras.integration.CreativeCoreCompat}, which keeps
@@ -20,11 +21,12 @@ import java.util.Set;
 public class TerasMixinPlugin implements IMixinConfigPlugin {
 
     private boolean pixelmonPresent;
+    private boolean customNpcsPresent;
 
     @Override
     public void onLoad(String mixinPackage) {
-        pixelmonPresent = LoadingModList.get() != null
-                && LoadingModList.get().getModFileById("pixelmon") != null;
+        pixelmonPresent = loaded("pixelmon");
+        customNpcsPresent = loaded("customnpcs");
         if (pixelmonPresent) {
             // By name: loading the handler here would pull it through the transformer far too early.
             // Every config is selected before any mixin applies, so this lands before CreativeCore's.
@@ -32,9 +34,13 @@ public class TerasMixinPlugin implements IMixinConfigPlugin {
         }
     }
 
+    private static boolean loaded(String modId) {
+        return LoadingModList.get() != null && LoadingModList.get().getModFileById(modId) != null;
+    }
+
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        return pixelmonPresent;
+        return targetClassName.startsWith("noppes.") ? customNpcsPresent : pixelmonPresent;
     }
 
     @Override

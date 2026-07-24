@@ -5,8 +5,10 @@ import es.boffmedia.teras.dungeon.model.DoorKind;
 import es.boffmedia.teras.dungeon.model.GridDir;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
+import es.boffmedia.teras.dungeon.model.RoomType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -59,6 +61,108 @@ public final class DoorCarver {
                         : new BlockPos(baseX + inset + w,
                                 origin.getY() + doorHeight, baseZ + roomSize - 1 + depth);
                 level.setBlock(pos, state, 2);
+            }
+        }
+    }
+
+    /**
+     * Carves one wide opening centered on the seam of a full two-cell face — the grand ceremonial
+     * door between a 2×2 boss and its 2×2 sala del sello.
+     *
+     * <p>The two {@link DoorEdge}s of an aligned attachment share a direction and lie on adjacent
+     * cells; their common boundary is the "exact middle" the door is centered on, which is what
+     * makes the opening symmetric across both rooms rather than two 3-wide holes with a pillar
+     * between them. Carved through both wall layers, {@code width} across and {@code height} tall.</p>
+     */
+    public static void carveGrandDoor(ServerLevel level, BlockPos origin,
+                                      java.util.List<DoorEdge> faceEdges, BlockState state,
+                                      int roomSize, int width, int height) {
+        if (faceEdges.isEmpty()) {
+            return;
+        }
+        GridDir dir = faceEdges.get(0).dir();
+        int minX = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        for (DoorEdge edge : faceEdges) {
+            minX = Math.min(minX, edge.cell().x());
+            minZ = Math.min(minZ, edge.cell().y());
+        }
+        int half = width / 2;
+        if (dir == GridDir.EAST) {
+            int baseX = origin.getX() + minX * roomSize;
+            int seamZ = origin.getZ() + (minZ + 1) * roomSize;
+            for (int depth = 0; depth < 2; depth++) {
+                for (int h = 1; h <= height; h++) {
+                    for (int w = -half; w < width - half; w++) {
+                        level.setBlock(new BlockPos(baseX + roomSize - 1 + depth,
+                                origin.getY() + h, seamZ + w), state, 2);
+                    }
+                }
+            }
+        } else {
+            int baseZ = origin.getZ() + minZ * roomSize;
+            int seamX = origin.getX() + (minX + 1) * roomSize;
+            for (int depth = 0; depth < 2; depth++) {
+                for (int h = 1; h <= height; h++) {
+                    for (int w = -half; w < width - half; w++) {
+                        level.setBlock(new BlockPos(seamX + w, origin.getY() + h,
+                                baseZ + roomSize - 1 + depth), state, 2);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Clears a shallow approach corridor into the boss room in front of a just-opened seal door, so
+     * no authored arena prop can stand between the party and the way down (the "guarantee access"
+     * pass). Mirrors the opening's geometry — {@code width} centered on the middle of the shared
+     * face, {@code height} tall — shifted {@code depth} columns into whichever side holds the boss,
+     * read from the edges' {@code from}/{@code to} rooms ({@code from} is always the min-cell side).
+     *
+     * <p>Serves both reveals: a grand door passes its two face edges and centers on their seam; a
+     * fallback single edge centers on its one cell. Boss rooms are at least a cell deep, so a
+     * three-block reach never punches through the far wall.</p>
+     */
+    public static void clearSealApproach(ServerLevel level, BlockPos origin,
+                                         java.util.List<DoorEdge> faceEdges,
+                                         int roomSize, int width, int height, int depth) {
+        if (faceEdges.isEmpty()) {
+            return;
+        }
+        DoorEdge first = faceEdges.get(0);
+        GridDir dir = first.dir();
+        boolean bossOnMinSide = first.from().type() == RoomType.BOSS;
+        int minX = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        for (DoorEdge edge : faceEdges) {
+            minX = Math.min(minX, edge.cell().x());
+            minZ = Math.min(minZ, edge.cell().y());
+        }
+        int span = faceEdges.size();
+        int half = width / 2;
+        BlockState air = Blocks.AIR.defaultBlockState();
+        if (dir == GridDir.EAST) {
+            int baseX = origin.getX() + minX * roomSize;
+            int centerZ = origin.getZ() + minZ * roomSize + (span * roomSize) / 2;
+            for (int d = 1; d <= depth; d++) {
+                int x = bossOnMinSide ? baseX + roomSize - 1 - d : baseX + roomSize + d;
+                for (int h = 1; h <= height; h++) {
+                    for (int w = -half; w < width - half; w++) {
+                        level.setBlock(new BlockPos(x, origin.getY() + h, centerZ + w), air, 2);
+                    }
+                }
+            }
+        } else {
+            int baseZ = origin.getZ() + minZ * roomSize;
+            int centerX = origin.getX() + minX * roomSize + (span * roomSize) / 2;
+            for (int d = 1; d <= depth; d++) {
+                int z = bossOnMinSide ? baseZ + roomSize - 1 - d : baseZ + roomSize + d;
+                for (int h = 1; h <= height; h++) {
+                    for (int w = -half; w < width - half; w++) {
+                        level.setBlock(new BlockPos(centerX + w, origin.getY() + h, z), air, 2);
+                    }
+                }
             }
         }
     }

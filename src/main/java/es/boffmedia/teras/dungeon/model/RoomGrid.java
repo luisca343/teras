@@ -141,12 +141,20 @@ public final class RoomGrid {
         return externalNeighborCount(room.cells());
     }
 
-    /** Occupied orthogonal neighbors of {@code pos}, secret rooms excluded. */
+    /**
+     * Occupied orthogonal neighbors of {@code pos}; secret rooms and post rooms excluded. A crack
+     * is not a doorway, and neither is the exit chamber's wall — its one door is appended by hand
+     * against the boss, so a room it happens to lean on keeps counting as the dead end it plays
+     * as. During generation neither type exists yet, so the exclusions only shape what the final
+     * layout reports.
+     */
     public int occupiedNeighborCount(GridPos pos) {
         int count = 0;
         for (GridDir dir : GridDir.values()) {
             Room neighbor = roomAt(pos.step(dir));
-            if (neighbor != null && !neighbor.type().isSecret()) {
+            if (neighbor != null && !neighbor.type().isSecret()
+                    && neighbor.type() != RoomType.EXIT
+                    && neighbor.type() != RoomType.ORDEN) {
                 count++;
             }
         }

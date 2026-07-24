@@ -48,6 +48,11 @@ public final class RoomTemplates {
      * be incomplete.</p>
      */
     public static String keyFor(Room room) {
+        // One footprint, no suffix: the 2×2 exit draws `exit`, never `exit_big` — see
+        // RoomKeys.familyFor, which answers the reverse question the same way.
+        if (room.type() == es.boffmedia.teras.dungeon.model.RoomType.EXIT) {
+            return "exit";
+        }
         String type = room.type().name().toLowerCase(Locale.ROOT);
         return RoomKeys.keyFor(type, room.shape());
     }
@@ -128,7 +133,13 @@ public final class RoomTemplates {
     public static List<String> mismatchedTemplates(FloorDef piso, StructureTemplateManager manager,
                                                    int roomSize, int roomHeight) {
         List<String> wrong = new ArrayList<>();
-        for (String key : piso.requiredRooms()) {
+        List<String> keys = new ArrayList<>(piso.requiredRooms());
+        for (String optional : RoomKeys.OPTIONAL) {
+            if (!RoomPools.pool(piso, optional).isEmpty()) {
+                keys.add(optional);
+            }
+        }
+        for (String key : keys) {
             RoomShape shape = RoomKeys.shapeFor(key);
             int wantX = shape.cellsWide() * roomSize;
             int wantZ = shape.cellsDeep() * roomSize;
@@ -151,7 +162,28 @@ public final class RoomTemplates {
 
     /** Every room key in the vocabulary, for command completion. */
     public static List<String> knownPoolKeys() {
-        return List.copyOf(RoomKeys.requiredFor(java.util.EnumSet.allOf(ShapeFamily.class)));
+        List<String> keys = new ArrayList<>(
+                RoomKeys.requiredFor(java.util.EnumSet.allOf(ShapeFamily.class)));
+        keys.addAll(RoomKeys.OPTIONAL);
+        return List.copyOf(keys);
+    }
+
+    /**
+     * Whether this piso can furnish la sala del sello. Read at floor-plan time and handed to the
+     * generator: a layout with an EXIT room the build cannot fill would be a barred doorway into
+     * an empty cell, and a piso without the template keeps today's in-arena carve instead.
+     */
+    public static boolean hasExitRoom(FloorDef piso) {
+        return !RoomPools.pool(piso, "exit").isEmpty();
+    }
+
+    /**
+     * Whether this piso authored la sala de la Orden. Checked before the grace satellite is ever
+     * appended, so a piso without the template simply never offers her and the Acreedor's half of
+     * the arc still runs — the same "absence is a choice" rule the exit room established.
+     */
+    public static boolean hasOrdenRoom(FloorDef piso) {
+        return !RoomPools.pool(piso, "orden").isEmpty();
     }
 
     private static TemplateEntry entry(RoomVariant variant, int degrees) {

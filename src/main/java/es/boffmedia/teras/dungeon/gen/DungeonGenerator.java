@@ -55,6 +55,17 @@ public final class DungeonGenerator {
      */
     public static DungeonLayout generate(GenConfig config, FloorDepth depth, Set<Curse> curses,
                                          Set<RoomShape> shapes, String seedString) {
+        return generate(config, depth, curses, shapes, seedString, SatelliteChances.NONE);
+    }
+
+    /**
+     * @param satellites the odds that the seal chamber gets El Acreedor's room, la Orden's, or
+     *                   both — decided by {@link SatelliteOdds} from the run's ledger and the floor
+     *                   just played, and rolled here so the floor stays a function of its seed
+     */
+    public static DungeonLayout generate(GenConfig config, FloorDepth depth, Set<Curse> curses,
+                                         Set<RoomShape> shapes, String seedString,
+                                         SatelliteChances satellites) {
         if (!depth.isValid()) {
             throw new IllegalArgumentException("Invalid stage: " + depth.stage()
                     + " in a dungeon of " + depth.dungeonLength() + " floors");
@@ -77,10 +88,34 @@ public final class DungeonGenerator {
 
             LayoutValidator.Result result = LayoutValidator.validate(grid, config, depth, targetCells, minDeadEnds);
             if (result.valid()) {
+                // Post rooms live outside the loop's economy: the validated playfield is embedded
+                // into the margin grid and only then extended, so nothing appended here can change
+                // what generation produced or cost a reroll attempt.
+                RoomGrid full = PostRooms.embed(grid, config.postMargin());
+                List<DoorEdge> doors = doorGraph(full);
+                if (config.exitRoom()) {
+                    PostRooms.appendExitRoom(full, doors, rng);
+                    // Both rolls always run, even when a chance is zero, so the rng stream — and
+                    // therefore the floor — does not shift with who happens to be visiting.
+                    boolean acreedor = rng.chance(satellites.acreedor() / 100.0);
+                    boolean orden = rng.chance(satellites.orden() / 100.0);
+                    PostRooms.appendSatellites(full, doors, rng, acreedor, orden);
+                }
                 return new DungeonLayout(stage, curses, seed, baseSeed, attempt,
-                        grid, doorGraph(grid), result.warnings());
+                        full, doors, result.warnings());
             }
             lastErrors = result.errors();
+        }
+        // A forced 2×2 boss is a nice-to-have, never worth failing a run over. On a small floor it
+        // can, rarely, be unsatisfiable together with the dead-end minimum, and every reroll misses;
+        // rather than refuse the run, drop the requirement and regenerate (same seed → deterministic)
+        // with a 1×1 boss allowed. Measured ~3 in 100k floors, all at stage 1.
+        if (config.forceBossQuad()) {
+            es.boffmedia.teras.Teras.LOGGER.warn("Dungeons: could not place a 2×2 boss for stage {} "
+                    + "after {} attempts; this floor takes a 1×1 boss and a normal exit door",
+                    stage, config.maxAttempts());
+            return generate(config.withForceBossQuad(false), depth, curses, shapes, seedString,
+                    satellites);
         }
         throw new DungeonGenerationException(stage, seed, config.maxAttempts(), lastErrors);
     }

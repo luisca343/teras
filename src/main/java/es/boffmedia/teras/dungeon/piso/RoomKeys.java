@@ -30,6 +30,18 @@ public final class RoomKeys {
             "arcade", "devil_deal");
 
     /**
+     * Authored when the piso wants the feature, never owed. {@code exit} is la sala del sello:
+     * a piso that supplies one gets the appended seal chamber behind its boss room, and a piso
+     * without one falls back to carving the pit in the arena — absence is a choice, not a
+     * validation failure, which is what keeps a rollout from bricking a run.
+     *
+     * <p>{@code orden} is la sala de la Orden, the grace chamber on the sello's far flank. Optional
+     * for the same reason and one more: it is new content, so a piso that has not authored it
+     * simply never offers the Orden, and the Acreedor's half of the arc still runs.</p>
+     */
+    public static final List<String> OPTIONAL = List.of("exit", "orden");
+
+    /**
      * The single-cell shape, which is not optional: the start room and the bulk of every layout are
      * one cell, so a piso that declared no shapes at all would still have to build them.
      */
@@ -64,6 +76,11 @@ public final class RoomKeys {
 
     /** The family a room key is authored at, read off its suffix. */
     public static ShapeFamily familyFor(String roomKey) {
+        // The exit room has exactly one footprint — a 2×2 appended post-generation — so its key
+        // carries no suffix: there is no `exit` single for `exit_big` to be distinguished from.
+        if (roomKey.equals("exit")) {
+            return ShapeFamily.BIG;
+        }
         for (ShapeFamily family : ShapeFamily.values()) {
             if (family != ShapeFamily.SINGLE && roomKey.endsWith(family.suffix())) {
                 return family;

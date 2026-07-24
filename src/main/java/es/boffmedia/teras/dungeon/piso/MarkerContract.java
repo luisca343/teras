@@ -68,7 +68,9 @@ public final class MarkerContract {
         runtime("spawn");          // EnemySpawner — where a wave stands up
         runtime("loot");           // RunEngine.roomDiscovered, via LOOT below
         runtime("boss");           // EnemySpawner — where the boss or mini-boss lands
-        runtime("trapdoor");       // RunEngine — where the floor opens when the boss dies
+        runtime("trapdoor");       // RunEngine — the pit down: in the exit room, or the boss-room
+                                   // fallback carve when the piso has no exit template
+        runtime("premio");         // RewardPedestals — the boss reward stand in the exit room
         runtime("shopslot");       // DungeonShop — one pedestal each
         runtime("challenge");      // RunEngine — the plate that starts the fight
         runtime("sacrifice");      // SacrificePlate

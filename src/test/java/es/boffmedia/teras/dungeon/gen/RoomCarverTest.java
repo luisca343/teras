@@ -27,7 +27,8 @@ class RoomCarverTest {
                 d.sacrificeRoomChance(), d.arcadeRoomChance(), d.devilDealChance(),
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
                 d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
-                d.referenceLength(), d.finalStageRooms(), d.maxAttempts());
+                d.referenceLength(), d.finalStageRooms(), d.maxAttempts(), d.exitRoom(),
+                d.postMargin(), d.forceBossQuad());
     }
 
     /**

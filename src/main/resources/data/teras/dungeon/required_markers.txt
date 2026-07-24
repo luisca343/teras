@@ -10,10 +10,16 @@
 # A marker named here must be one the runtime actually READS — see MarkerContract, which refuses
 # to let an annotation be required.
 
-# Both boss keys owe the same pair. Listed twice rather than matched by prefix, so the table stays
-# a lookup with no logic in it and neither reader has to reimplement the rule.
-boss:         boss, trapdoor
-boss_big:     boss, trapdoor
+# Both boss keys owe the boss stand. Listed twice rather than matched by prefix, so the table stays
+# a lookup with no logic in it and neither reader has to reimplement the rule. The trapdoor moved
+# to the exit room (la sala del sello); a boss template may still carry one, and it is what the
+# fallback carve uses on a piso that has no exit template.
+boss:         boss
+boss_big:     boss
+
+# La sala del sello: the pit down and the boss reward stand. Optional key — a piso without one
+# falls back to carving the pit in the arena — but a shipped exit room owes both.
+exit:         trapdoor, premio
 
 mini_boss:    boss
 treasure:     loot

@@ -126,9 +126,18 @@ public final class DungeonRunManager {
 
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults().withShapeWeights(plan.piso().pesoFormas()),
+            layout = DungeonGenerator.generate(GenConfig.defaults()
+                            .withShapeWeights(plan.piso().pesoFormas())
+                            .withExitRoom(es.boffmedia.teras.dungeon.build.RoomTemplates
+                                    .hasExitRoom(plan.piso()))
+                            .withForceBossQuad(plan.piso().shapes()
+                                    .contains(es.boffmedia.teras.dungeon.model.RoomShape.QUAD)),
                     FloorDepth.of(GenConfig.defaults(), stage, dungeon.length()),
-                    plan.curses(), plan.piso().shapes(), runSeed);
+                    plan.curses(), plan.piso().shapes(), runSeed,
+                    // Nobody has played anything yet, so the ledger is empty and the floor blank —
+                    // which still leaves him his base chance. He may visit the first floor.
+                    satellitesFor(es.boffmedia.teras.dungeon.gen.SatelliteOdds.Ledger.empty(),
+                            es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome.fresh(), plan));
         } catch (DungeonGenerationException e) {
             return StartOutcome.fail("Generación fallida: " + e.getMessage());
         }
@@ -210,6 +219,37 @@ public final class DungeonRunManager {
      * the moment the new build starts until the old floor is cleared — a crash anywhere in the
      * transition leaves nothing the boot sweep doesn't know about.
      */
+    /**
+     * The run-long half of the Acreedor/Orden odds, read off the run (PISOS §63c). Selling hearts
+     * is asked of the whole party, not the borrower: he knows a customer when he sees one, and
+     * bodies are personal but reputation is not.
+     */
+    private static es.boffmedia.teras.dungeon.gen.SatelliteOdds.Ledger ledgerOf(DungeonRun run) {
+        boolean soldHearts = run.playerStates().values().stream()
+                .anyMatch(state -> state.hpDebt() > 0);
+        return new es.boffmedia.teras.dungeon.gen.SatelliteOdds.Ledger(
+                run.acreedorDeals(), run.acreedorRefusals(), run.ordenCommitted(),
+                run.deuda(), soldHearts);
+    }
+
+    /**
+     * Turns the odds into this floor's chances, after the two content gates: both satellites hang
+     * off the sala del sello, so a piso without an {@code exit} template gets neither (it keeps its
+     * playfield devil room instead), and la Orden additionally needs her own template — absence is
+     * a choice, never a validation failure.
+     */
+    private static es.boffmedia.teras.dungeon.gen.SatelliteChances satellitesFor(
+            es.boffmedia.teras.dungeon.gen.SatelliteOdds.Ledger ledger,
+            es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome floor, FloorPlan plan) {
+        boolean exit = es.boffmedia.teras.dungeon.build.RoomTemplates.hasExitRoom(plan.piso());
+        int acreedor = exit
+                ? es.boffmedia.teras.dungeon.gen.SatelliteOdds.acreedor(ledger, floor) : 0;
+        int orden = exit
+                && es.boffmedia.teras.dungeon.build.RoomTemplates.hasOrdenRoom(plan.piso())
+                ? es.boffmedia.teras.dungeon.gen.SatelliteOdds.orden(ledger, floor) : 0;
+        return new es.boffmedia.teras.dungeon.gen.SatelliteChances(acreedor, orden);
+    }
+
     public static void advanceStage(DungeonRun run, ServerLevel level) {
         if (run.state() != DungeonRun.State.ACTIVE || RUNS.get(run.id()) != run) {
             return;
@@ -240,9 +280,17 @@ public final class DungeonRunManager {
                 completeRun(server, run);
                 return;
             }
-            newLayout = DungeonGenerator.generate(GenConfig.defaults().withShapeWeights(plan.piso().pesoFormas()),
+            newLayout = DungeonGenerator.generate(GenConfig.defaults()
+                            .withShapeWeights(plan.piso().pesoFormas())
+                            .withExitRoom(es.boffmedia.teras.dungeon.build.RoomTemplates
+                                    .hasExitRoom(plan.piso()))
+                            .withForceBossQuad(plan.piso().shapes()
+                                    .contains(es.boffmedia.teras.dungeon.model.RoomShape.QUAD)),
                     FloorDepth.of(GenConfig.defaults(), next, dungeon.length()),
-                    plan.curses(), plan.piso().shapes(), run.layout().seedString());
+                    plan.curses(), plan.piso().shapes(), run.layout().seedString(),
+                    // Read now, at the descent — the one moment every input is finally known: the
+                    // floor just played has been scored and any deal or refusal on it recorded.
+                    satellitesFor(ledgerOf(run), run.lastFloorOutcome(), plan));
         } catch (DungeonGenerationException e) {
             Teras.LOGGER.error("Dungeons: could not generate stage {} of run {}: {}",
                     next, run.id(), e.getMessage());

@@ -16,8 +16,12 @@ import noppes.npcs.api.entity.data.INPCInventory;
 import noppes.npcs.api.entity.data.INPCRanged;
 import noppes.npcs.api.entity.data.INPCStats;
 import noppes.npcs.api.handler.data.IFaction;
+import noppes.npcs.controllers.data.Dialog;
+import noppes.npcs.controllers.data.DialogOption;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The only dungeon class allowed to import {@code noppes.npcs.*} — the same isolation rule as
@@ -64,6 +68,160 @@ public final class CnpcBridge {
     public static boolean available() {
         return ModList.get().isLoaded("customnpcs") && NpcAPI.IsAvailable();
     }
+
+    /** Whether this entity is a CustomNPCs NPC at all — asked before we claim a right-click. */
+    public static boolean isNpc(Entity entity) {
+        return entity instanceof noppes.npcs.entity.EntityNPCInterface;
+    }
+
+    /**
+     * The highest dialogue slot an NPC has. CustomNPCs' own API rejects anything outside 0–11
+     * ("Slot needs to be between 0 and 11"), which is the real ceiling — the editor showing fewer
+     * rows is a UI limit, not the data's.
+     */
+    private static final int MAX_DIALOG_SLOT = 11;
+
+    /**
+     * Whether this character has a dialogue assigned in the NPC editor — asked at spawn so the mod
+     * knows whether to keep out of the right-click.
+     *
+     * <p><b>Detected, never configured.</b> An NPC's dialogue assignments live in its own saved NBT
+     * ({@code DataAdvanced} writes them as {@code NPCDialogOptions}/{@code DialogSlot}), and a stored
+     * clone <i>is</i> that NBT — so assigning a dialogue to the clone in the editor persists and
+     * every spawned copy carries it. There is nothing for the mod to attach and nothing to put in a
+     * config file: the normal CustomNPCs workflow already does the whole job, and this only reads
+     * the result.</p>
+     *
+     * <p><b>Its option commands need command blocks enabled.</b> CustomNPCs routes them through
+     * {@code NoppesUtilServer.runCommand}, which refuses outright when
+     * {@code MinecraftServer.isCommandBlockEnabled()} is false and says so only to OPs — so it is
+     * warned about here, where the failure can still be explained.</p>
+     */
+    public static boolean hasDialog(Entity npc) {
+        if (!available()) {
+            return false;
+        }
+        try {
+            if (!(NpcAPI.Instance().getIEntity(npc) instanceof ICustomNpc<?> wrapped)) {
+                return false;
+            }
+            for (int slot = 0; slot <= MAX_DIALOG_SLOT; slot++) {
+                if (wrapped.getDialog(slot) != null) {
+                    if (npc.level().getServer() != null
+                            && !npc.level().getServer().isCommandBlockEnabled()) {
+                        Teras.LOGGER.warn("Dungeons: '{}' has a dialogue, but command blocks are "
+                                + "DISABLED — CustomNPCs refuses every dialogue-option command, so "
+                                + "its choices will do nothing. Set enable-command-block=true.",
+                                npc.getName().getString());
+                    }
+                    return true;
+                }
+            }
+            return false;
+        } catch (Throwable t) {
+            Teras.LOGGER.warn("Dungeons: could not read dialogues off a character: {}", t.toString());
+            return false;
+        }
+    }
+
+    /**
+     * Writes this floor's real numbers into a dialogue that is about to be shown, replacing every
+     * {@code %token%} in its body, its title and its option labels.
+     *
+     * <p><b>Only ever called on the per-player copy.</b> {@code NoppesUtilServer.openDialog} does
+     * {@code dialog = dialog.copy(player)} before serialising it into the packet, and that copy is
+     * the one thing in CustomNPCs that belongs to a single player for a single moment — which is
+     * what makes a dialogue quoting a price legal at all. The stored dialogue never changes, so two
+     * parties on two floors see two prices in the same authored text.</p>
+     *
+     * <p>The options are the trap: {@code copy()} puts the <i>same</i> {@link DialogOption} objects
+     * in the copy's map, so writing a label through it would rewrite the operator's dialogue for
+     * everyone, permanently. Each substituted option is therefore rebuilt from its own NBT first.</p>
+     */
+    public static void fillDialog(Dialog dialog, Map<String, String> tokens) {
+        try {
+            dialog.text = substitute(dialog.text, tokens);
+            dialog.title = substitute(dialog.title, tokens);
+            HashMap<Integer, DialogOption> rendered = new HashMap<>();
+            dialog.options.forEach((slot, option) -> rendered.put(slot, filled(option, tokens)));
+            dialog.options = rendered;
+        } catch (Throwable t) {
+            Teras.LOGGER.warn("Dungeons: could not fill a dialogue's numbers: {}", t.toString());
+        }
+    }
+
+    private static DialogOption filled(DialogOption option, Map<String, String> tokens) {
+        String label = substitute(option.title, tokens);
+        if (label.equals(option.title)) {
+            return option;
+        }
+        DialogOption copy = new DialogOption();
+        copy.readNBT(option.writeNBT());
+        // writeNBT covers the five fields the client is sent; these three it leaves behind.
+        copy.id = option.id;
+        copy.slot = option.slot;
+        copy.option = option.option;
+        copy.title = label;
+        return copy;
+    }
+
+    private static String substitute(String text, Map<String, String> tokens) {
+        if (text == null || text.indexOf('%') < 0) {
+            return text;
+        }
+        String filled = text;
+        for (Map.Entry<String, String> token : tokens.entrySet()) {
+            filled = filled.replace(token.getKey(), token.getValue());
+        }
+        return filled;
+    }
+
+    /**
+     * Installs the dungeon's <i>characters</i> — the ones that talk rather than fight — as clones.
+     * Same install-once/spawn-per-floor contract as the bestiary, which is what makes El Acreedor
+     * the same being on every floor without any entity persisting between them.
+     */
+    public static int installCharacters(ServerLevel level, int tab, List<CharacterPreset> presets,
+                                        boolean overwrite) {
+        NpcAPI api = NpcAPI.Instance();
+        List<String> existing = clonesIn(tab);
+        int installed = 0;
+        for (CharacterPreset preset : presets) {
+            if (!overwrite && existing.contains(preset.id())) {
+                continue;
+            }
+            try {
+                ICustomNpc<?> npc = api.createNPC(level);
+                INPCDisplay display = npc.getDisplay();
+                display.setName(preset.displayName());
+                display.setSkinTexture(preset.skinTexture());
+                display.setSize(preset.size());
+                display.setShowName(1);
+                INPCStats stats = npc.getStats();
+                stats.setMaxHealth(preset.health());
+                // A character is not a combatant: no aggro, no faction to be hostile to, and it
+                // stays dead if something manages to kill it rather than resurrecting mid-run.
+                stats.setAggroRange(0);
+                stats.setRespawnType(RESPAWN_NONE);
+                stats.setHideDeadBody(true);
+                stats.getMelee().setStrength(0);
+                npc.getAi().setWalkingSpeed(0);
+                npc.getAi().setReturnsHome(true);
+                npc.getAi().setStandingType(0);
+                npc.storeAsClone(tab, preset.id());
+                npc.despawn();
+                installed++;
+            } catch (Exception e) {
+                Teras.LOGGER.error("Dungeons: could not install character '{}': {}",
+                        preset.id(), e.toString());
+            }
+        }
+        return installed;
+    }
+
+    /** A talking dungeon character, as data. */
+    public record CharacterPreset(String id, String displayName, String skinTexture,
+                                  int size, int health) {}
 
     /** Spawns clone {@code name} from {@code tab}; null when the clone does not exist. */
     public static Entity spawnClone(ServerLevel level, double x, double y, double z, int tab, String name) {

@@ -53,6 +53,8 @@ public final class DungeonMapOverlay {
     private static final char ICON_SACRIFICE = '\uE008';
     private static final char ICON_ARCADE = '\uE009';
     private static final char ICON_DEVIL = '\uE00A';
+    private static final char ICON_SELLO = '\uE00B';
+    private static final char ICON_ORDEN = '\uE00C';
 
     /**
      * {@code RoomType} ordinal → icon. Order matches the server's {@code RoomType} enum — the
@@ -63,7 +65,7 @@ public final class DungeonMapOverlay {
     private static final char[] TYPE_ICONS = {
             ' ', ICON_START, ICON_SKULL, ICON_SKULL, ICON_SHOP, ICON_TREASURE,
             ICON_SECRET, ICON_SUPER_SECRET, ICON_CHALLENGE, ICON_CURSE, ICON_SACRIFICE,
-            ICON_ARCADE, ICON_DEVIL};
+            ICON_ARCADE, ICON_DEVIL, ICON_SELLO, ICON_ORDEN};
 
     /** {@code RoomType} ordinal → tint. */
     private static final int[] TYPE_COLOURS = {
@@ -79,7 +81,9 @@ public final class DungeonMapOverlay {
             0xFFB05CE0,   // CURSE — violet
             0xFFE05C5C,   // SACRIFICE — blood
             0xFF5CE0DC,   // ARCADE — cyan
-            0xFFD03030};  // DEVIL_DEAL — crimson
+            0xFFD03030,   // DEVIL_DEAL — crimson
+            0xFFB07CFF,   // EXIT — amethyst, the seal behind the boss
+            0xFFFFF0B0};  // ORDEN — pale gold, the grace on the sello's far flank
 
     /** State ordinals, matching the server's {@code RoomState}. */
     private static final int STATE_IN_COMBAT = 2;

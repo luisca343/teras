@@ -57,6 +57,108 @@ public final class DungeonRun {
     private final DungeonWallet wallet = new DungeonWallet();
     private final Map<UUID, PlayerRunState> playerStates = new LinkedHashMap<>();
 
+    /**
+     * The allegiance ledger — the run-long half of the Acreedor/Orden arc (PISOS §63b–e).
+     *
+     * <p>Performance is floor-local and lives on the run engine's {@code ActiveFloor}, which is
+     * rebuilt every floor so it resets for free. What lives <i>here</i> is memory: what the party
+     * has done with the creditor, and what it still owes him. A creditor who forgot your debt each
+     * floor would not be a creditor.</p>
+     */
+    private int acreedorDeals;
+    private int acreedorRefusals;
+    private boolean ordenCommitted;
+    /**
+     * Whether a deal was struck on the floor now being played. Read once at the descent to decide
+     * whether the party <i>refused</i> him — appearing and being walked past is a refusal, even if
+     * nobody entered the room — then reset for the next floor.
+     */
+    private boolean dealtThisFloor;
+    /**
+     * The pay-later debt, in coins. <b>Run-level, not per-player</b>, because the deal's cash price
+     * already comes out of the shared {@link DungeonWallet}: a deferred coin price is the same
+     * obligation, deferred. It also lets the Cobrador hunt the party rather than one member.
+     */
+    private int deuda;
+    private int floorsSinceBorrow;
+    /**
+     * How the floor just finished was played, scored by the run engine at the descent — the
+     * floor-local half of the odds. Starts blank: floor 1 is generated before anyone has played
+     * anything, which is exactly the "fresh" outcome.
+     */
+    private es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome lastFloorOutcome =
+            es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome.fresh();
+
+    public int acreedorDeals() {
+        return acreedorDeals;
+    }
+
+    public int acreedorRefusals() {
+        return acreedorRefusals;
+    }
+
+    public boolean ordenCommitted() {
+        return ordenCommitted;
+    }
+
+    public int deuda() {
+        return deuda;
+    }
+
+    public int floorsSinceBorrow() {
+        return floorsSinceBorrow;
+    }
+
+    public es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome lastFloorOutcome() {
+        return lastFloorOutcome;
+    }
+
+    /** A deal was struck at the Acreedor's pedestal — coins, hearts, or borrowed. */
+    public void recordAcreedorDeal() {
+        acreedorDeals++;
+        dealtThisFloor = true;
+    }
+
+    /** Borrowing: the goods now, the debt carried by the whole party. */
+    public void borrow(int coins) {
+        if (coins > 0) {
+            deuda += coins;
+            floorsSinceBorrow = 0;
+        }
+    }
+
+    /** Settling, whether early at his pedestal or forced by a Cobrador; never below zero. */
+    public void settleDebt(int coins) {
+        deuda = Math.max(0, deuda - coins);
+        if (deuda == 0) {
+            floorsSinceBorrow = 0;
+        }
+    }
+
+    /** Grace taken: the run commits to the Orden and the creditor stops calling. */
+    public void commitToOrden() {
+        ordenCommitted = true;
+    }
+
+    /**
+     * Closes the floor just played, at the descent and before the next one is generated — which is
+     * exactly when every input the next floor's satellites need is finally known.
+     *
+     * @param acreedorAppeared whether his room stood on the floor being left; appearing and not
+     *                         being dealt with is what earns the Orden her eligibility
+     */
+    public void closeFloor(es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome outcome,
+                           boolean acreedorAppeared) {
+        this.lastFloorOutcome = outcome;
+        if (acreedorAppeared && !dealtThisFloor) {
+            acreedorRefusals++;
+        }
+        dealtThisFloor = false;
+        if (deuda > 0) {
+            floorsSinceBorrow++;
+        }
+    }
+
     /** Run statistics, for the end-of-run report. */
     private final long startedAtMs = System.currentTimeMillis();
     private final int startStage;

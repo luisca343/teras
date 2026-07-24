@@ -49,6 +49,8 @@ public final class LayoutAscii {
             case SACRIFICE -> '+';
             case ARCADE -> 'A';
             case DEVIL_DEAL -> 'D';
+            case EXIT -> 'V';
+            case ORDEN -> 'O';
         };
     }
 }

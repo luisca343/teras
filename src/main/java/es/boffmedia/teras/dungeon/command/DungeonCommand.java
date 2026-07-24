@@ -138,6 +138,30 @@ public final class DungeonCommand {
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> d = event.getDispatcher();
         d.register(Commands.literal("teras")
+                // Player-facing and ungated on purpose: it is the target of the clickable lines in
+                // El Acreedor's offer, so an ordinary party member must be able to run it. It is
+                // safe to expose because DungeonNpcs only honours it while that player has a live
+                // offer open and is still standing at him — typing it otherwise does nothing.
+                // Takes the player explicitly because CustomNPCs runs a dialogue option's command
+                // from its OWN sender, not from the player — so `@dp` (which CNPC expands to the
+                // player's name) is how the choice carries who made it. A player running it for
+                // someone else is refused below; CNPC's own sender is not a player and is allowed.
+                .then(Commands.literal("trato")
+                        .then(Commands.argument("jugador", EntityArgument.player())
+                                .then(Commands.argument("opcion", StringArgumentType.word())
+                                        .executes(ctx -> {
+                                            ServerPlayer target =
+                                                    EntityArgument.getPlayer(ctx, "jugador");
+                                            ServerPlayer caller = ctx.getSource().getPlayer();
+                                            if (caller != null && caller != target) {
+                                                ctx.getSource().sendFailure(Component.literal(
+                                                        "No puedes cerrar el trato de otro jugador."));
+                                                return 0;
+                                            }
+                                            return es.boffmedia.teras.dungeon.run.DungeonNpcs.choose(
+                                                    target, StringArgumentType.getString(ctx, "opcion"))
+                                                    ? 1 : 0;
+                                        }))))
                 .then(Commands.literal("dungeon")
                         .requires(source -> source.hasPermission(PERMISSION_LEVEL))
                         .then(Commands.literal("generar")
@@ -154,6 +178,11 @@ public final class DungeonCommand {
                         .then(Commands.literal("debug")
                                 .then(Commands.argument("run", IntegerArgumentType.integer(1))
                                         .executes(DungeonCommand::debug)))
+                        .then(Commands.literal("personajes")
+                                .then(Commands.literal("instalar")
+                                        .executes(ctx -> installCharacters(ctx, false))
+                                        .then(Commands.literal("sobrescribir")
+                                                .executes(ctx -> installCharacters(ctx, true)))))
                         .then(Commands.literal("enemigos")
                                 .then(Commands.literal("instalar")
                                         .executes(ctx -> installEnemies(ctx, false))
@@ -437,7 +466,12 @@ public final class DungeonCommand {
 
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults().withShapeWeights(plan.piso().pesoFormas()),
+            layout = DungeonGenerator.generate(GenConfig.defaults()
+                            .withShapeWeights(plan.piso().pesoFormas())
+                            .withExitRoom(es.boffmedia.teras.dungeon.build.RoomTemplates
+                                    .hasExitRoom(plan.piso()))
+                            .withForceBossQuad(plan.piso().shapes()
+                                    .contains(es.boffmedia.teras.dungeon.model.RoomShape.QUAD)),
                     es.boffmedia.teras.dungeon.gen.FloorDepth.of(
                             GenConfig.defaults(), stage, dungeon.length()),
                     floorCurses, plan.piso().shapes(), genSeed);
@@ -501,6 +535,31 @@ public final class DungeonCommand {
                             + ", " + run.party().size() + " jugador(es)"), false);
         }
         return built.size() + runs.size();
+    }
+
+    /**
+     * Writes the dungeon's <i>characters</i> — El Acreedor and, later, la Orden — into CustomNPCs
+     * as clones. Same contract as the bestiary: re-runnable, and an admin's edits survive unless
+     * {@code sobrescribir} is used. Without this the rooms still work off their pedestals; what is
+     * missing is the person standing at them.
+     */
+    private static int installCharacters(CommandContext<CommandSourceStack> ctx, boolean overwrite) {
+        if (!CnpcBridge.available()) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "CustomNPCs no está instalado: los personajes de la mazmorra necesitan ese mod."));
+            return 0;
+        }
+        int installed = CnpcBridge.installCharacters(ctx.getSource().getLevel(),
+                es.boffmedia.teras.dungeon.run.DungeonNpcs.TAB,
+                es.boffmedia.teras.dungeon.run.DungeonNpcs.SHIPPED, overwrite);
+        int total = es.boffmedia.teras.dungeon.run.DungeonNpcs.SHIPPED.size();
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§aPersonajes instalados: " + installed + " de " + total + " en la pestaña de clones "
+                        + es.boffmedia.teras.dungeon.run.DungeonNpcs.TAB
+                        + (installed < total && !overwrite
+                                ? " (el resto ya existía — usa 'instalar sobrescribir' para rehacerlos)"
+                                : "")), true);
+        return installed;
     }
 
     /**

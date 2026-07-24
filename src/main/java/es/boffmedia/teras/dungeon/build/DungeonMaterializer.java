@@ -6,6 +6,8 @@ import es.boffmedia.teras.dungeon.model.DungeonLayout;
 import es.boffmedia.teras.dungeon.model.GridDir;
 import es.boffmedia.teras.dungeon.model.GridPos;
 import es.boffmedia.teras.dungeon.model.Room;
+import es.boffmedia.teras.dungeon.model.RoomType;
+import net.minecraft.world.level.block.Rotation;
 import es.boffmedia.teras.dungeon.piso.DecorTables;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -277,6 +279,13 @@ public final class DungeonMaterializer {
         private void placeRoom(Room room, int ordinalInKey) {
             RoomTemplates.TemplateEntry entry =
                     RoomTemplates.select(plan.piso(), room, layout.baseSeed(), ordinalInKey);
+            if (room.type() == RoomType.EXIT) {
+                // The exit is authored with a fixed front (the boss-facing wall the grand door
+                // carves) and back (the trophy gallery); unlike every other room its facing is not
+                // its own — it is turned to point its entrance at whichever side the boss landed on.
+                entry = new RoomTemplates.TemplateEntry(entry.name(), entry.template(),
+                        entry.weight(), exitFacing(room));
+            }
             StructureTemplate template = level.getStructureManager().get(entry.template()).orElse(null);
             if (template == null) {
                 Teras.LOGGER.error("Dungeons: missing template {} for {} — leaving the cell empty",
@@ -321,6 +330,43 @@ public final class DungeonMaterializer {
                 level.setBlock(marker.pos(), markerFloor(room, marker.kind(), marker.pos()), 2);
             }
             markers.put(room, roomMarkers);
+        }
+
+        /**
+         * The rotation that turns the exit template's authored entrance — the {@code +z} (south)
+         * wall — to face the boss. Every other room's rotation serves its shape; the exit's serves
+         * its position, so the grand door always carves the front wall and the flank walls always
+         * end up on the sides, wherever the boss attached.
+         *
+         * <p>Read off the boss's centre relative to the exit's. A rotation maps a south-facing
+         * feature to {@code R(south)}: CLOCKWISE_90 sends south→west, so a boss to the west wants
+         * that turn, and so on around.</p>
+         */
+        private Rotation exitFacing(Room exit) {
+            Room boss = null;
+            for (Room room : layout.rooms()) {
+                if (room.type() == RoomType.BOSS) {
+                    boss = room;
+                    break;
+                }
+            }
+            if (boss == null) {
+                return Rotation.NONE;
+            }
+            double dx = avgX(boss) - avgX(exit);
+            double dz = avgZ(boss) - avgZ(exit);
+            if (Math.abs(dx) > Math.abs(dz)) {
+                return dx < 0 ? Rotation.CLOCKWISE_90 : Rotation.COUNTERCLOCKWISE_90;
+            }
+            return dz >= 0 ? Rotation.NONE : Rotation.CLOCKWISE_180;
+        }
+
+        private static double avgX(Room room) {
+            return room.cells().stream().mapToInt(GridPos::x).average().orElse(0);
+        }
+
+        private static double avgZ(Room room) {
+            return room.cells().stream().mapToInt(GridPos::y).average().orElse(0);
         }
 
         /**
@@ -453,9 +499,11 @@ public final class DungeonMaterializer {
                     case SECRET_CRACK -> DoorCarver.fillDoorway(level, origin, door,
                             crackState(), roomSize,
                             DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
-                    // Barred rather than walled: the door is visible from the first step onto the
-                    // floor, and the boss falling is what opens it.
-                    case DEVIL -> DoorCarver.fillDoorway(level, origin, door,
+                    // Barred rather than walled: both satellite doors of the sala del sello stand
+                    // visible from inside it, and the boss falling is what opens them. The Orden's
+                    // is only ever built on a floor that earned her, so a barred GRACIA door is
+                    // always a door that will open.
+                    case DEVIL, GRACIA -> DoorCarver.fillDoorway(level, origin, door,
                             sealState(), roomSize,
                             DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
                     // Open, then fanged. The curse room charges blood to enter, and a price you
@@ -468,7 +516,10 @@ public final class DungeonMaterializer {
                         DoorCarver.fillDoorwayRow(level, origin, door, DoorCarver.spikeState(),
                                 roomSize, DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
                     }
-                    case HIDDEN -> { }
+                    // Both stay untouched wall: the super-secret must not exist as far as anyone
+                    // can see, and the sala del sello is revealed by the boss's death — the seal
+                    // re-pins and the run engine carves the rock open, like a secret giving way.
+                    case HIDDEN, SELLO -> { }
                 }
             }
         }

@@ -28,7 +28,7 @@ public final class SacrificePlate {
         BlockPos plate = RunEngine.markerPos(floor, room, "sacrifice");
         int steps = floor.sacrificeSteps.merge(room, 1, Integer::sum);
 
-        player.hurt(player.damageSources().magic(), DungeonsConfig.sacrificeDamage());
+        RunEngine.chargeToll(floor, player, DungeonsConfig.sacrificeDamage());
         RunEngine.playAt(floor, plate, DungeonSound.SACRIFICE, 0.8f);
 
         int chance = DungeonsConfig.sacrificeBaseChancePct()

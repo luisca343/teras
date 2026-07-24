@@ -40,6 +40,7 @@ final class LayoutValidator {
         checkCounts(grid, errors, warnings, depth, config);
         checkShapes(grid, errors);
         checkBossEntrance(grid, errors);
+        checkBossQuad(grid, config, errors);
         checkConnectivity(grid, errors);
 
         int deadEnds = grid.deadEndCells().size();
@@ -120,6 +121,24 @@ final class LayoutValidator {
             int entrances = grid.externalNeighborCount(room);
             if (entrances != 1) {
                 errors.add("Boss room with " + entrances + " entrances: " + room);
+            }
+        }
+    }
+
+    /**
+     * When the piso forces it, the boss must be a 2×2. The boss grows on most floors already
+     * ({@link SpecialRoomPlacer#growBossRoom}); this turns "most" into "always" by rejecting the
+     * few floors where it could not, so the generator rerolls onto one where it could. Only for
+     * pisos that declare QUAD — {@link GenConfig#forceBossQuad()} is never set otherwise, since a
+     * piso without {@code boss_big} could never satisfy it.
+     */
+    private static void checkBossQuad(RoomGrid grid, GenConfig config, List<String> errors) {
+        if (!config.forceBossQuad()) {
+            return;
+        }
+        for (Room room : grid.rooms()) {
+            if (room.type() == RoomType.BOSS && room.shape() != RoomShape.QUAD) {
+                errors.add("Boss did not grow to 2×2 on a floor that requires it: " + room);
             }
         }
     }

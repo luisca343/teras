@@ -171,19 +171,27 @@ class RoomAuditTest {
         assertFalse(mentions(findings, "the spawner cycles"), findings.toString());
     }
 
+    /** The trapdoor moved to the exit room (sala del sello); the boss room owes only its stand. */
     @Test
-    void aBossRoomWantsItsBossAndTrapdoor() {
+    void aBossRoomWantsItsBoss() {
         var findings = good(RoomShape.SINGLE).audit("boss");
         assertTrue(mentions(findings, "no 'boss' marker"), findings.toString());
-        assertTrue(mentions(findings, "no 'trapdoor' marker"), findings.toString());
+        assertFalse(mentions(findings, "no 'trapdoor' marker"), findings.toString());
     }
 
     /** Room keys carry the shape family, so the 2x2 boss chamber wants the same markers. */
     @Test
     void theQuadBossChamberWantsTheSameMarkers() {
-        var findings = good(RoomShape.QUAD).marker("boss", 20, 1, 20)
-                .marker("trapdoor", 22, 1, 22).audit("boss_big");
+        var findings = good(RoomShape.QUAD).marker("boss", 20, 1, 20).audit("boss_big");
         assertEquals(List.of(), findings);
+    }
+
+    /** La sala del sello owes the pit down and the boss reward stand. */
+    @Test
+    void anExitRoomWantsItsTrapdoorAndPremio() {
+        var findings = good(RoomShape.SINGLE).audit("exit");
+        assertTrue(mentions(findings, "no 'trapdoor' marker"), findings.toString());
+        assertTrue(mentions(findings, "no 'premio' marker"), findings.toString());
     }
 
     /** A template shorter than the cell leaves the top layers as whatever the discard left. */

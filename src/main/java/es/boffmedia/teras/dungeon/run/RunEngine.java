@@ -61,9 +61,11 @@ import java.util.UUID;
  * removals) through a periodic existence sweep, so a room can never stay sealed over an enemy
  * that silently stopped existing.
  *
- * <p>The trapdoor is a real hole: boss clear carves it open and whoever drops through is caught
- * below floor level and advanced to the next stage. Player deaths respawn at the floor's start
- * room with the configured money penalty.</p>
+ * <p>The way down is a real hole. On a piso with a sala del sello the boss's death lights the
+ * seal, retracts the pit's grate and carves open the walled-off exit chamber; without one it
+ * falls back to carving the pit in the arena. Either way the first member through the pit is parked below the floor and
+ * starts the straggler bell, and the party descends together at zero — or the moment everyone has
+ * jumped. Player deaths respawn at the floor's start room with the configured money penalty.</p>
  */
 @EventBusSubscriber(modid = Teras.MOD_ID)
 public final class RunEngine {
@@ -130,7 +132,38 @@ public final class RunEngine {
         final CurseMarket market = new CurseMarket();
         /** Missing-marker warnings already logged, so the tick loop cannot repeat one. */
         final java.util.Set<String> warnedMarkers = new java.util.HashSet<>();
+        /**
+         * How cleanly this floor was played — the floor-local half of the Acreedor/Orden odds
+         * (PISOS §63c). It lives here because {@code ActiveFloor} is rebuilt every floor, so the
+         * reset is free and there is no way to leak last floor's blood into this one's score.
+         *
+         * <p>The same signals PRODUCCION §4.2's <i>broche de sala</i> and §5.2's deathless-floor
+         * esquirla want: one tracker, several consumers. Do not grow a second one.</p>
+         */
+        boolean tookDamage;
+        boolean tookDamageInBossFight;
+        boolean someoneDied;
+        boolean soldHearts;
+        /**
+         * Set only while the mod charges one of its own tolls. A price the party <i>chose</i> to
+         * pay is not a wound the floor gave them, so it must not cost them their grace — and the
+         * toll cannot be told apart by damage type, because the curse door, the sacrifice plate and
+         * an enemy's spell all arrive as {@code magic()}.
+         */
+        boolean chargingToll;
+        /** Whether one of the two satellite mercies has been taken, closing the other's door. */
+        boolean forkResolved;
+
         boolean advancing;
+        /** Members already through the pit, parked below the floor until the party descends. */
+        final java.util.Set<UUID> descended = new java.util.HashSet<>();
+        /**
+         * The straggler bell (PRODUCCION §10.6): the first member down the pit starts it, and at
+         * zero — or when everyone has jumped — the whole party descends. 0 while not running.
+         */
+        long descentDeadline;
+        int descentTotalTicks;
+        net.minecraft.server.level.ServerBossEvent descentBar;
 
         ActiveFloor(DungeonRun run, BuiltDungeon built, ServerLevel level) {
             this.run = run;
@@ -171,6 +204,10 @@ public final class RunEngine {
             floor.pedestals.despawn(floor);
             floor.market.despawnDisplays(floor);
             floor.bossBars.clear();
+            // Characters are floor-scoped like every other fixture: the entities go with the
+            // floor's sweep, and this drops what the click router remembered about them.
+            DungeonNpcs.clear(runId);
+            clearDescentBar(floor);
             for (UUID member : floor.run.party().keySet()) {
                 ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
                 if (player != null) {
@@ -436,6 +473,100 @@ public final class RunEngine {
         unregister(floor.run.id());
     }
 
+    /** Below this share of average party health, the floor ends with the party limping. */
+    private static final float LOW_HP_FRACTION = 1f / 3f;
+
+    /** The floor a run is currently on, for the fixtures and characters that need to find it back. */
+    static ActiveFloor activeFloor(int runId) {
+        return FLOORS.get(runId);
+    }
+
+    /**
+     * Scores the floor's purity as it is played: any damage a party member actually takes costs the
+     * floor its flawless marks, and damage taken while the arena is sealed costs the boss-fight one
+     * as well (PISOS §63c — a clean floor pulls la Orden, a bloody one pulls el Acreedor).
+     *
+     * <p>Two sources are deliberately not wounds. The scripted descent lands the party on the next
+     * floor, and the mod's own tolls are prices they chose to pay; letting either count would mean
+     * the game's staging disqualifies a party from grace, which reads as a bug rather than a rule.</p>
+     */
+    @SubscribeEvent
+    public static void onPartyDamaged(net.neoforged.neoforge.event.entity.living
+            .LivingIncomingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        DungeonRun run = DungeonRunManager.runOf(player.getUUID());
+        if (run == null) {
+            return;
+        }
+        ActiveFloor floor = FLOORS.get(run.id());
+        if (floor == null || player.serverLevel() != floor.level || floor.chargingToll) {
+            return;
+        }
+        if (event.getSource().is(net.minecraft.world.damagesource.DamageTypes.FALL)) {
+            return;
+        }
+        floor.tookDamage = true;
+        Room boss = bossRoom(floor);
+        if (boss != null && floor.core.state(boss) == RoomState.IN_COMBAT) {
+            floor.tookDamageInBossFight = true;
+        }
+    }
+
+    private static Room bossRoom(ActiveFloor floor) {
+        for (Room room : floor.built.layout().rooms()) {
+            if (room.type() == RoomType.BOSS) {
+                return room;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The fork closes. Claiming at one satellite re-bars the other's doorway for the rest of the
+     * floor — the two doors face each other across the sala del sello and only one may be walked
+     * through, which is what makes the pair a choice instead of a windfall (PISOS §63e).
+     *
+     * <p>Takes the kind that was <i>claimed</i> and seals its opposite. First claim wins; a plain
+     * check-then-set is enough because the server tick is single-threaded.</p>
+     */
+    static void closeTheFork(ActiveFloor floor, DoorKind taken) {
+        if (floor.forkResolved) {
+            return;
+        }
+        floor.forkResolved = true;
+        DoorKind sealed = taken == DoorKind.GRACIA ? DoorKind.DEVIL : DoorKind.GRACIA;
+        boolean any = false;
+        for (DoorEdge door : floor.built.layout().doors()) {
+            if (door.kind() != sealed) {
+                continue;
+            }
+            DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
+                    sealState(), floor.built.roomSize(),
+                    DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+            any = true;
+        }
+        if (any) {
+            message(floor, taken == DoorKind.GRACIA
+                    ? "§6Aceptas la gracia. §5La puerta del trato se cierra de golpe."
+                    : "§5Cierras el trato. §6La puerta de la Orden se cierra en silencio.");
+        }
+    }
+
+    /**
+     * Charges one of the mod's own tolls, flagged so {@link #onPartyDamaged} does not read it as
+     * the floor drawing blood. Every deliberate price the party pays goes through here.
+     */
+    static void chargeToll(ActiveFloor floor, ServerPlayer player, float damage) {
+        floor.chargingToll = true;
+        try {
+            player.hurt(player.damageSources().magic(), damage);
+        } finally {
+            floor.chargingToll = false;
+        }
+    }
+
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
@@ -458,6 +589,12 @@ public final class RunEngine {
                 return;
             }
             run.stateOf(player.getUUID()).countDeath();
+            ActiveFloor died = FLOORS.get(run.id());
+            if (died != null) {
+                // Costs this floor its grace and feeds his side of the odds — a death is +20 to the
+                // Acreedor and forfeits la Orden's +20, which is the opposition working.
+                died.someoneDied = true;
+            }
             RESPAWN_AT_START.put(player.getUUID(), run.id());
             return;
         }
@@ -869,7 +1006,147 @@ public final class RunEngine {
         player.hurtMarked = true;
     }
 
+    /** Raises the straggler bell on the first member through the pit. Idempotent after that. */
+    private static void startDescentCountdown(ActiveFloor floor) {
+        if (floor.descentDeadline != 0) {
+            return;
+        }
+        floor.descentTotalTicks = DungeonsConfig.descentSeconds() * 20;
+        floor.descentDeadline = tick + floor.descentTotalTicks;
+        floor.descentBar = new net.minecraft.server.level.ServerBossEvent(
+                Component.literal("§dEl sello cede…"),
+                net.minecraft.world.BossEvent.BossBarColor.PURPLE,
+                net.minecraft.world.BossEvent.BossBarOverlay.PROGRESS);
+        floor.descentBar.setPlayBossMusic(false);
+        message(floor, "§d¡Alguien ha saltado al pozo! El grupo desciende en "
+                + DungeonsConfig.descentSeconds() + " segundos.");
+    }
+
+    /**
+     * Runs the straggler bell: bar text and progress, a tick sound over the last five seconds,
+     * and the descent itself when it reaches zero. True when this scan advanced the stage — the
+     * caller must stop touching a floor that is being replaced.
+     */
+    private static boolean tickDescent(ActiveFloor floor) {
+        if (floor.descentDeadline == 0 || floor.advancing) {
+            return false;
+        }
+        long remaining = floor.descentDeadline - tick;
+        if (remaining <= 0) {
+            beginAdvance(floor);
+            return true;
+        }
+        int seconds = (int) ((remaining + 19) / 20);
+        floor.descentBar.setName(Component.literal("§dEl sello cede — " + seconds + " s"));
+        floor.descentBar.setProgress(Math.min(1f, (float) remaining / floor.descentTotalTicks));
+        SoundEvent tickCue = soundEvent("DESCENT_TICK");
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player == null || player.serverLevel() != floor.level) {
+                continue;
+            }
+            floor.descentBar.addPlayer(player);
+            if (tickCue != null && seconds <= 5 && remaining % 20 == 0
+                    && !floor.descended.contains(member)) {
+                floor.level.playSound(null, player.blockPosition(), tickCue, SoundSource.PLAYERS,
+                        DungeonsConfig.soundVolume(), 1.6f);
+            }
+        }
+        return false;
+    }
+
+    /** Every member actually standing on this floor is already under it. */
+    private static boolean allPresentBelow(ActiveFloor floor) {
+        BlockPos origin = floor.built.origin();
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player != null && player.serverLevel() == floor.level
+                    && player.getY() >= origin.getY() - 2) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The party descends. Everyone under the floor is caught before the next one starts building:
+     * the drop takes a second or two, and a player left falling arrives with enough accumulated
+     * fall distance to die on landing — or drops far enough to reach the void. Whoever is still
+     * above ground rides the ordinary stage teleport when the new floor is built.
+     */
+    private static void beginAdvance(ActiveFloor floor) {
+        floor.advancing = true;
+        clearDescentBar(floor);
+        BlockPos origin = floor.built.origin();
+        for (UUID falling : floor.run.party().keySet()) {
+            ServerPlayer other = floor.level.getServer().getPlayerList().getPlayer(falling);
+            if (other != null && other.serverLevel() == floor.level
+                    && other.getY() < origin.getY() - 2) {
+                holdWhileDescending(other);
+            }
+        }
+        // Score the floor before the next one is generated — this is the one moment every input
+        // exists at once: the floor has been played, any deal or refusal on it is recorded, and
+        // advanceStage is about to ask who should be waiting in the next sala del sello.
+        floor.run.closeFloor(floorOutcome(floor), hasAcreedor(floor));
+        DungeonRunManager.advanceStage(floor.run, floor.level);
+    }
+
+    /**
+     * The floor-local half of the odds, read at the descent. The two end-state signals are asked
+     * here rather than tracked: "broke" and "bleeding" are about how the party <i>leaves</i> the
+     * floor, not about anything that happened during it.
+     */
+    private static es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome floorOutcome(
+            ActiveFloor floor) {
+        return new es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome(
+                floor.someoneDied,
+                !floor.tookDamageInBossFight,
+                !floor.tookDamage,
+                floor.soldHearts,
+                lowPartyHp(floor),
+                // Cannot even afford the cash price, so the loan is the only door still open —
+                // which is exactly the moment a creditor should knock.
+                floor.run.wallet().coins() < CoinDrops.scaleToStage(
+                        DungeonsConfig.devilCoinPrice(), floor.run.stage()));
+    }
+
+    /** Whether his room stood on this floor at all — what makes walking past it a refusal. */
+    private static boolean hasAcreedor(ActiveFloor floor) {
+        for (Room room : floor.built.layout().rooms()) {
+            if (room.type() == RoomType.DEVIL_DEAL) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The party limping: average health below a third across everyone actually on the floor. */
+    private static boolean lowPartyHp(ActiveFloor floor) {
+        float fraction = 0f;
+        int counted = 0;
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            if (player != null && player.getMaxHealth() > 0) {
+                fraction += player.getHealth() / player.getMaxHealth();
+                counted++;
+            }
+        }
+        return counted > 0 && fraction / counted < LOW_HP_FRACTION;
+    }
+
+    private static void clearDescentBar(ActiveFloor floor) {
+        if (floor.descentBar != null) {
+            floor.descentBar.removeAllPlayers();
+            floor.descentBar.setVisible(false);
+            floor.descentBar = null;
+        }
+    }
+
     private static void scanPlayers(ActiveFloor floor) {
+        if (tickDescent(floor)) {
+            return;
+        }
         for (UUID member : floor.run.party().keySet()) {
             ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
             if (player == null || player.serverLevel() != floor.level) {
@@ -878,19 +1155,22 @@ public final class RunEngine {
             BlockPos origin = floor.built.origin();
             boolean belowFloor = player.getY() < origin.getY() - 2;
             if (floor.core.isTrapdoorOpen() && !floor.advancing && belowFloor) {
-                floor.advancing = true;
-                // Everyone under the floor is caught before the next one starts building: the drop
-                // takes a second or two, and a player left falling arrives with enough accumulated
-                // fall distance to die on landing — or drops far enough to reach the void.
-                for (UUID falling : floor.run.party().keySet()) {
-                    ServerPlayer other = floor.level.getServer().getPlayerList().getPlayer(falling);
-                    if (other != null && other.serverLevel() == floor.level
-                            && other.getY() < origin.getY() - 2) {
-                        holdWhileDescending(other);
-                    }
+                // Nobody's fall advances anyone else any more: the jumper is parked under the
+                // floor, the first one starts the straggler bell, and the party descends together
+                // at zero — or the moment everyone has jumped (PRODUCCION §10.6). The shipped flow
+                // advanced the whole run on the first member below, pedestal claimed or not.
+                boolean firstDown = floor.descended.add(member);
+                if (firstDown) {
+                    holdWhileDescending(player);
                 }
-                DungeonRunManager.advanceStage(floor.run, floor.level);
-                return;
+                if (allPresentBelow(floor)) {
+                    beginAdvance(floor);
+                    return;
+                }
+                if (firstDown) {
+                    startDescentCountdown(floor);
+                }
+                continue;
             }
             if (belowFloor) {
                 BlockPos start = floor.built.partySpawn(floor.built.layout().start());
@@ -1002,7 +1282,7 @@ public final class RunEngine {
         }
         // magic() is in BYPASSES_ARMOR, so the toll is the toll — a party in full plate does not
         // get in cheaper. Same source the sacrifice plate uses.
-        player.hurt(player.damageSources().magic(), damage);
+        chargeToll(floor, player, damage);
         playAt(floor, player.blockPosition(), DungeonSound.SACRIFICE, 1.0f);
         player.displayClientMessage(Component.literal(
                 "§4Los pinchos cobran su peaje."), true);
@@ -1113,6 +1393,22 @@ public final class RunEngine {
                 }
                 Room other = door.from() == room ? door.to() : door.from();
                 if (!discovered.contains(other)) {
+                    // La sala del sello does not exist until the seal re-pins: solid wall in the
+                    // world, nothing on the wire. The moment the boss falls it pops onto the map
+                    // fully typed — the reveal is part of the ceremony.
+                    if (other.type() == RoomType.EXIT) {
+                        if (floor.core.isTrapdoorOpen()) {
+                            for (GridPos cell : other.cells()) {
+                                if (outlined.add(cell)) {
+                                    cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
+                                            other.type().ordinal(), 0,
+                                            cell.equals(other.cells().get(0)), false,
+                                            floor.built.layout().rooms().indexOf(other)));
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     GridPos cell = door.from() == room ? door.neighborCell() : door.cell();
                     if (outlined.add(cell)) {
                         cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
@@ -1128,6 +1424,11 @@ public final class RunEngine {
         if (floor.mapRevealed || floor.compassRevealed) {
             for (Room room : floor.built.layout().rooms()) {
                 if (discovered.contains(room) || isSecret(room)) {
+                    continue;
+                }
+                // No purchase reveals the sala del sello early: like the secrets it is withheld
+                // on purpose, until the boss's death makes it exist.
+                if (room.type() == RoomType.EXIT && !floor.core.isTrapdoorOpen()) {
                     continue;
                 }
                 boolean named = floor.compassRevealed && room.type() != RoomType.NORMAL;
@@ -1366,6 +1667,10 @@ public final class RunEngine {
                 }
                 case BOSS_DEFEATED -> playBody(floor, room, "BOSS_DEFEATED", 1.0f);
                 case TRAPDOOR_OPEN -> playBody(floor, room, "TRAPDOOR_OPEN", 1.4f);
+                case SEAL_RESTORED -> {
+                    playCue(floor, room, "ROOM_OPENED", 0.8f);
+                    playBody(floor, room, "SEAL_RESTORED", 1.0f);
+                }
                 case CHALLENGE_STARTED -> {
                     playCue(floor, room, "ROOM_SEALED", 0.7f);
                     playBody(floor, room, "CHALLENGE_STARTED", 1.0f);
@@ -1376,7 +1681,8 @@ public final class RunEngine {
                 case SECRET_OPENED -> playBody(floor, room, "SECRET_OPENED", 1.0f);
                 case ENEMY_ENRAGED -> playBody(floor, room, "ENEMY_ENRAGED", 1.1f);
                 case COIN_PICKUP, PURCHASE, PURCHASE_DENIED, SACRIFICE, SACRIFICE_REWARD,
-                     ARCADE_PLAY, ARCADE_WIN, ARCADE_BREAK, DEVIL_OPENED, DEVIL_DEAL, PHOENIX ->
+                     ARCADE_PLAY, ARCADE_WIN, ARCADE_BREAK, DEVIL_OPENED, DEVIL_DEAL, PHOENIX,
+                     DESCENT_TICK ->
                         playBody(floor, room, sound.name(), 1.0f);
             }
         }
@@ -1475,11 +1781,163 @@ public final class RunEngine {
         }
 
         /**
-         * A 2×2 opening through the floor, ringed so it reads as a built exit rather than the
-         * bare hole the first playtest found. Falling through it is what advances the stage.
+         * The boss fell, so the way down opens. On a piso with a sala del sello that is the §3.2
+         * canon beat staged in props: the seal's runes light, the grate over the pit retracts and
+         * the exit room's bars give — the pit itself was authored with the floor. A piso without
+         * an exit template keeps the old flow: a 2×2 opening carved in the arena.
          */
+        /** How far the seal reveal clears into the boss room in front of the opening. */
+        private static final int SEAL_APPROACH_DEPTH = 3;
+
+
         @Override
         public void openTrapdoor(Room bossRoom) {
+            Room exitRoom = exitRoom();
+            if (exitRoom == null) {
+                carveArenaTrapdoor(bossRoom);
+            } else {
+                restoreSeal(exitRoom);
+            }
+            openDevilDoors();
+        }
+
+        private Room exitRoom() {
+            for (Room room : floor.built.layout().rooms()) {
+                if (room.type() == RoomType.EXIT) {
+                    return room;
+                }
+            }
+            return null;
+        }
+
+        /** The seal re-pins: runes lit, pit grate retracted, doorway unbarred, reward armed. */
+        private void restoreSeal(Room exitRoom) {
+            lightSealRunes(exitRoom);
+            openPit(exitRoom);
+            unbarSealDoors();
+            sound(DungeonSound.SEAL_RESTORED, exitRoom);
+            floor.pedestals.armAt(floor, exitRoom, ClaimPolicy.Kind.ONE_OF_N,
+                    DungeonsConfig.bossLootTable(),
+                    floor.built.clampInside(exitRoom, markerPos(floor, exitRoom, "premio"), 2));
+            sealCeremony();
+        }
+
+        /**
+         * The dull runes of the seal glyph swap to their lit block, each with an invisible light
+         * stamped into the air above it — a handful of setBlocks, which is the whole prop budget
+         * of staging the canon beat every floor.
+         */
+        private void lightSealRunes(Room exitRoom) {
+            var dull = BuiltInRegistries.BLOCK
+                    .get(ResourceLocation.parse(DungeonsConfig.sealRuneBlock()));
+            var lit = BuiltInRegistries.BLOCK
+                    .get(ResourceLocation.parse(DungeonsConfig.sealRuneLitBlock()));
+            if (dull == null || lit == null || dull == Blocks.AIR) {
+                return;
+            }
+            int roomSize = floor.built.roomSize();
+            for (GridPos cell : exitRoom.cells()) {
+                BlockPos origin = floor.built.cellOrigin(cell);
+                for (int x = 0; x < roomSize; x++) {
+                    for (int y = 0; y < floor.built.roomHeight(); y++) {
+                        for (int z = 0; z < roomSize; z++) {
+                            BlockPos pos = origin.offset(x, y, z);
+                            if (!floor.level.getBlockState(pos).is(dull)) {
+                                continue;
+                            }
+                            floor.level.setBlock(pos, lit.defaultBlockState(), 3);
+                            BlockPos above = pos.above();
+                            if (floor.level.getBlockState(above).isAir()) {
+                                floor.level.setBlock(above, Blocks.LIGHT.defaultBlockState(), 3);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+         * Retracts the authored grate: the 3×3 over the pit becomes the drop it promised.
+         *
+         * <p>The marker is the pit's <b>centre</b> and the hole is carved symmetrically around it,
+         * because the exit template is rotated to face the boss. A corner marker rotates fine on its
+         * own, but the extent taken from it does not — reading {@code +x/+z} off a rotated corner
+         * put the hole two blocks off the grate on three rotations out of four.</p>
+         */
+        private void openPit(Room exitRoom) {
+            BlockPos hole = floor.built.clampInside(exitRoom,
+                    markerPos(floor, exitRoom, "trapdoor"), 4);
+            int floorY = floor.built.origin().getY();
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    BlockPos pos = new BlockPos(hole.getX() + dx, floorY, hole.getZ() + dz);
+                    floor.level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                    floor.level.setBlock(pos.below(), Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+
+        /**
+         * The wall into the exit room gives way because the seal re-pinned. Nothing stood here at
+         * build time — the chamber is solid rock until this carve, the same reveal a secret wall
+         * makes when a charge opens it.
+         *
+         * <p>An aligned 2×2/2×2 attachment shares a full face — two parallel SELLO edges — and gets
+         * one wide opening centered on their seam, the grand ceremonial door. A fallback single
+         * edge (a 1×1 boss, or a boss too boxed in for an aligned face) gets a normal doorway.</p>
+         */
+        private void unbarSealDoors() {
+            List<DoorEdge> sello = new java.util.ArrayList<>();
+            for (DoorEdge door : floor.built.layout().doors()) {
+                if (door.kind() == DoorKind.SELLO) {
+                    sello.add(door);
+                }
+            }
+            int width;
+            int height;
+            if (sello.size() >= 2) {
+                width = DungeonsConfig.sealDoorWidth();
+                height = DungeonsConfig.sealDoorHeight();
+                DoorCarver.carveGrandDoor(floor.level, floor.built.origin(), sello,
+                        Blocks.AIR.defaultBlockState(), floor.built.roomSize(), width, height);
+            } else {
+                width = DungeonsConfig.doorWidth();
+                height = DungeonsConfig.doorHeight();
+                for (DoorEdge door : sello) {
+                    DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
+                            Blocks.AIR.defaultBlockState(), floor.built.roomSize(), width, height);
+                }
+            }
+            // Guarantee access: a shallow clear into the boss room in front of the opening, so an
+            // authored arena prop against that wall can never leave the party sealed away from the
+            // way down. Matches the opening's width and centre; three blocks deep never reaches the
+            // boss room's far wall.
+            DoorCarver.clearSealApproach(floor.level, floor.built.origin(), sello,
+                    floor.built.roomSize(), width, height, SEAL_APPROACH_DEPTH);
+        }
+
+        /**
+         * The first-clear ceremony, staged on the seal moment (PRODUCCION §10.6): everything the
+         * floor owes the party lands as one title stack in the room built for dwelling, not as
+         * scattered chat. Today that is the seal itself; esquirla first-clears and codex firsts
+         * append here when the ledger exists — presentation only, grants stay where they are made.
+         */
+        private void sealCeremony() {
+            for (UUID member : floor.run.party().keySet()) {
+                ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+                if (player != null) {
+                    player.sendSystemMessage(Component.literal(
+                            "§dEl sello se restaura — la roca cede tras la arena."));
+                    DungeonTitles.send(player, "§dSello restaurado", "§7La sala del sello se abre");
+                }
+            }
+        }
+
+        /**
+         * The fallback for a piso with no exit template: a 2×2 opening through the arena floor,
+         * ringed so it reads as a built exit rather than the bare hole the first playtest found.
+         */
+        private void carveArenaTrapdoor(Room bossRoom) {
             BlockPos hole = trapdoorPos(bossRoom);
             int floorY = floor.built.origin().getY();
             BlockPos corner = new BlockPos(hole.getX(), floorY, hole.getZ());
@@ -1511,7 +1969,6 @@ public final class RunEngine {
                     DungeonTitles.send(player, "§6Jefe derrotado", "§7La trampilla se abre");
                 }
             }
-            openDevilDoors();
         }
 
         /**
@@ -1519,18 +1976,32 @@ public final class RunEngine {
          * finishing it, and the party has to decide before dropping through the trapdoor.
          */
         private void openDevilDoors() {
-            boolean opened = false;
+            boolean devil = false;
+            boolean grace = false;
             for (DoorEdge door : floor.built.layout().doors()) {
-                if (door.kind() != DoorKind.DEVIL) {
+                if (door.kind() != DoorKind.DEVIL && door.kind() != DoorKind.GRACIA) {
                     continue;
                 }
                 DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
                         Blocks.AIR.defaultBlockState(), floor.built.roomSize(),
                         DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
-                opened = true;
+                devil |= door.kind() == DoorKind.DEVIL;
+                grace |= door.kind() == DoorKind.GRACIA;
             }
-            if (opened) {
-                message(floor, "§5Los barrotes del trato ceden — algo espera al otro lado.");
+            if (devil) {
+                // He arrives with the door, never behind it: a character standing in a barred room
+                // is one the party watches through the bars for the length of a boss fight.
+                Room room = DungeonNpcs.acreedorRoom(floor);
+                if (room != null) {
+                    DungeonNpcs.spawnFor(floor, room, DungeonNpcs.Role.ACREEDOR);
+                }
+            }
+            if (devil || grace) {
+                message(floor, devil && grace
+                        // Both walls open at once, and only one may be walked through.
+                        ? "§5A un lado el trato, §6al otro la gracia §7— sólo una puerta se cruza."
+                        : devil ? "§5Los barrotes del trato ceden — algo espera al otro lado."
+                                : "§6La Orden abre — algo limpio espera al otro lado.");
                 playAt(floor, floor.built.partySpawn(floor.built.layout().start()),
                         DungeonSound.DEVIL_OPENED, 1.0f);
             }

@@ -19,6 +19,7 @@ plain `spawn` markers so the spawner never stacks a wave on one block.
 """
 import argparse
 import gzip
+import json
 import math
 import io
 import os
@@ -129,6 +130,7 @@ class Room:
         self.pal_index = {}
         self.grid = {}              # (x,y,z) -> palette index; absent = not emitted
         self.markers = []           # (tag, x, y, z)
+        self.block_nbt = {}         # (x,y,z) -> block entity nbt (signs); markers carry their own
         self.air = self.block('minecraft:air')
         for (cx, cz) in self.cells:
             for lx in range(S):
@@ -295,6 +297,17 @@ class Room:
         # Loosens as the room fills: a bar of 23 cannot also demand they stay far apart.
         spacing = 5 if count <= 8 else (4 if count <= 14 else 3)
         return all(abs(px - x) + abs(pz - z) >= spacing for (px, pz) in placed)
+
+    def sign(self, x, y, z, facing, lines, color='black'):
+        """A wall sign carrying carved text — the inscription wall's medium.
+
+        Text goes in as flat JSON components, which is what SignText's codec reads at this
+        DataVersion; missing fields (glow, wax, back face) take their codec defaults."""
+        name = self.get_name(x, y, z)
+        assert name in AIRLIKE, f'{self.key}: sign at {x},{y},{z} over {name}'
+        self.set(x, y, z, self.block('minecraft:dark_oak_wall_sign', facing=facing))
+        msgs = [json.dumps({'text': t}, ensure_ascii=False) for t in (list(lines) + [''] * 4)[:4]]
+        self.block_nbt[(x, y, z)] = {'front_text': {'messages': msgs, 'color': color}}
 
     def deco(self, tag, x, y, z):
         """A decoration marker; whatever sculpting left there yields to it, since the
@@ -710,6 +723,8 @@ class Room:
                     'posX': 0, 'posY': 1, 'posZ': 0,
                     'sizeX': 0, 'sizeY': 0, 'sizeZ': 0,
                 }
+            elif (x, y, z) in self.block_nbt:
+                entry['nbt'] = self.block_nbt[(x, y, z)]
             blocks.append(entry)
         palette = []
         for (name, props) in self.palette:
@@ -1968,6 +1983,103 @@ def build_comun_pacto():
     return r
 
 
+def build_exit():
+    """La sala del sello (PRODUCCION §10.6): the chamber the Orden built over the floor's seal pin.
+
+    A 2×2 chamber appended AFTER generation (PostRooms), sealed behind solid wall until the boss
+    dies — nothing announces it, in the world or on the map. The seal glyph IS the ring around the
+    pit: a chiseled-deepslate frame whose polished-basalt runes the run engine swaps to the lit
+    block on boss death, while the iron grate over the 2x2 pit retracts and the wall to the arena
+    is carved open.
+
+    The rune block is a contract with DungeonsConfig.bloqueRunaSello: the engine finds the runes by
+    block id, so infest() must never reskin polished basalt (it does not) and neither may a later
+    palette pass.
+    """
+    r = Room('exit', 'big', 'cuevas:exit')
+    r.shell()
+    rng = r.rng
+    frame = r.block('minecraft:chiseled_deepslate')
+    slab = r.block('minecraft:polished_deepslate')
+    tiles = r.block('minecraft:deepslate_tiles')
+    # Directional, not symmetric: the materializer rotates this whole template so its +z (south)
+    # wall — the entrance the grand door carves — always faces the boss. So the front (south) is
+    # the boss side, the back (north) is the trophy gallery, and the east/west walls are the
+    # flanks the satellite doors will one day open.
+    for x in range(6, 36):
+        for z in range(6, 36):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 0, z, r.block('minecraft:polished_deepslate' if rng.random() < 0.6
+                                       else 'minecraft:deepslate_tiles'))
+    # The Poneglyph: a solid 5x5x5 cube of dark stone dead-centre, its faces left blank for the
+    # Orden's script (carved by hand, not authored here). It is the seal-stone and the lore in one;
+    # the ring of runes at its foot is what lights when the boss falls.
+    for x in range(18, 23):
+        for z in range(18, 23):
+            for y in range(1, 6):
+                r.set(x, y, z, frame if y == 5 else slab)
+    # The pit opens at the Poneglyph's foot, toward the entrance the party came through: a chiseled
+    # frame around the 3x3, iron grate over it. Odd width on purpose, so the pit — and the grand
+    # door the reveal carves beyond it — share the cube's centre line (x=20).
+    for x in range(18, 23):
+        for z in range(23, 28):
+            if not (19 <= x <= 21 and 24 <= z <= 26):
+                r.set(x, 0, z, frame)
+    for x in range(19, 22):
+        for z in range(24, 27):
+            r.set(x, 0, z, r.block('minecraft:iron_bars',
+                                   north=str(z > 24).lower(), south=str(z < 26).lower(),
+                                   west=str(x > 19).lower(), east=str(x < 21).lower()))
+    # The seal runes ring the Poneglyph's foot and the pit. All clear of the door approaches —
+    # enforce_aprons refills five blocks in from each wall band, and a rune it repaves never lights.
+    rune = r.block('minecraft:polished_basalt')
+    for (x, z) in ((16, 20), (24, 20), (16, 21), (24, 21),
+                   (18, 16), (22, 16), (20, 15), (21, 15),
+                   (18, 28), (22, 28), (20, 29), (21, 29),
+                   (14, 14), (27, 14), (14, 27), (27, 27)):
+        r.set(x, 0, z, rune)
+    # A tiled medallion in the ceiling answers the seal from above.
+    for x in range(18, 23):
+        for z in range(18, 23):
+            if x in (18, 22) or z in (18, 22):
+                r.set(x, H - 2, z, tiles)
+
+    # The trophy gallery — the far (north) wall, a framed band the party faces last. Presentation
+    # only; the first-clear ceremony is the title stack.
+    for x in range(4, 38):
+        r.set(x, 4, 1, frame if x % 3 == 0 else slab)
+    # The results backdrop framing the entrance (south) wall, flanking where the grand door opens.
+    for x in list(range(3, 14)) + list(range(28, 39)):
+        for y in range(1, 5):
+            r.set(x, y, 40, frame if y == 4 else slab)
+
+    # The boss reward stand, on a dais near the entrance so claiming it is a stop on the way in,
+    # off to the west flank and clear of the central pit.
+    for (x, z) in ((9, 28), (10, 28), (9, 29), (10, 29)):
+        r.set(x, 0, z, slab)
+    r.set(9, 0, 28, frame)
+    r.mark('premio', 9, 1, 28)
+
+    # Corner pilasters and soul light, until the seal itself becomes the lamp. The east and west
+    # wall centres stay clear for the satellite doors.
+    post = r.block('minecraft:polished_deepslate_wall')
+    lantern = r.block('minecraft:soul_lantern', hanging='false')
+    for (x, z) in ((3, 3), (38, 3), (3, 38), (38, 38)):
+        for y in range(1, 9):
+            r.set(x, y, z, slab)
+    for (x, z) in ((8, 8), (33, 8), (8, 33), (33, 33), (14, 34), (27, 34)):
+        r.set(x, 1, z, post)
+        r.set(x, 2, z, lantern)
+
+    r.enforce_aprons()
+    # The CENTRE of the pit, not its corner: this template is rotated so its front faces the boss,
+    # and a corner marker would still rotate correctly while the engine's +x/+z extent around it
+    # would not — the hole would slide off the grate on every rotation but NONE. A centre survives
+    # all four. Shares the Poneglyph's centre line (x=20).
+    r.mark('trapdoor', 20, 1, 25)
+    return r
+
+
 def infest(base):
     """Dresses a finished Cuevas room as its infested twin, in place.
 
@@ -2063,6 +2175,7 @@ VARIANTS = {
                      'anfiteatro': build_normal_big_anfiteatro, # stepped bowl, looked down on
                      'cuatro_pilares': build_normal_big_cuatro_pilares},
     'boss_big':     {'oculo': build_boss_big},                  # the arena under a great oculus
+    'exit':         {'exit': build_exit},                       # la sala del sello, the way down
 }
 
 # Rooms that exist ONLY in Cuevas Infestadas, authored rather than derived. See the comment above

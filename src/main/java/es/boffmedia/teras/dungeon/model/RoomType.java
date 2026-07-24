@@ -23,7 +23,21 @@ public enum RoomType {
     /** A machine that eats coins and occasionally gives more back. */
     ARCADE,
     /** Barred until the floor's boss falls; sells one strong item for coins or for hearts. */
-    DEVIL_DEAL;
+    DEVIL_DEAL,
+    /**
+     * La sala del sello: the chamber over the floor's seal pin, appended behind the boss room.
+     * Barred until the boss falls; holds the seal fixture, the boss reward pedestal and the pit
+     * down. Only generated when the piso authored an {@code exit} template — a floor without one
+     * falls back to carving the pit in the arena.
+     */
+    EXIT,
+    /**
+     * La sala de la Orden: the grace chamber, hung off a flank of the sala del sello opposite the
+     * Acreedor's. Appended after generation and barred like his; revealed only when the party
+     * earned it (refused him, and played the floor cleanly — PRODUCCION §10.4, PISOS §63c/e).
+     * Taking her mercy commits the run to the Orden and banishes the creditor.
+     */
+    ORDEN;
 
     /** Secret rooms are entered through a cracked wall, never a doorway. */
     public boolean isSecret() {
