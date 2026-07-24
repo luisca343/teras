@@ -47,6 +47,7 @@ public final class DungeonsConfig {
     private static String secretLootTable;
     private static String superSecretLootTable;
     private static String devilLootTable;
+    private static String ordenLootTable;
     private static String bossLootTable;
     private static String crackBlock;
     private static String spikeBlock;
@@ -102,6 +103,9 @@ public final class DungeonsConfig {
     // Devil deal room.
     private static int devilCoinPrice;
     private static int devilHeartPrice;
+    private static int debtInterestPct;
+    private static int debtSettleDiscountPct;
+    private static int debtFloorsToCollect;
 
     // Backend reporting.
     private static boolean backendPostEnabled;
@@ -218,6 +222,7 @@ public final class DungeonsConfig {
             secretLootTable = yaml.string("lootSecreta", secretLootTable);
             superSecretLootTable = yaml.string("lootSupersecreta", superSecretLootTable);
             devilLootTable = yaml.string("lootTrato", devilLootTable);
+            ordenLootTable = yaml.string("lootOrden", ordenLootTable);
             bossLootTable = yaml.string("lootJefe", bossLootTable);
             crackBlock = yaml.string("bloqueGrieta", crackBlock);
             spikeBlock = yaml.string("bloquePinchos", spikeBlock);
@@ -279,6 +284,9 @@ public final class DungeonsConfig {
             YamlConfig devil = yaml.section("trato");
             devilCoinPrice = devil.integer("precioMonedas", devilCoinPrice);
             devilHeartPrice = devil.integer("precioCorazones", devilHeartPrice);
+            debtInterestPct = devil.integer("interesDeudaPct", debtInterestPct);
+            debtSettleDiscountPct = devil.integer("descuentoSaldoPct", debtSettleDiscountPct);
+            debtFloorsToCollect = devil.integer("pisosHastaCobrador", debtFloorsToCollect);
 
             soundVolume = (float) yaml.integer("volumenSonidos", Math.round(soundVolume * 100)) / 100f;
             YamlConfig soundBlock = yaml.section("sonidos");
@@ -330,6 +338,7 @@ public final class DungeonsConfig {
         secretLootTable = "teras:dungeon/treasure";
         superSecretLootTable = "teras:dungeon/boss";
         devilLootTable = "teras:dungeon/devil";
+        ordenLootTable = "teras:dungeon/orden";
         bossLootTable = "teras:dungeon/boss";
         crackBlock = "teras:muro_agrietado";
         spikeBlock = "minecraft:pointed_dripstone";
@@ -375,6 +384,9 @@ public final class DungeonsConfig {
 
         devilCoinPrice = 60;
         devilHeartPrice = 2;
+        debtInterestPct = 50;
+        debtSettleDiscountPct = 20;
+        debtFloorsToCollect = 2;
 
         soundVolume = 0.8f;
         sounds.clear();
@@ -443,6 +455,7 @@ public final class DungeonsConfig {
                 lootSecreta: teras:dungeon/treasure
                 lootSupersecreta: teras:dungeon/boss
                 lootTrato: teras:dungeon/devil
+                lootOrden: teras:dungeon/orden
                 lootJefe: teras:dungeon/boss
                 # Party play: group size cap, and how close to a marked entrance NPC a player must
                 # stand for 'entrar' to work (also the gather radius for their party members).
@@ -525,6 +538,12 @@ public final class DungeonsConfig {
                 trato:
                   precioMonedas: 60
                   precioCorazones: 2
+                  # La deuda: what a loan costs over the cash price, what settling early takes off
+                  # the face value, and how many floors of not paying bring a Cobrador. At two, the
+                  # two-floor Expedicion never sees one - a ruling, not an oversight (PISOS 63e).
+                  interesDeudaPct: 50
+                  descuentoSaldoPct: 20
+                  pisosHastaCobrador: 2
                 # Cues, as vanilla sound ids. The door cues play once per doorway of the room; the
                 # _body ones play once from the middle of it. Point any of these at a teras: id once
                 # you ship your own audio — nothing else has to change.
@@ -657,6 +676,16 @@ public final class DungeonsConfig {
         return devilLootTable;
     }
 
+    /**
+     * La Orden's relic table. Its own rather than the devil's on purpose: her gift has to be
+     * power-competitive with his — PISOS §63e, the reason a restoration-only Orden would have made
+     * the moral fork a trap choice — while staying clear of the scarcity trio (§4.1), so it trades
+     * in gear and healing and never in keys or petardos.
+     */
+    public static String ordenLootTable() {
+        return ordenLootTable;
+    }
+
     public static String crackBlock() {
         return crackBlock;
     }
@@ -786,6 +815,28 @@ public final class DungeonsConfig {
 
     public static int devilHeartPrice() {
         return devilHeartPrice;
+    }
+
+    /** What the loan costs over the cash price — the creditor's margin on <i>pedir prestado</i>. */
+    public static int debtInterestPct() {
+        return debtInterestPct;
+    }
+
+    /** Taken off the face value for settling early, which is the reason to seek him out again. */
+    public static int debtSettleDiscountPct() {
+        return debtSettleDiscountPct;
+    }
+
+    /**
+     * Floors of unpaid debt before a Cobrador comes for it.
+     *
+     * <p>Two, which in <i>La Expedición</i> — the two-floor everyday format — means he never
+     * arrives at all. That is a <b>ruling, not an oversight</b> (PISOS §63e): the debt dies with the
+     * run rather than growing an exit-collection or a format-scaled collector, so the deuda is a
+     * Descenso-shaped mechanic by choice. Do not "fix" it in a later pass.</p>
+     */
+    public static int debtFloorsToCollect() {
+        return debtFloorsToCollect;
     }
 
     public static int maxParty() {

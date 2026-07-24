@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -89,6 +90,38 @@ class ShippedPisoTest {
         FloorDef infestadas = piso("cuevas_infestadas",
                 EnumSet.of(ShapeFamily.SINGLE, ShapeFamily.LARGE));
         assertEquals(List.of(), shippedIndex().emptyKeys(infestadas));
+    }
+
+    /**
+     * The shared set, which is now two rooms and not one.
+     *
+     * <p>Both satellites of la sala del sello live in {@code comun} because neither belongs to the
+     * floor it visits, and both are <b>optional keys</b> — absence is a design choice, never a
+     * validation failure. That is exactly what makes a missing one invisible: la Orden was fully
+     * built, tested and inert for a whole slice because {@code hasOrdenRoom} found no template and
+     * silently forced her chance to zero. A folder is what switches her on, so a test has to be what
+     * says the folder is still there.</p>
+     */
+    @Test
+    void theSharedSetShipsBothSatellites() {
+        // `hereda` defaults to `comun` only when it is null; the helper above passes an empty list,
+        // which is a piso that inherits nothing at all.
+        FloorDef inheritor = new FloorDef("cuevas", "cuevas", "",
+                EnumSet.allOf(ShapeFamily.class), 7, "", "", MechanicDef.NONE,
+                EnumSet.noneOf(es.boffmedia.teras.dungeon.model.Curse.class),
+                List.of(), List.of(), null, java.util.Map.of(), java.util.Map.of(),
+                EnemyTable.EMPTY, DecorTables.EMPTY);
+        RoomPoolIndex index = RoomPoolIndex.of(List.of(
+                RoomPoolIndex.ROOT + RoomPoolIndex.DEFAULT_SET + "/devil_deal/pacto",
+                RoomPoolIndex.ROOT + RoomPoolIndex.DEFAULT_SET + "/orden/capilla"));
+        for (String key : List.of("devil_deal", "orden")) {
+            assertTrue(ShippedPisoTest.class.getClassLoader().getResource(
+                            ROOT + RoomPoolIndex.DEFAULT_SET + "/" + key + "/"
+                                    + (key.equals("orden") ? "capilla" : "pacto") + ".nbt") != null,
+                    "the shared " + key + " room is not in the jar");
+            assertFalse(index.pool(inheritor, key).isEmpty(),
+                    "a piso that inherits 'comun' cannot draw its " + key + " room");
+        }
     }
 
     /**

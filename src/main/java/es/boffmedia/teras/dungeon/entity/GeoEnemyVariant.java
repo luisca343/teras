@@ -247,6 +247,19 @@ public record GeoEnemyVariant(
                         // a 21-wide room is a free target the moment anyone reaches it.
                         Movement.GROUND,
                         java.util.EnumSet.of(Behaviour.RANGED, Behaviour.BLINK), 3f, 45)),
+                // The second of the three projectile shapes (CONTENIDO §3.1): the heavy line. Where
+                // the archer's arc says "keep moving sideways", the crossbow says "do not be
+                // standing where you were" — one bolt for more than twice the damage, on a reload
+                // long enough to be a window rather than a nuisance.
+                //
+                // Deliberately no BLINK. The archer's teleport is what stops a shooter being a free
+                // target; this one answers being closed on by being worth closing on, which is the
+                // only way the reload reads as an opening instead of an inconvenience. It is slower
+                // and better armoured to match: the shape that stands its ground.
+                Map.entry("ballestero_gruta", new GeoEnemyVariant("ballestero_gruta", raider,
+                        "textures/entity/dungeon/raider_ballestero.png", raiderAnim,
+                        0.95f, 22, 3, 0.24, 2, 34, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.RANGED), 7f, 100)),
 
                 // The rest of the smugglers' outfit, both on the raider rig: an outfit is a texture
                 // set, not a rig set, which is the whole return on a shared bone contract.
@@ -337,6 +350,20 @@ public record GeoEnemyVariant(
                         1.25f, 90, 9, 0.25, 8, 32, Movement.GROUND,
                         java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP), 0f, 0)),
 
+                // El Cobrador: what an unpaid deuda sends, two floors on (PISOS §63b). Not part of
+                // any piso's roster and never rolled into a wave — the run spawns exactly one, at
+                // the floor's own entrance, and killing it is what forgives the debt.
+                //
+                // Tuned as a hunter rather than a wall: the longest follow range in the bestiary and
+                // LEAP to close, because a collector the party can simply outrun is a fee, not a
+                // consequence. Its health is deliberately mini-boss and not boss — the beat is
+                // "settle up or fight for it", and a fight nobody can win is only the first of those
+                // wearing the other's clothes.
+                Map.entry("cobrador", new GeoEnemyVariant("cobrador", model,
+                        "textures/entity/dungeon/guardian_cobrador.png", animation,
+                        1.35f, 130, 10, 0.30, 8, 64, Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.LEAP), 0f, 0)),
+
                 // The infestation. All three climb, which is what makes Infestadas' ledges contested
                 // where Cuevas' are a safe perch, and all three glow at the eyes — a climber on an
                 // unlit ceiling is otherwise a dark shape against dark stone.
@@ -420,6 +447,36 @@ public record GeoEnemyVariant(
                         "textures/entity/dungeon/golem_geoda_glow.png",
                         1.3f, 70, 6, 0.19, 8, 20,
                         Movement.GROUND, java.util.EnumSet.of(Behaviour.MELEE), 0f, 0)),
+                // The third projectile shape, and the golem rig's second life. With the gólem
+                // retired from every spawn table (CONTENIDO §0) the rig was standing idle, and the
+                // ruling on its return was explicit: as a retexture, not a rig. This is that — the
+                // crystal itself walking, throwing what the golem only wore.
+                //
+                // VOLLEY and nothing else, which is what makes it the lob: VolleyGoal marks the
+                // ground where you *were* and lands there a moment later, so the answer is to have
+                // moved rather than to have blocked. `onlyVolleys` keeps it off RangedAttackGoal,
+                // so it never also spits a flat bolt at the target.
+                Map.entry("cristalero", new GeoEnemyVariant("cristalero",
+                        "geo/dungeon_golem.geo.json",
+                        "textures/entity/dungeon/cristalero.png",
+                        "animations/dungeon_golem.animation.json",
+                        "textures/entity/dungeon/cristalero_glow.png",
+                        0.95f, 30, 3, 0.20, 3, 26,
+                        Movement.GROUND, java.util.EnumSet.of(Behaviour.VOLLEY), 5f, 90)),
+                // Cuevas' mini-boss, replacing the retired gólem in the slot as well as on the rig.
+                // MELEE beside VOLLEY on purpose: a caster that only lobs is solved by walking to
+                // it, and this one swings when you arrive — into THORNS (DungeonEnemyPacks), which
+                // is the shatter-nova written in the shipped vocabulary. So the fight is the golem's
+                // old lesson at mini-boss scale, on the enemy that inherited its body: closing is
+                // right, closing carelessly is not.
+                Map.entry("cristalero_mayor", new GeoEnemyVariant("cristalero_mayor",
+                        "geo/dungeon_golem.geo.json",
+                        "textures/entity/dungeon/cristalero_mayor.png",
+                        "animations/dungeon_golem.animation.json",
+                        "textures/entity/dungeon/cristalero_mayor_glow.png",
+                        1.6f, 120, 8, 0.21, 7, 34,
+                        Movement.GROUND,
+                        java.util.EnumSet.of(Behaviour.MELEE, Behaviour.VOLLEY), 8f, 70)),
                 Map.entry("limo_cueva", new GeoEnemyVariant("limo_cueva", limo,
                         "textures/entity/dungeon/limo_cueva.png", limoAnim,
                         0.85f, 22, 3, 0.30, 0, 22,

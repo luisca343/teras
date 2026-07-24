@@ -162,6 +162,26 @@ public final class DungeonCommand {
                                                     target, StringArgumentType.getString(ctx, "opcion"))
                                                     ? 1 : 0;
                                         }))))
+                // La Orden's half of the fork, on the same terms as the deal above: ungated so a
+                // chat line or an authored dialogue option can reach it, and authorised by standing
+                // at her rather than by a permission level.
+                .then(Commands.literal("gracia")
+                        .then(Commands.argument("jugador", EntityArgument.player())
+                                .then(Commands.argument("don", StringArgumentType.word())
+                                        .executes(ctx -> {
+                                            ServerPlayer target =
+                                                    EntityArgument.getPlayer(ctx, "jugador");
+                                            ServerPlayer caller = ctx.getSource().getPlayer();
+                                            if (caller != null && caller != target) {
+                                                ctx.getSource().sendFailure(Component.literal(
+                                                        "No puedes aceptar la gracia de otro jugador."));
+                                                return 0;
+                                            }
+                                            return es.boffmedia.teras.dungeon.run.DungeonNpcs
+                                                    .chooseGracia(target,
+                                                            StringArgumentType.getString(ctx, "don"))
+                                                    ? 1 : 0;
+                                        }))))
                 .then(Commands.literal("dungeon")
                         .requires(source -> source.hasPermission(PERMISSION_LEVEL))
                         .then(Commands.literal("generar")

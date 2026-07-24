@@ -166,7 +166,10 @@ public final class DungeonRunManager {
             }
             RunEngine.register(run, built, level);
             teleportPartyIn(server, run, built);
-        }, () -> failStuck(server, run, "la construcción falló"));
+        }, () -> failStuck(server, run, "la construcción falló"),
+                new es.boffmedia.teras.dungeon.piso.VariantDraw(
+                        es.boffmedia.teras.dungeon.model.DungeonSeeds.fnv1a64(layout.seedString()),
+                        run.claimPisoOrdinal(plan.piso().id())));
         return new StartOutcome(run, null);
     }
 
@@ -335,7 +338,11 @@ public final class DungeonRunManager {
                                 DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(),
                                 cellOrigins(newLayout, newOrigin), run.party()));
             }
-        }, () -> failStuck(server, run, "no se pudo construir el piso " + next));
+        }, () -> failStuck(server, run, "no se pudo construir el piso " + next),
+                new es.boffmedia.teras.dungeon.piso.VariantDraw(
+                        es.boffmedia.teras.dungeon.model.DungeonSeeds.fnv1a64(
+                                newLayout.seedString()),
+                        run.claimPisoOrdinal(floorPlan.piso().id())));
     }
 
     private static void completeRun(MinecraftServer server, DungeonRun run) {

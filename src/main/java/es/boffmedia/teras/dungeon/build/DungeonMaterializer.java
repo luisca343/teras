@@ -83,6 +83,21 @@ public final class DungeonMaterializer {
     }
 
     /**
+     * @param onFailed run when the build dies and is dropped
+     * @param draw     the run's position in the once-per-floor variant bags. A floor built outside a
+     *                 run passes {@link es.boffmedia.teras.dungeon.piso.VariantDraw#single} and
+     *                 deals position 0, which is what a run's own first floor gets
+     */
+    public static int enqueueBuild(ServerLevel level, DungeonLayout layout,
+                                   es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
+                                   Consumer<BuiltDungeon> onComplete, Runnable onFailed,
+                                   es.boffmedia.teras.dungeon.piso.VariantDraw draw) {
+        int id = nextId++;
+        JOBS.add(new BuildJob(id, level, layout, plan, origin, onComplete, onFailed, draw));
+        return id;
+    }
+
+    /**
      * @param onFailed run when the build dies and is dropped. Without it a caller waits forever on
      *                 a completion that is never coming — which is how a failed build used to leave
      *                 a run stuck mid-construction, holding its slot with rooms already on the pad
@@ -90,9 +105,8 @@ public final class DungeonMaterializer {
     public static int enqueueBuild(ServerLevel level, DungeonLayout layout,
                                    es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
                                    Consumer<BuiltDungeon> onComplete, Runnable onFailed) {
-        int id = nextId++;
-        JOBS.add(new BuildJob(id, level, layout, plan, origin, onComplete, onFailed));
-        return id;
+        return enqueueBuild(level, layout, plan, origin, onComplete, onFailed,
+                es.boffmedia.teras.dungeon.piso.VariantDraw.single(layout.seedString()));
     }
 
     /** False when no built dungeon has that id. */
@@ -225,13 +239,22 @@ public final class DungeonMaterializer {
         private final Map<Room, List<TemplateMarkers.Marker>> markers = new HashMap<>();
         /** How many rooms of each key have been placed, which is the bag's deal position. */
         private final Map<String, Integer> drawn = new HashMap<>();
+        private final es.boffmedia.teras.dungeon.piso.VariantDraw draw;
+        /**
+         * The keys this floor asks for exactly once. Those draw from the run bag instead of the
+         * floor's, so the room a party stands in on every single floor is not re-rolled from
+         * scratch on every single floor — see {@code VariantDraw}. Counted up front because the
+         * answer has to be the same for the first room placed and the last.
+         */
+        private final java.util.Set<String> soloKeys;
         private final int roomSize = DungeonsConfig.roomSize();
         private final int roomHeight = DungeonsConfig.roomHeight();
         private int index;
 
         BuildJob(int id, ServerLevel level, DungeonLayout layout,
                  es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
-                 Consumer<BuiltDungeon> onComplete, Runnable onFailed) {
+                 Consumer<BuiltDungeon> onComplete, Runnable onFailed,
+                 es.boffmedia.teras.dungeon.piso.VariantDraw draw) {
             this.id = id;
             this.level = level;
             this.layout = layout;
@@ -239,7 +262,24 @@ public final class DungeonMaterializer {
             this.origin = origin;
             this.onComplete = onComplete;
             this.onFailed = onFailed;
+            this.draw = draw;
             this.rooms = layout.rooms();
+            this.soloKeys = soloKeys(this.rooms);
+        }
+
+        /** Room keys exactly one room on this floor resolves to. */
+        private static java.util.Set<String> soloKeys(List<Room> rooms) {
+            Map<String, Integer> counts = new HashMap<>();
+            for (Room room : rooms) {
+                counts.merge(RoomTemplates.keyFor(room), 1, Integer::sum);
+            }
+            java.util.Set<String> solo = new java.util.HashSet<>();
+            counts.forEach((key, count) -> {
+                if (count == 1) {
+                    solo.add(key);
+                }
+            });
+            return solo;
         }
 
         @Override
@@ -277,8 +317,15 @@ public final class DungeonMaterializer {
         }
 
         private void placeRoom(Room room, int ordinalInKey) {
+            // Two bags, and which one a key uses is the whole of the fix: a key this floor asks for
+            // once deals from the run's stage-free bag at this piso's floor ordinal, everything else
+            // from the floor's own. Both are pure functions of the seed and the run's shape, so a
+            // floor still rebuilds identically from the same inputs.
+            boolean solo = soloKeys.contains(RoomTemplates.keyFor(room));
+            long seed = solo ? draw.seed() : layout.baseSeed();
+            int ordinal = solo ? draw.pisoOrdinal() : ordinalInKey;
             RoomTemplates.TemplateEntry entry =
-                    RoomTemplates.select(plan.piso(), room, layout.baseSeed(), ordinalInKey);
+                    RoomTemplates.select(plan.piso(), room, seed, ordinal);
             if (room.type() == RoomType.EXIT) {
                 // The exit is authored with a fixed front (the boss-facing wall the grand door
                 // carves) and back (the trophy gallery); unlike every other room its facing is not

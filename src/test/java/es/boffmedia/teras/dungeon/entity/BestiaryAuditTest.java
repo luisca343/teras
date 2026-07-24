@@ -281,6 +281,69 @@ class BestiaryAuditTest {
     }
 
     /**
+     * "Things shoot" is three lessons on floor 1, not one (CONTENIDO §3.1), and the three have to
+     * stay <i>distinguishable</i> — the arc you strafe, the line you sidestep, the lob you leave.
+     * Three enemies with the same behaviour set is one enemy with three textures, which is precisely
+     * the fault §49 spent a rebuild undoing.
+     */
+    @Test
+    void theThreeShootersTeachThreeDifferentShapes() {
+        GeoEnemyVariant arco = GeoEnemyVariant.of("arquero_gruta");
+        GeoEnemyVariant ballesta = GeoEnemyVariant.of("ballestero_gruta");
+        GeoEnemyVariant lob = GeoEnemyVariant.of("cristalero");
+
+        assertTrue(arco.has(Behaviour.RANGED) && arco.has(Behaviour.BLINK),
+                "the archer's answer to being closed on is the blink");
+        assertTrue(ballesta.has(Behaviour.RANGED), "the crossbow still shoots");
+        assertFalse(ballesta.has(Behaviour.BLINK),
+                "the heavy line has to be reachable, or its reload is not an opening");
+        assertTrue(ballesta.rangedDamage() > arco.rangedDamage() * 1.5f,
+                "one bolt for more than twice the arrow is what makes it the heavy shot");
+        assertTrue(ballesta.rangedCooldown() > arco.rangedCooldown(),
+                "and it pays for that with a real reload");
+
+        assertTrue(lob.has(Behaviour.VOLLEY), "the cristalero is the lob");
+        assertFalse(lob.has(Behaviour.RANGED),
+                "VOLLEY aims at the ground on its own goal; adding RANGED makes it fire flat bolts");
+    }
+
+    /**
+     * Cuevas' mini-boss after the gólem's retirement. It inherits the rig <i>and</i> the lesson: the
+     * escarabajo teaches "this hurts to hit" where getting it wrong is free, and this is where it
+     * costs. Without THORNS it is a caster with a big health bar and the floor loses the one rule it
+     * had that swinging harder does not answer.
+     */
+    @Test
+    void theCristaleroMayorInheritsTheGolemsLesson() {
+        GeoEnemyVariant mayor = GeoEnemyVariant.of("cristalero_mayor");
+        assertEquals("cristalero_mayor", mayor.id(), "the mini-boss is not registered");
+        assertTrue(mayor.has(Behaviour.VOLLEY) && mayor.has(Behaviour.MELEE),
+                "it lobs at range and swings up close, or walking to it is the whole answer");
+        assertTrue(mayor.glows(), "its seams are the telegraph, as the golem's were");
+
+        List<es.boffmedia.teras.dungeon.ability.AbilityDef> defs =
+                es.boffmedia.teras.dungeon.encounter.DungeonEnemyPacks.abilities()
+                        .get("cristalero_mayor");
+        assertTrue(defs != null && defs.stream().anyMatch(
+                        d -> d.kind() == es.boffmedia.teras.dungeon.ability.AbilityKind.THORNS),
+                "the shatter-nova is THORNS in the shipped vocabulary; without it there is none");
+    }
+
+    /**
+     * El Cobrador exists as a variant of its own rather than as a renamed guardian. It is spawned by
+     * the run and never by a piso's table, so nothing else in the bestiary would notice it going
+     * missing — and a debt whose collector cannot be built is a debt that is simply forgiven.
+     */
+    @Test
+    void theCollectorIsRegisteredAndHunts() {
+        GeoEnemyVariant cobrador = GeoEnemyVariant.of("cobrador");
+        assertEquals("cobrador", cobrador.id(), "nothing can come to collect");
+        assertTrue(cobrador.has(Behaviour.LEAP), "a collector that cannot close is a toll booth");
+        assertTrue(cobrador.followRange() > GeoEnemyVariant.of("centinela_hueso").followRange(),
+                "he follows further than anything that belongs to a floor — he came for you");
+    }
+
+    /**
      * The golem is the floor's answer to "walk up and swing", so the two things that make it that
      * must both be present: damage coming back, and a light on it saying so before it is in range.
      */

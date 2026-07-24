@@ -215,6 +215,19 @@ public final class DungeonEnemyPacks {
         table.put("golem_geoda", List.of(
                 new AbilityDef(AbilityKind.THORNS, "", Map.of("fraction", 0.35))));
 
+        // Cuevas' mini-boss. THORNS is the shatter-nova of the design written with what ships: the
+        // vocabulary has no "burst when closed on", and reflecting the swing is the same sentence —
+        // hitting this hurts — said at the moment the design wanted it said. Higher than the golem's
+        // 0.35 because a mini-boss is fought deliberately rather than met in a corridor, and the
+        // escarabajo has already taught the rule for free by the time anyone reaches it.
+        //
+        // ENRAGE spends itself on rate, not damage: a crystal-caster that panics throws faster, and
+        // a lob that lands more often is answered by moving more, which is the lesson it is for.
+        table.put("cristalero_mayor", List.of(
+                new AbilityDef(AbilityKind.THORNS, "", Map.of("fraction", 0.45)),
+                new AbilityDef(AbilityKind.ENRAGE, "",
+                        Map.of("healthPct", 0.35, "speedMult", 0.25, "damageMult", 0.1))));
+
         // Infestadas' mini-boss. CLEAVE is her pounce landing on whoever was standing together, and
         // ENRAGE spends almost all of itself on speed — a wounded hunter gets harder to escape
         // rather than harder to trade with, which is the one thing the queen's enrage does not do.

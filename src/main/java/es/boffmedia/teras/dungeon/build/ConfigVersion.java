@@ -86,9 +86,24 @@ public final class ConfigVersion {
      *       defaulted when absent) and a piso file's say over the new key's {@code pesos}. The
      *       {@code trapdoor} marker moved from the boss keys to {@code exit}; boss templates keep
      *       carrying one for the fallback carve on a piso without an exit template</li>
+     *   <li>the allegiance arc goes live and Cuevas' roster is corrected (PISOS §63f–§65): the
+     *       optional {@code orden} room key joins {@code exit} — la sala de la Orden, the grace
+     *       chamber on the sello's far flank — and it ships in the <b>shared</b> {@code comun} set
+     *       beside the pacto, so every piso that inherits the default draws it and folder discovery
+     *       puts it on old worlds by itself. What an existing file misses is {@code config.yml}'s
+     *       new keys ({@code lootOrden} and the three {@code trato} debt knobs — all defaulted when
+     *       absent) and a piso file's say over the new key's {@code pesos}.
+     *
+     *       <p>The roster half is what actually needs a resync. {@code golem_geoda} leaves Cuevas'
+     *       table and its mini-boss slot (retired game-wide, CONTENIDO §0 — still registered, still
+     *       animated, spawning nowhere), {@code ballestero_gruta} and {@code cristalero} join it so
+     *       the floor fields all three projectile shapes, and {@code cristalero_mayor} becomes the
+     *       declared mini-boss. An older {@code pisos/cuevas.json} keeps the old table: it still
+     *       fields the gólem, still names it as its mini-boss, and never sees any of the three —
+     *       the same shape as the §51 entry below, and invisible for the same reason.</p></li>
      * </ol>
      */
-    public static final int CURRENT = 10;
+    public static final int CURRENT = 11;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

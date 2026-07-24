@@ -153,6 +153,16 @@ public final class RunEngine {
         boolean chargingToll;
         /** Whether one of the two satellite mercies has been taken, closing the other's door. */
         boolean forkResolved;
+        /**
+         * How many of la Orden's gifts are still unclaimed on this floor, and which are already
+         * gone. {@code -1} means her font has not been read yet: the count comes from the purity
+         * tier of the floor just played, and asking for it before anyone has approached her would
+         * fix the number before the run is even sure she is here.
+         */
+        int ordenPicksLeft = -1;
+        final java.util.Set<String> ordenTaken = new java.util.HashSet<>();
+        /** El Cobrador, while he is standing on this floor. Null when the run owes nothing. */
+        UUID collector;
 
         boolean advancing;
         /** Members already through the pit, parked below the floor until the party descends. */
@@ -192,6 +202,41 @@ public final class RunEngine {
         floor.core.start();
         floor.shop.stock(floor);
         broadcastWallet(floor);
+        sendCollector(floor);
+    }
+
+    /**
+     * El Cobrador, when a debt has stood unpaid long enough (PISOS §63b, PRODUCCION §6.4). He is
+     * waiting at the entrance rather than placed in a room: the party arrives to find him, which is
+     * the difference between being hunted and meeting a wandering monster.
+     *
+     * <p><b>Outside the kill ledger, deliberately.</b> He is not registered to a room, so no
+     * doorway seals behind him and no room stays uncleared while he lives — a party that would
+     * rather run from him and pay later is making the decision the mechanic is for. Killing him
+     * forgives the debt outright; see {@link #onLivingDeath}.</p>
+     */
+    private static void sendCollector(ActiveFloor floor) {
+        if (floor.run.deuda() <= 0
+                || floor.run.floorsSinceBorrow() < DungeonsConfig.debtFloorsToCollect()) {
+            return;
+        }
+        BlockPos at = floor.built.partySpawn(floor.built.layout().start());
+        es.boffmedia.teras.dungeon.encounter.SpawnTables.SpawnEntry entry =
+                es.boffmedia.teras.dungeon.encounter.SpawnTables.parseSpec("geo:cobrador");
+        if (entry == null) {
+            return;
+        }
+        // On the landing itself, not beside it: the party spawn is the one position on the floor
+        // known to be clear — an offset from it can be inside the start chamber's own furniture,
+        // and a collector suffocating in a wall forgives the debt for free.
+        net.minecraft.world.entity.Entity collector = es.boffmedia.teras.dungeon.encounter
+                .EnemySpawner.spawnSummon(floor.level, entry, at);
+        if (collector == null) {
+            return;
+        }
+        floor.collector = collector.getUUID();
+        message(floor, "§5Alguien os espera en la entrada. §7Viene a cobrar.");
+        playAt(floor, at, DungeonSound.DEVIL_OPENED, 1.0f);
     }
 
     public static void unregister(int runId) {
@@ -213,6 +258,7 @@ public final class RunEngine {
                 if (player != null) {
                     PacketDistributor.sendToPlayer(player, DungeonMapPayload.hidden());
                     PacketDistributor.sendToPlayer(player, DungeonWalletPayload.hidden());
+                    DungeonNpcs.clearConditions(player);
                 }
             }
         }
@@ -600,6 +646,18 @@ public final class RunEngine {
         }
         UUID id = event.getEntity().getUUID();
         for (ActiveFloor floor : FLOORS.values()) {
+            // The collector first: he is outside the kill ledger, so the room loop below would
+            // never see him, and what his death pays is not coins.
+            if (id.equals(floor.collector)) {
+                floor.collector = null;
+                int forgiven = floor.run.deuda();
+                floor.run.settleDebt(forgiven);
+                payCoins(floor, event.getEntity());
+                message(floor, "§5El Cobrador cae. §7La deuda de §f" + forgiven
+                        + "§7 monedas muere con él.");
+                playAt(floor, event.getEntity().blockPosition(), DungeonSound.DEVIL_DEAL, 1.0f);
+                return;
+            }
             Room room = floor.enemyRooms.remove(id);
             if (room != null) {
                 payCoins(floor, event.getEntity());
@@ -701,6 +759,11 @@ public final class RunEngine {
         }
         if (room != null && room.type() == RoomType.DEVIL_DEAL
                 && DevilDeal.tryClaim(floor, player, room, pos, player.isShiftKeyDown())) {
+            event.setCanceled(true);
+            return;
+        }
+        if (room != null && room.type() == RoomType.ORDEN
+                && OrdenGift.tryClaim(floor, player, room, pos)) {
             event.setCanceled(true);
             return;
         }
@@ -1994,6 +2057,12 @@ public final class RunEngine {
                 Room room = DungeonNpcs.acreedorRoom(floor);
                 if (room != null) {
                     DungeonNpcs.spawnFor(floor, room, DungeonNpcs.Role.ACREEDOR);
+                }
+            }
+            if (grace) {
+                Room room = DungeonNpcs.ordenRoom(floor);
+                if (room != null) {
+                    DungeonNpcs.spawnFor(floor, room, DungeonNpcs.Role.ORDEN);
                 }
             }
             if (devil || grace) {

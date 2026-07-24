@@ -9,9 +9,13 @@ import es.boffmedia.teras.dungeon.model.Room;
 import es.boffmedia.teras.dungeon.model.RoomType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -39,17 +43,28 @@ public final class DungeonNpcs {
     private DungeonNpcs() {}
 
     /** Which character a spawned entity is. */
-    public enum Role { ACREEDOR }
+    public enum Role { ACREEDOR, ORDEN }
 
     /** The clone tab the characters are installed into — the bestiary's neighbour, not its tab. */
     public static final int TAB = 8;
 
     public static final String ACREEDOR_ID = "acreedor";
+    public static final String ORDEN_ID = "orden";
 
     /** The shipped characters, installed by {@code /teras dungeon personajes instalar}. */
     public static final List<CnpcBridge.CharacterPreset> SHIPPED = List.of(
             new CnpcBridge.CharacterPreset(ACREEDOR_ID, "§5El Acreedor",
-                    "minecraft:textures/entity/illager/evoker.png", 5, 40));
+                    "minecraft:textures/entity/illager/evoker.png", 5, 40),
+            // Her opposite number, and deliberately the plainest skin in the game: the Orden are
+            // people who stayed at their posts, not an apparition. The evoker across the wing is
+            // doing the work of looking otherworldly for both of them.
+            new CnpcBridge.CharacterPreset(ORDEN_ID, "§6La Orden",
+                    "minecraft:textures/entity/player/wide/steve.png", 5, 40));
+
+    /** The marker a role stands at — his pedestal, her font. */
+    private static String markerOf(Role role) {
+        return role == Role.ORDEN ? "gracia" : "deal";
+    }
 
     /**
      * A character currently standing on a floor.
@@ -61,12 +76,12 @@ public final class DungeonNpcs {
     private record Standing(int runId, Role role, Room room, boolean hasDialog) {}
 
     private static final Map<UUID, Standing> STANDING = new HashMap<>();
-    /** Who has an offer window open, and whose offer it is. */
-    private static final Map<UUID, Standing> OPEN_OFFER = new HashMap<>();
 
-    /** Choice ids, as they appear in the hidden command behind each clickable line. */
+    /** Choice ids, as they appear behind a dialogue option or a clickable chat line. */
     public static final String CHOICE_COINS = "monedas";
     public static final String CHOICE_HEARTS = "corazones";
+    public static final String CHOICE_BORROW = "prestado";
+    public static final String CHOICE_SETTLE = "saldar";
     public static final String CHOICE_LEAVE = "marcharse";
 
     /** How close to his pedestal a choice may be made from. */
@@ -81,7 +96,7 @@ public final class DungeonNpcs {
             return;
         }
         // Beside his own pedestal: the fixture stays where it was authored, and he stands at it.
-        BlockPos at = RunEngine.markerPos(floor, room, "deal");
+        BlockPos at = RunEngine.markerPos(floor, room, markerOf(role));
         Entity spawned = CnpcBridge.spawnClone(floor.level(),
                 at.getX() + 0.5, at.getY(), at.getZ() + 1.5, TAB, idOf(role));
         if (spawned == null) {
@@ -100,14 +115,17 @@ public final class DungeonNpcs {
         STANDING.put(spawned.getUUID(), new Standing(floor.run().id(), role, room, dialog));
     }
 
+    /** The clone id a role is spawned from. */
     private static String idOf(Role role) {
-        return role == Role.ACREEDOR ? ACREEDOR_ID : ACREEDOR_ID;
+        return switch (role) {
+            case ACREEDOR -> ACREEDOR_ID;
+            case ORDEN -> ORDEN_ID;
+        };
     }
 
     /** Forgets a floor's characters; the entities themselves go with the floor's own sweep. */
     static void clear(int runId) {
         STANDING.entrySet().removeIf(entry -> entry.getValue().runId() == runId);
-        OPEN_OFFER.entrySet().removeIf(entry -> entry.getValue().runId() == runId);
     }
 
     /**
@@ -135,6 +153,10 @@ public final class DungeonNpcs {
         if (floor == null || !floor.run().party().containsKey(player.getUUID())) {
             return;
         }
+        // Before CustomNPCs decides which of his dialogues to open, and this is the only moment that
+        // works: EntityInteract fires from Player.interactOn ahead of the NPC's own mobInteract, and
+        // it is mobInteract that walks the slots asking each dialogue's availability.
+        publishConditions(player);
         // With a dialogue attached the conversation is CustomNPCs' job and its options carry the
         // commands — claiming the click here would suppress the very dialogue we asked it to open.
         if (standing.hasDialog()) {
@@ -142,7 +164,11 @@ public final class DungeonNpcs {
         }
         event.setCanceled(true);
         if (event.getHand() == InteractionHand.MAIN_HAND) {
-            openOffer(floor, player, standing);
+            if (standing.role() == Role.ORDEN) {
+                OrdenGift.offer(floor, player, standing.room());
+            } else {
+                openOffer(floor, player, standing);
+            }
         }
     }
 
@@ -165,38 +191,54 @@ public final class DungeonNpcs {
         }
         int coins = CoinDrops.scaleToStage(DungeonsConfig.devilCoinPrice(), floor.run().stage());
         int hearts = DungeonsConfig.devilHeartPrice();
-        OPEN_OFFER.put(player.getUUID(), standing);
 
         player.sendSystemMessage(Component.literal("§8§m                              "));
         player.sendSystemMessage(Component.literal("§5El Acreedor §7— todo tiene precio."));
         if (floor.run().deuda() > 0) {
             player.sendSystemMessage(Component.literal(
                     "§7Aún me debes §f" + floor.run().deuda() + " §7monedas."));
+            player.sendSystemMessage(choice(
+                    "§6▶ Saldar por " + DevilDeal.settlePrice(floor.run().deuda()) + " monedas",
+                    CHOICE_SETTLE, "§7Menos que la cifra — por venir tú a mí"));
         }
         player.sendSystemMessage(choice("§e▶ Pagar " + coins + " monedas", CHOICE_COINS,
                 "§7Del bolsillo común de la partida"));
         player.sendSystemMessage(choice("§4▶ Pagar " + hearts + " corazones", CHOICE_HEARTS,
                 "§7De tu salud máxima, hasta el final de la partida"));
+        if (floor.run().deuda() <= 0) {
+            player.sendSystemMessage(choice(
+                    "§5▶ Pedir prestado (" + DevilDeal.loanFace(floor.run().stage()) + " a deber)",
+                    CHOICE_BORROW, "§7Ahora nada. Después, alguien vendrá a cobrarlo"));
+        }
         player.sendSystemMessage(choice("§8▶ Marcharse", CHOICE_LEAVE,
                 "§7Rechazar — y quizá la Orden lo note"));
         player.sendSystemMessage(Component.literal("§8§m                              "));
     }
 
-    /** One clickable line of the offer, running the hidden choice command. */
+    /**
+     * One clickable line of the offer, running the hidden choice command.
+     *
+     * <p><b>{@code @s} is not decoration.</b> The command is {@code /teras trato <jugador> <opcion>}
+     * — it takes the player explicitly because CustomNPCs runs a dialogue option's command from its
+     * own sender rather than from the player, so an authored option carries {@code @dp}. A click
+     * event does run as the player, but the argument is still required, and the two-token form this
+     * used to emit did not parse at all: every chat-fallback offer — which is what a server without
+     * the authored dialogue pack installed sees — silently did nothing.</p>
+     */
     private static Component choice(String label, String id, String tooltip) {
         return Component.literal(label).withStyle(style -> style
                 .withClickEvent(new net.minecraft.network.chat.ClickEvent(
                         net.minecraft.network.chat.ClickEvent.Action.RUN_COMMAND,
-                        "/teras trato " + id))
+                        "/teras trato @s " + id))
                 .withHoverEvent(new net.minecraft.network.chat.HoverEvent(
                         net.minecraft.network.chat.HoverEvent.Action.SHOW_TEXT,
                         Component.literal(tooltip))));
     }
 
     /**
-     * A choice made at an open offer. The offer must have been opened by clicking him — the command
-     * is only ever reachable through the chat lines above, and typing it without a live offer, from
-     * another run, or from across the floor does nothing.
+     * A choice made at his pedestal, from a dialogue option or from the chat offer above. Nothing
+     * here remembers that a window was opened, because a CustomNPCs dialogue is opened by CustomNPCs
+     * and never tells us — so the standing itself is the check: your run, your floor, his room.
      */
     public static boolean choose(ServerPlayer player, String choiceId) {
         DungeonRun run = DungeonRunManager.runOf(player.getUUID());
@@ -221,10 +263,11 @@ public final class DungeonNpcs {
                     Component.literal("§7Estás demasiado lejos del Acreedor."), true);
             return false;
         }
-        OPEN_OFFER.remove(player.getUUID());
         switch (choiceId) {
             case CHOICE_COINS -> DevilDeal.offer(floor, player, room, false);
             case CHOICE_HEARTS -> DevilDeal.offer(floor, player, room, true);
+            case CHOICE_BORROW -> DevilDeal.borrow(floor, player, room);
+            case CHOICE_SETTLE -> DevilDeal.settle(floor, player, room);
             default -> player.displayClientMessage(
                     Component.literal("§8Te alejas del trato."), true);
         }
@@ -250,23 +293,162 @@ public final class DungeonNpcs {
         if (floor == null || player.serverLevel() != floor.level()) {
             return Map.of();
         }
+        int price = CoinDrops.scaleToStage(DungeonsConfig.devilCoinPrice(), run.stage());
         return Map.of(
-                "%monedas%", String.valueOf(
-                        CoinDrops.scaleToStage(DungeonsConfig.devilCoinPrice(), run.stage())),
+                "%monedas%", String.valueOf(price),
                 "%corazones%", String.valueOf(DungeonsConfig.devilHeartPrice()),
                 "%bolsa%", String.valueOf(run.wallet().coins()),
                 "%deuda%", String.valueOf(run.deuda()),
                 "%piso%", String.valueOf(run.stage()),
-                "%jugador%", player.getName().getString());
+                "%jugador%", player.getName().getString(),
+                // The loan's face value and what clearing it early costs — the two numbers the
+                // deuda arc turns on, and neither is derivable from %monedas% by an author.
+                "%prestamo%", String.valueOf(DevilDeal.loanFace(run.stage())),
+                "%saldo%", String.valueOf(DevilDeal.settlePrice(run.deuda())),
+                // Hers: what the óbolo pays, and how many gifts are left on the font.
+                "%obolo%", String.valueOf(price),
+                "%dones%", String.valueOf(Math.max(0, floor.ordenPicksLeft < 0
+                        ? OrdenGift.tierOf(floor).picks() : floor.ordenPicksLeft)));
+    }
+
+    /**
+     * The scoreboard objectives a dialogue's <i>availability</i> can be gated on, so an operator can
+     * give a character several dialogues and let the floor decide which one he opens.
+     *
+     * <p>CustomNPCs picks the <b>first</b> of an NPC's dialogue slots whose availability passes, and
+     * a vanilla scoreboard is the only condition in that screen a mod can drive — the rest ask about
+     * quests, factions, daytime and dialogues already read. Two of these are deliberately
+     * pre-computed answers rather than raw numbers ({@code teras_paga_*}), because the editor
+     * compares an objective against a <i>constant you type</i> and never against another objective:
+     * "does the purse cover the price" is unaskable there unless the mod answers it first.</p>
+     */
+    public static final String OBJ_TRATO = "teras_trato";
+    public static final String OBJ_BOLSA = "teras_bolsa";
+    public static final String OBJ_PRECIO = "teras_precio";
+    public static final String OBJ_DEUDA = "teras_deuda";
+    public static final String OBJ_PISO = "teras_piso";
+    public static final String OBJ_PAGA_MONEDAS = "teras_paga_monedas";
+    public static final String OBJ_PAGA_VIDA = "teras_paga_vida";
+    /**
+     * 1 while the run owes him anything. Pre-computed for the reason the two {@code paga_} answers
+     * are: the editor compares an objective against a constant you type, so "deuda is not zero" is
+     * unaskable there — only "equals 0" and "equals 1" are, and this is the second one.
+     */
+    public static final String OBJ_DEBE = "teras_debe";
+    /** Her side of the same trick: 1 while a gift is still there to take. */
+    public static final String OBJ_GRACIA = "teras_gracia";
+    /** Her tier as 1/2/3 — pre-computed for the same reason the two {@code paga_} answers are. */
+    public static final String OBJ_NIVEL_GRACIA = "teras_nivel_gracia";
+    /** 1 once either satellite has been claimed, whichever it was. */
+    public static final String OBJ_BIFURCACION = "teras_bifurcacion";
+
+    private static final List<String> OBJECTIVES = List.of(OBJ_TRATO, OBJ_BOLSA, OBJ_PRECIO,
+            OBJ_DEUDA, OBJ_PISO, OBJ_PAGA_MONEDAS, OBJ_PAGA_VIDA,
+            OBJ_DEBE, OBJ_GRACIA, OBJ_NIVEL_GRACIA, OBJ_BIFURCACION);
+
+    /**
+     * Writes this player's floor state onto those objectives. Called on the click itself rather than
+     * on a tick: the values only have to be true at the instant CustomNPCs asks, and a run's purse
+     * changes on every coin picked up.
+     */
+    public static void publishConditions(ServerPlayer player) {
+        DungeonRun run = DungeonRunManager.runOf(player.getUUID());
+        RunEngine.ActiveFloor floor = run == null ? null : RunEngine.activeFloor(run.id());
+        if (floor == null || player.serverLevel() != floor.level()) {
+            clearConditions(player);
+            return;
+        }
+        int price = CoinDrops.scaleToStage(DungeonsConfig.devilCoinPrice(), run.stage());
+        int hearts = DungeonsConfig.devilHeartPrice();
+        Room room = acreedorRoom(floor);
+        score(player, OBJ_TRATO, room != null && floor.devilClaimed.contains(room) ? 1 : 0);
+        score(player, OBJ_BOLSA, run.wallet().coins());
+        score(player, OBJ_PRECIO, price);
+        score(player, OBJ_DEUDA, run.deuda());
+        score(player, OBJ_DEBE, run.deuda() > 0 ? 1 : 0);
+        score(player, OBJ_PISO, run.stage());
+        score(player, OBJ_PAGA_MONEDAS, run.wallet().coins() >= price ? 1 : 0);
+        score(player, OBJ_PAGA_VIDA, player.getMaxHealth() - hearts * 2 >= 2.0f ? 1 : 0);
+
+        // Her half. `ordenPicksLeft` is -1 until her font has been read, which is "she still has
+        // everything" rather than "she has nothing" — publishing the raw number would make a fresh
+        // chapel look spent to a dialogue comparing against 0.
+        boolean giftsLeft = floor.ordenPicksLeft != 0
+                && !(floor.forkResolved && !run.ordenCommitted());
+        score(player, OBJ_GRACIA, giftsLeft ? 1 : 0);
+        score(player, OBJ_NIVEL_GRACIA, switch (OrdenGift.tierOf(floor)) {
+            case MENOR -> 1;
+            case MAYOR -> 2;
+            case PLENA -> 3;
+        });
+        score(player, OBJ_BIFURCACION, floor.forkResolved ? 1 : 0);
+    }
+
+    /** Zeroes them on the way out, so nothing outside a run reads a floor that has ended. */
+    public static void clearConditions(ServerPlayer player) {
+        for (String objective : OBJECTIVES) {
+            score(player, objective, 0);
+        }
+    }
+
+    private static void score(ServerPlayer player, String name, int value) {
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        Scoreboard board = server.getScoreboard();
+        Objective objective = board.getObjective(name);
+        if (objective == null) {
+            objective = board.addObjective(name, ObjectiveCriteria.DUMMY, Component.literal(name),
+                    ObjectiveCriteria.RenderType.INTEGER, false, null);
+        }
+        board.getOrCreatePlayerScore(player, objective).set(value);
     }
 
     /** The room a floor's Acreedor stands in, or null when he did not visit. */
     static Room acreedorRoom(RunEngine.ActiveFloor floor) {
+        return roomOfType(floor, RoomType.DEVIL_DEAL);
+    }
+
+    /** La Orden's chapel on this floor, or null when purity did not bring her. */
+    static Room ordenRoom(RunEngine.ActiveFloor floor) {
+        return roomOfType(floor, RoomType.ORDEN);
+    }
+
+    private static Room roomOfType(RunEngine.ActiveFloor floor, RoomType type) {
         for (Room room : floor.built().layout().rooms()) {
-            if (room.type() == RoomType.DEVIL_DEAL) {
+            if (room.type() == type) {
                 return room;
             }
         }
         return null;
+    }
+
+    /**
+     * A gift chosen at her font, from a chat line or a dialogue option. The same shape — and the
+     * same reasoning — as {@link #choose}: the command has to be ungated so a CustomNPCs option can
+     * reach it, so standing at her, on her floor, in a run you belong to <i>is</i> the authorisation.
+     */
+    public static boolean chooseGracia(ServerPlayer player, String giftId) {
+        DungeonRun run = DungeonRunManager.runOf(player.getUUID());
+        if (run == null) {
+            return false;
+        }
+        RunEngine.ActiveFloor floor = RunEngine.activeFloor(run.id());
+        if (floor == null || player.serverLevel() != floor.level()) {
+            return false;
+        }
+        Room room = ordenRoom(floor);
+        if (room == null) {
+            return false;
+        }
+        BlockPos at = RunEngine.markerPos(floor, room, "gracia");
+        if (!player.blockPosition().closerThan(at, REACH)) {
+            player.displayClientMessage(
+                    Component.literal("§7Estás demasiado lejos de la Orden."), true);
+            return false;
+        }
+        OrdenGift.take(floor, player, room, giftId);
+        return true;
     }
 }

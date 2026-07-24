@@ -44,6 +44,34 @@ SHAPES = {
 
 AIRLIKE = {'minecraft:air', 'minecraft:cave_air', 'minecraft:void_air', 'minecraft:structure_void'}
 
+# What each kind of room wears on its roof, read from the air in creative or spectator.
+#
+# Chosen for legibility at altitude against a field of grey stone, which rules out grey, brown and
+# anything desaturated, and which is why minerals appear at all: gloss and texture separate two
+# blocks that hue alone would not. Footprint and position already name several rooms without help —
+# the boss is always 2x2, the sello is the 2x2 appended behind it, and the pacto and the Orden are
+# its two flanks — so obsidian against lime across that wing reads as the fork it is.
+#
+# Normal rooms wear nothing. They are the bulk of every floor, and a marking that covers everything
+# marks nothing.
+CROWNS = {
+    'start':        'minecraft:light_blue_concrete',
+    'boss':         'minecraft:red_concrete',
+    'boss_big':     'minecraft:red_concrete',
+    'mini_boss':    'minecraft:orange_concrete',
+    'shop':         'minecraft:emerald_block',
+    'treasure':     'minecraft:gold_block',
+    'secret':       'minecraft:quartz_block',
+    'super_secret': 'minecraft:pink_concrete',
+    'challenge':    'minecraft:magenta_concrete',
+    'curse':        'minecraft:purple_concrete',
+    'sacrifice':    'minecraft:redstone_block',
+    'arcade':       'minecraft:cyan_concrete',
+    'devil_deal':   'minecraft:obsidian',
+    'exit':         'minecraft:lapis_block',
+    'orden':        'minecraft:lime_concrete',
+}
+
 # ---------------------------------------------------------------------------- NBT writing
 
 def _tag(out, tag_id, name):
@@ -348,6 +376,28 @@ class Room:
                     if self.is_wall(x, z):
                         for y in range(1, H - 1):
                             self.set(x, y, z, self.stone_blend(y, r))
+
+    def crown(self, key, variant):
+        """Paints the room's kind on the one surface a player inside can never see.
+
+        The ring is the ceiling blocks sitting directly on top of the walls: their undersides are
+        buried against the wall, their inner faces against the rest of the ceiling, and only the top
+        and the outward faces are exposed — both of which are outside the room. Nothing else writes
+        there either; rough_walls stops below H-1 and ceiling_relief skips wall columns.
+
+        The ring is left broken for `variant` blocks at the template's own (0,0) corner. The length
+        of the notch counts the variant, and where the notch ends up once the template is rotated is
+        the only way to read a placement's rotation from the air.
+        """
+        block = CROWNS.get(key)
+        if block is None:
+            return
+        idx = self.block(block)
+        notch = {(x, 0) for x in range(max(1, min(variant, S - 2)))}
+        for x in range(self.sx):
+            for z in range(self.sz):
+                if self.is_wall(x, z) and (x, z) not in notch:
+                    self.set(x, H - 1, z, idx)
 
     def rough_walls(self, ore_chance=0.05, light_chance=0.03):
         """Crags: rock protruding 1-2 blocks from every exterior wall, ore and shroomlight
@@ -1983,6 +2033,63 @@ def build_comun_pacto():
     return r
 
 
+def build_comun_orden():
+    """La sala de la Orden (PISOS §63b–e): the grace chamber on the sello's far flank.
+
+    Shared for the same reason the pacto is, and more so — she is not of the floor either, and the
+    two rooms are a matched pair seen across one wing: the same 21x21 footprint, the same dais at the
+    same centre, and everything else inverted. The pacto is blackstone under soul-blue; this is the
+    Orden's own deepslate under warm lantern light, with calcite where the other has gilding. A party
+    standing between the two open doors should be able to read the choice from the light alone.
+
+    The register is deliberately the sello's (build_exit): she built that chamber too, and the wing
+    ought to look like one hand made both ends of it.
+    """
+    r = Room('orden', 'single', 'comun:orden:capilla')
+    r.shell()
+    rng = r.rng
+    slab = r.block('minecraft:polished_deepslate')
+    tiles = r.block('minecraft:deepslate_tiles')
+    frame = r.block('minecraft:chiseled_deepslate')
+    calcite = r.block('minecraft:calcite')
+    for x in range(1, 20):
+        for z in range(1, 20):
+            r.set(x, 0, z, slab if rng.random() < 0.65 else tiles)
+    for x in range(21):
+        for z in range(21):
+            if r.is_wall(x, z):
+                for y in range(H):
+                    r.set(x, y, z, slab if rng.random() < 0.7 else tiles)
+    # The dais, at the pacto's exact centre and height so the pair rhymes: calcite steps in place of
+    # the gilded rim, and a font of chiseled quartz where the other has its chiseled blackstone.
+    for x in range(7, 14):
+        for z in range(7, 14):
+            if (x, z) in r.keep_clear:
+                continue
+            edge = max(abs(x - 10), abs(z - 10))
+            r.set(x, 0, z, calcite if edge <= 1 else tiles)
+            if edge == 3:
+                r.set(x, 1, z, r.block('minecraft:calcite'))
+    r.set(10, 1, 10, r.block('minecraft:chiseled_quartz_block'))
+    # Warm light on four posts, against the pacto's four soul lanterns: the same fixture, the other
+    # temperature. Nothing here is emissive terrain — the room is lit, not glowing.
+    for (x, z) in ((8, 8), (12, 8), (8, 12), (12, 12)):
+        r.set(x, 1, z, r.block('minecraft:deepslate_tile_wall'))
+        r.set(x, 2, z, r.block('minecraft:lantern', hanging='false'))
+    # A framed band on the north wall for the Orden's script, the sello's trophy gallery in
+    # miniature — the one surface that says who this room belongs to.
+    for x in range(5, 16):
+        r.set(x, 4, 1, frame if x % 3 == 0 else calcite)
+    for (x, z) in ((5, 10), (15, 10), (10, 5), (10, 15)):
+        for y in range(6, 9):
+            r.set(x, y, z, r.block('minecraft:chain', axis='y'))
+    r.mark('gracia', 10, 2, 10)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 4, 8, 16)
+    r.deco('decoracion:techo', 16, 8, 4)
+    return r
+
+
 def build_exit():
     """La sala del sello (PRODUCCION §10.6): the chamber the Orden built over the floor's seal pin.
 
@@ -2187,7 +2294,8 @@ INFESTADAS_ONLY = {
 
 # Rooms in a shared set, drawn by every piso whose `hereda` names it.
 SHARED = {
-    'comun': {'devil_deal': {'pacto': build_comun_pacto}},
+    'comun': {'devil_deal': {'pacto': build_comun_pacto},
+              'orden': {'capilla': build_comun_orden}},
 }
 
 
@@ -2226,17 +2334,22 @@ def main():
     for key, named in builders.items():
         if args.room and key != args.room:
             continue
-        for name, builder in named.items():
+        for variant, (name, builder) in enumerate(named.items(), start=1):
             if args.variante and name != args.variante:
                 continue
             room = builder()
+            # After the builder, never inside it: the notch counts this room's place in its key's
+            # variant list, which only the loop knows.
+            room.crown(key, variant)
             errors, warnings = room.audit()
             plain = sum(1 for (t, _, _, _) in room.markers if t == 'spawn')
             ranged = sum(1 for (t, _, _, _) in room.markers if t == 'spawn:ranged')
             nests = sum(1 for (t, _, _, _) in room.markers if t == 'nido')
+            crown = CROWNS.get(key)
             print(f'{key:14} {name:15} {room.sx}x{H}x{room.sz}  markers={len(room.markers)}'
                   f' (spawn {plain}+{ranged}r{f", nido {nests}" if nests else ""})'
-                  f'  palette={len(room.palette)}')
+                  f'  palette={len(room.palette)}'
+                  f'  {f"crown={crown.split(chr(58))[1]}/{variant}" if crown else "crown=-"}')
             for w in warnings:
                 print(f'    ! {w}')
             for e in errors:

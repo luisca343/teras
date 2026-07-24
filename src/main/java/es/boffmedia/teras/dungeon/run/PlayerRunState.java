@@ -29,6 +29,19 @@ public final class PlayerRunState {
         }
     }
 
+    /**
+     * Gives back every heart sold to a devil deal — la Orden's <i>restitución</i>, and the only
+     * thing in the run that undoes one.
+     *
+     * <p>Clears the ledger only. The attribute has to be rewritten through
+     * {@code Afflictions.apply}, which recomputes the total from this <b>and</b> from any curse-room
+     * Pulso débil: touching the modifier directly here would hand the player back health an
+     * affliction is still supposed to be taking.</p>
+     */
+    public void forgiveHpDebt() {
+        hpDebt = 0;
+    }
+
     public boolean hasPhoenix() {
         return phoenix;
     }

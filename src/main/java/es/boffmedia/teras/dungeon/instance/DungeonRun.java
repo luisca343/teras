@@ -159,6 +159,21 @@ public final class DungeonRun {
         }
     }
 
+    /**
+     * How many floors of each piso this run has already built — the deal position of the run-long
+     * variant bags (see {@code VariantDraw}). Per piso, not per run: in an alternating pool the two
+     * Cuevas floors either side of an Infestadas one are that piso's first and second floors, and
+     * counting them as its first and third would skip a position in its bag for no reason.
+     */
+    private final Map<String, Integer> pisoFloors = new LinkedHashMap<>();
+
+    /** This piso's floor ordinal for the floor about to be built, then counts it. */
+    public int claimPisoOrdinal(String pisoId) {
+        int ordinal = pisoFloors.getOrDefault(pisoId, 0);
+        pisoFloors.put(pisoId, ordinal + 1);
+        return ordinal;
+    }
+
     /** Run statistics, for the end-of-run report. */
     private final long startedAtMs = System.currentTimeMillis();
     private final int startStage;

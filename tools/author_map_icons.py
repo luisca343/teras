@@ -161,6 +161,19 @@ ICONS = [
         '........',
         '........',
     ]),
+    # orden — the font she stands at, which is the one fixture her chapel has. A vessel rather than
+    # a symbol on purpose: the devil's horns opposite it are a *what*, and hers should be a *where*,
+    # so a party reading the two flanks off the map is choosing between two rooms and not two creeds.
+    ('orden', [
+        '.######.',
+        '.######.',
+        '..####..',
+        '...##...',
+        '...##...',
+        '..####..',
+        '.######.',
+        '........',
+    ]),
 ]
 
 

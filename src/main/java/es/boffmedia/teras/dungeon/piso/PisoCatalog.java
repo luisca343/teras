@@ -883,7 +883,7 @@ public final class PisoCatalog {
                 // slime the floor has been showing you all along, and the mini-boss is the one
                 // enemy on it that has a rule — so both fights are about something already learned.
                 EnumSet.of(Curse.LABYRINTH, Curse.LOST),
-                List.of("gran_limo"), List.of("golem_geoda"),
+                List.of("gran_limo"), List.of("cristalero_mayor"),
                 cuevasEnemies(), cuevasDecor()));
         // Every family, but not at every piso's odds. This used to be two families, on the argument
         // that "tight and choked is the identity" and that it excused six rooms of authoring. The
@@ -922,7 +922,7 @@ public final class PisoCatalog {
                         // pool inherits if it says nothing — and what it should inherit is the
                         // stage's register, which at tramo 1 is a cave. `coloso_guardian` and
                         // `centinela_hueso` stay registered for the bone-crypt pool at tramo 2.
-                        List.of("gran_limo"), List.of("golem_geoda")))));
+                        List.of("gran_limo"), List.of("cristalero_mayor")))));
     }
 
     /**
@@ -1003,9 +1003,14 @@ public final class PisoCatalog {
                 List.of(// The smugglers: the people who got here first, and the roster La Guarida
                         // will one day promote to a floor of its own.
                         SpawnRef.of("saqueador_cuevas", 4),
-                        // The one shooter, deliberately scarce: perches should be a threat to
-                        // answer, not the shape of every fight.
+                        // Three shooters, one per projectile shape (CONTENIDO §3.1) — the arc, the
+                        // line and the lob. Their combined weight is still small: perches should be
+                        // a threat to answer, not the shape of every fight. What the trio buys is
+                        // that "things shoot" stops being one lesson and becomes three answers, and
+                        // that the ranged class debuts as something the floor does to you a tramo
+                        // before you are handed it.
                         SpawnRef.of("arquero_gruta", 2),
+                        SpawnRef.of("ballestero_gruta", 1),
                         // The dog closes a gap the party opened on purpose, which is what keeps
                         // backing off from being the answer to everything else on this floor.
                         SpawnRef.of("mastin", 2),
@@ -1014,19 +1019,20 @@ public final class PisoCatalog {
                         SpawnRef.of("vigia", 1),
                         // Does not fight. Leaves, with the money.
                         SpawnRef.of("carronero", 1),
-                        // The cave's own. The beetle teaches the golem's rule where getting it
-                        // wrong is free; the golem is where it costs.
+                        // The cave's own. The beetle teaches the rule where getting it wrong is
+                        // free; the Cristalero Mayor is where it costs — the gólem used to be the
+                        // second half of that sentence and is retired game-wide (CONTENIDO §0).
                         SpawnRef.of("escarabajo", 2),
                         SpawnRef.of("cristal_rastrero", 2),
+                        // The lob, and the crystal family's walking member. Scarce: two of these in
+                        // one room is a floor of overlapping ground-marks, which is a different
+                        // game rather than a harder one.
+                        SpawnRef.of("cristalero", 1),
                         // Slow, weak, and worse dead than alive.
                         SpawnRef.of("hongo_bombardero", 1),
                         // It never moves, so its weight is not a share of the threat — it is how
                         // often a room has one already sitting in it.
                         SpawnRef.of("musgo_agarrador", 1),
-                        // The floor's one enemy that punishes the default answer. Elite and scarce:
-                        // a room with two of them is a room a melee party cannot enter, which is a
-                        // different game rather than a harder one.
-                        SpawnRef.of("golem_geoda", 1).asElite(),
                         // First-party now, not CustomNPCs clones — see GeoEnemyVariant. As clones
                         // these could not be sized or made to bounce; as geo variants they are both,
                         // and they need no `enemigos instalar` to exist at all.

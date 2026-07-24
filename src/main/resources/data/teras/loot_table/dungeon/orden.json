@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:chest",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "teras:gear_espada",
+          "weight": 12,
+          "functions": [
+            {
+              "function": "teras:gear_aleatorio",
+              "comun": 5,
+              "raro": 40,
+              "epico": 55
+            }
+          ]
+        },
+        { "type": "minecraft:item", "name": "minecraft:golden_apple", "weight": 5 }
+      ]
+    },
+    {
+      "rolls": 1,
+      "entries": [
+        { "type": "minecraft:item", "name": "teras:pocion_vital_mayor", "weight": 1 }
+      ]
+    }
+  ]
+}

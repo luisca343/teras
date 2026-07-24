@@ -76,6 +76,7 @@ public final class MarkerContract {
         runtime("sacrifice");      // SacrificePlate
         runtime("arcade");         // ArcadeMachine
         runtime("deal");           // DevilDeal — the pedestal
+        runtime("gracia");         // OrdenGift — the font la Orden stands at
         runtime("oferta");         // CurseMarket — one affliction offered for coins
         runtime("purga");          // CurseMarket — the stand that buys one back
         runtime("nido");           // Nests, when the piso runs the infestation

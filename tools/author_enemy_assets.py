@@ -2314,6 +2314,24 @@ BIPED_PALETTES = {
         'eye': ((146, 208, 122), (88, 128, 74), (190, 240, 168)),
         '_face': 'grim', '_chest': 'strap',
     },
+    # The crossbow. Where the archer is moss and fletching-brown, this one is oiled steel over dark
+    # leather: the shape that stands its ground and takes its time reads as armoured, because that is
+    # what the profile asks the player to believe before the first bolt lands.
+    'raider_ballestero': {
+        'body': ((58, 60, 68), (35, 37, 42), (84, 86, 96)),
+        'plate': ((78, 82, 92), (48, 51, 58), (108, 113, 126)),
+        'head': ((124, 110, 94), (82, 73, 62), (156, 142, 124)),
+        'arm': ((54, 56, 63), (33, 34, 39), (78, 80, 90)),
+        'leg': ((46, 48, 55), (28, 29, 34), (68, 70, 79)),
+        'jaw': ((62, 66, 74), (38, 41, 46), (88, 93, 104)),
+        'belt': ((50, 42, 34), (31, 26, 21), (78, 66, 54)),
+        'hand': ((116, 102, 86), (76, 67, 57), (148, 134, 116)),
+        'boot': ((42, 38, 34), (26, 23, 21), (64, 58, 52)),
+        # The pack is the bolt case: iron-bound, and squared off against the archer's soft quiver.
+        'pack': ((70, 68, 62), (43, 42, 38), (98, 95, 88)),
+        'eye': ((208, 214, 226), (128, 132, 140), (240, 244, 252)),
+        '_face': 'grim', '_chest': 'emblem', '_accent': (108, 113, 126),
+    },
     'guardian_husk': {
         'body': ((104, 96, 74), (66, 60, 45), (136, 126, 100)),
         'plate': ((86, 80, 62), (54, 50, 38), (114, 106, 84)),
@@ -2340,6 +2358,22 @@ BIPED_PALETTES = {
         # `_face: skull` paints its own sockets; the entry only tints the glint above the teeth.
         'eye': ((224, 218, 202), (140, 136, 124), (244, 240, 226)),
         '_face': 'skull',
+    },
+    # El Cobrador: what comes for an unpaid deuda two floors later. Not a cave creature and not
+    # meant to look like one — he wears the pacto room's own colours, blackstone under gilding, so
+    # a party that borrowed recognises who sent him before he has closed the distance.
+    'guardian_cobrador': {
+        'body': ((38, 34, 40), (23, 21, 25), (56, 51, 60)),
+        'plate': ((30, 27, 33), (18, 16, 20), (46, 42, 50)),
+        'head': ((44, 39, 46), (27, 24, 28), (64, 58, 68)),
+        'arm': ((35, 31, 37), (21, 19, 23), (52, 47, 55)),
+        'leg': ((28, 25, 31), (17, 15, 19), (43, 39, 46)),
+        'jaw': ((34, 30, 36), (21, 18, 22), (50, 45, 54)),
+        'belt': ((132, 104, 44), (84, 66, 28), (172, 138, 66)),
+        'hand': ((40, 36, 42), (24, 22, 26), (58, 53, 62)),
+        'boot': ((26, 23, 28), (16, 14, 17), (40, 36, 43)),
+        'eye': ((248, 206, 96), (154, 128, 58), (255, 234, 160)),
+        '_face': 'grim', '_chest': 'emblem', '_accent': (172, 138, 66),
     },
     'guardian_warden': {
         'body': ((52, 60, 74), (32, 37, 47), (76, 86, 104)),
@@ -2450,6 +2484,37 @@ BIPED_PALETTES = {
         # has to agree with them about what the golem is made of.
         'eye': ((196, 140, 240), (124, 84, 158), (230, 186, 255)),
         '_face': 'grim',
+    },
+    # The two casters that inherit the golem's rig now that the golem itself spawns nowhere
+    # (CONTENIDO §0: retired until needed, and it returns as a retexture, not a rig). They are not
+    # the golem repainted: it is basalt with a light inside, and these are the crystal itself walking
+    # — pale quartz-grey stone carrying far more shard than rock, so the family is obvious and the
+    # silhouette's meaning is not. The golem hits what reaches it; these throw.
+    'cristalero': {
+        'body': ((104, 96, 116), (66, 60, 74), (136, 126, 152)),
+        'plate': ((92, 84, 104), (57, 52, 65), (122, 112, 136)),
+        'head': ((98, 90, 110), (61, 56, 69), (128, 118, 142)),
+        'arm': ((100, 92, 112), (62, 57, 70), (130, 120, 146)),
+        'leg': ((88, 81, 100), (54, 50, 62), (116, 107, 130)),
+        'hand': ((94, 86, 106), (58, 53, 66), (124, 114, 138)),
+        'boot': ((82, 76, 94), (50, 47, 58), (110, 101, 124)),
+        'shard': ((214, 132, 248), (140, 78, 170), (238, 194, 255)),
+        'eye': ((222, 156, 252), (142, 96, 172), (244, 208, 255)),
+        '_face': 'grim',
+    },
+    'cristalero_mayor': {
+        # The elite: the rock has almost lost the argument. Deep violet stone under seams bright
+        # enough to be the room's light source, so the mini-boss is the thing you see first.
+        'body': ((78, 58, 102), (48, 35, 63), (108, 82, 138)),
+        'plate': ((68, 50, 90), (42, 31, 55), (96, 72, 124)),
+        'head': ((74, 55, 97), (46, 34, 60), (102, 78, 132)),
+        'arm': ((72, 53, 94), (44, 33, 58), (100, 76, 128)),
+        'leg': ((62, 46, 82), (38, 28, 50), (88, 66, 112)),
+        'hand': ((70, 52, 92), (43, 32, 57), (98, 74, 126)),
+        'boot': ((56, 42, 74), (34, 26, 45), (80, 60, 102)),
+        'shard': ((236, 158, 255), (158, 96, 196), (252, 214, 255)),
+        'eye': ((246, 182, 255), (166, 112, 200), (255, 228, 255)),
+        '_face': 'grim', '_chest': 'emblem', '_accent': (198, 122, 240),
     },
 }
 
@@ -2732,16 +2797,21 @@ def main():
     # separates them is timing as much as proportion: the raider takes 20 frames to a stride, the
     # guardian 32 and the golem 40, and a heavy that walks at the chaff's cadence is light.
     for rig, palettes in (('raider', ['raider_saqueador', 'raider_arquero',
-                                      'raider_carronero', 'raider_vigia']),
-                          ('guardian', ['guardian_husk', 'guardian_bone', 'guardian_warden']),
-                          ('golem', ['golem_geoda'])):
+                                      'raider_carronero', 'raider_vigia',
+                                      'raider_ballestero']),
+                          ('guardian', ['guardian_husk', 'guardian_bone', 'guardian_warden',
+                                        'guardian_cobrador']),
+                          ('golem', ['golem_geoda', 'cristalero', 'cristalero_mayor'])):
         build = BIPEDS[rig]
         data, sheet = biped_geo(f'dungeon_{rig}', build)
         geo = os.path.join(ROOT, f'geo/dungeon_{rig}.geo.json')
         write_json(geo, data)
-        # The golem only ever walks up and hits: giving it a bow draw and a spell it can never play
-        # is how a rig accumulates clips nobody checks.
-        clips = (('idle', 'walk', 'attack') if rig == 'golem'
+        # The golem rig gains `cast` and nothing else. It was cut to walk-and-hit because the golem
+        # only ever walked up and hit; the cristaleros ride the same rig and lob, and VolleyGoal
+        # triggers Action.CAST — a clip the rig did not have would have played as a frozen stance.
+        # Still no `shoot` or `jump`: neither caster draws a bow or leaps, and a clip nobody plays is
+        # how a rig accumulates animation nobody checks.
+        clips = (('idle', 'walk', 'attack', 'cast') if rig == 'golem'
                  else ('idle', 'walk', 'attack', 'shoot', 'cast', 'jump'))
         anim = os.path.join(ROOT, f'animations/dungeon_{rig}.animation.json')
         write_json(anim, biped_animation(build, clips))

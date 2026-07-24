@@ -7,7 +7,8 @@
       "height": 8,
       "chars": [
         "\ue000\ue001\ue002\ue003\ue004\ue005",
-        "\ue006\ue007\ue008\ue009\ue00a\ue00b"
+        "\ue006\ue007\ue008\ue009\ue00a\ue00b",
+        "\ue00c\u0000\u0000\u0000\u0000\u0000"
       ]
     }
   ]

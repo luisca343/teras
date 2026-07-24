@@ -39,6 +39,11 @@ sacrifice:    sacrifice
 arcade:       arcade
 devil_deal:   deal
 
+# La sala de la Orden, the other flank of the sello. Optional like `exit` — a piso without one never
+# offers grace and the Acreedor's half of the arc still runs — but a shipped one owes the font she
+# stands at, which is where her gift is claimed.
+orden:        gracia
+
 # The challenge plate is where the fight starts, so its marker is load-bearing on top of the waves.
 challenge:    spawn, challenge
 

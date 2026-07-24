@@ -59,9 +59,9 @@ public class CnpcDialogMixin {
      * is on the copy, and only the branch that picks the packet reads the original. A future build
      * that moves the read cannot make this fire somewhere it corrupts the id.</p>
      *
-     * <p><b>Costs the NPC portrait inside the window.</b> That path forces {@code hideNPC} on,
-     * because the client rebuilds a stand-in NPC rather than using the real one. The character is
-     * still standing in front of the player in the world.</p>
+     * <p>That path also forces {@code hideNPC} on, because the client rebuilds a stand-in NPC rather
+     * than using the real one — see {@link #teras$keepTheAuthoredPortrait} and
+     * {@code CnpcDialogPortraitMixin}, which together give the character his own face back.</p>
      */
     @Redirect(method = "openDialog", require = 0,
             at = @At(value = "FIELD", opcode = Opcodes.GETFIELD,
@@ -73,6 +73,28 @@ public class CnpcDialogMixin {
             return -1;
         }
         return read.id;
+    }
+
+    /**
+     * Keeps whatever the operator ticked in the editor, instead of the {@code true} the packet
+     * branch writes over it.
+     *
+     * <p>That {@code hideNPC = true} is not an authoring decision, it is damage control: the branch
+     * exists for dialogues with no NPC behind them, so the client draws a stand-in and CustomNPCs
+     * hides it rather than show the wrong face. Our dialogues <i>do</i> have an NPC — the redirect
+     * above is the only reason they came down this path — so the flag is left as authored and
+     * {@code CnpcDialogPortraitMixin} makes the stand-in the real character.</p>
+     */
+    @Redirect(method = "openDialog", require = 0,
+            at = @At(value = "FIELD", opcode = Opcodes.PUTFIELD,
+                    target = "Lnoppes/npcs/controllers/data/Dialog;hideNPC:Z"))
+    private static void teras$keepTheAuthoredPortrait(Dialog rendered, boolean hidden,
+                                                      Player reader, EntityNPCInterface npc,
+                                                      Dialog stored) {
+        if (reader instanceof ServerPlayer player && !DungeonNpcs.dialogTokens(player).isEmpty()) {
+            return;
+        }
+        rendered.hideNPC = hidden;
     }
 
     @WrapOperation(method = "openDialog", require = 0,
