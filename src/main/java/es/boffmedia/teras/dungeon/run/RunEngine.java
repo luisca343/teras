@@ -106,6 +106,8 @@ public final class RunEngine {
         final DungeonShop shop = new DungeonShop();
         /** Rewards you take off a stand, rather than items dropped on the floor. */
         final RewardPedestals pedestals = new RewardPedestals();
+        /** The treasure room's three-stand choice, its own system since it is not one pedestal. */
+        final TreasureChoice treasure = new TreasureChoice();
         /** The bar over a live boss or mini-boss. */
         final DungeonBossBars bossBars = new DungeonBossBars();
         /** Bought at the shop: reveal the floor's layout / its special rooms on the minimap. */
@@ -247,6 +249,7 @@ public final class RunEngine {
             // discards the old pad a moment after this: clearing them here closes that window.
             floor.shop.despawnDisplays(floor);
             floor.pedestals.despawn(floor);
+            floor.treasure.despawn(floor);
             floor.market.despawnDisplays(floor);
             floor.bossBars.clear();
             // Characters are floor-scoped like every other fixture: the entities go with the
@@ -769,6 +772,11 @@ public final class RunEngine {
         }
         if (room != null && room.type() == RoomType.CURSE
                 && floor.market.tryUse(floor, player, pos)) {
+            event.setCanceled(true);
+            return;
+        }
+        if (room != null && room.type() == RoomType.TREASURE
+                && floor.treasure.tryClaim(floor, player, pos)) {
             event.setCanceled(true);
             return;
         }
@@ -1667,15 +1675,20 @@ public final class RunEngine {
             // wall charge, since shop slot 1 is always ROMPEMUROS — paid nothing. Dispatching on the
             // contract is what makes that unrepeatable: a room type absent from it cannot pay, and
             // one present in it cannot be forgotten here.
-            var loot = es.boffmedia.teras.dungeon.piso.MarkerContract.lootSource(room.type());
-            if (loot != null) {
-                // Common rewards are per-player and rare ones are one-of-N: if it is shiny, there
-                // is one of it. The super secret costs a wall charge and is found, not given, so it
-                // is the one discovery-time reward worth arguing over.
-                floor.pedestals.arm(floor, room,
-                        room.type() == RoomType.SUPER_SECRET
-                                ? ClaimPolicy.Kind.ONE_OF_N : ClaimPolicy.Kind.PER_PLAYER,
-                        lootTable(loot));
+            if (room.type() == RoomType.TREASURE) {
+                // Not a pedestal any more: the treasure room is a three-stand choice, each player
+                // takes one (PISOS §66). Secrets keep the single-pedestal reward below.
+                floor.treasure.arm(floor, room);
+            } else {
+                var loot = es.boffmedia.teras.dungeon.piso.MarkerContract.lootSource(room.type());
+                if (loot != null) {
+                    // A found reward is a single pedestal: per-player for a secret, one-of-N for the
+                    // super secret, which costs a wall charge and is the one worth arguing over.
+                    floor.pedestals.arm(floor, room,
+                            room.type() == RoomType.SUPER_SECRET
+                                    ? ClaimPolicy.Kind.ONE_OF_N : ClaimPolicy.Kind.PER_PLAYER,
+                            lootTable(loot));
+                }
             }
             if (room.type() == RoomType.CURSE) {
                 // No toll here any more: the price is a heart at the spiked doorway, paid by

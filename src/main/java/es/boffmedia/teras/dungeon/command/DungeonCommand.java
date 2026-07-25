@@ -53,6 +53,11 @@ import java.util.Set;
  */
 @EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonCommand {
+
+    /** Fixed-width font for the floor printout — see {@link #mapa}. */
+    private static final net.minecraft.resources.ResourceLocation MAP_FONT =
+            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                    es.boffmedia.teras.Teras.MOD_ID, "mapa");
     private DungeonCommand() {}
 
     private static final int PERMISSION_LEVEL = 2;
@@ -486,14 +491,14 @@ public final class DungeonCommand {
 
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults()
+            layout = DungeonGenerator.generate(es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig()
                             .withShapeWeights(plan.piso().pesoFormas())
                             .withExitRoom(es.boffmedia.teras.dungeon.build.RoomTemplates
                                     .hasExitRoom(plan.piso()))
                             .withForceBossQuad(plan.piso().shapes()
                                     .contains(es.boffmedia.teras.dungeon.model.RoomShape.QUAD)),
-                    es.boffmedia.teras.dungeon.gen.FloorDepth.of(
-                            GenConfig.defaults(), stage, dungeon.length()),
+                    es.boffmedia.teras.dungeon.gen.FloorDepth.ofStage(
+                            es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig(), dungeon.primerPiso(), stage),
                     floorCurses, plan.piso().shapes(), genSeed);
         } catch (DungeonGenerationException e) {
             ctx.getSource().sendFailure(Component.literal("Generación fallida: " + e.getMessage()));
@@ -512,7 +517,7 @@ public final class DungeonCommand {
             ctx.getSource().sendSystemMessage(Component.literal("§eAviso: " + warning));
         }
         if (mode == Mode.PREVIEW) {
-            ctx.getSource().sendSuccess(() -> Component.literal(LayoutAscii.render(layout)), false);
+            ctx.getSource().sendSuccess(() -> mapa(LayoutAscii.render(layout)), false);
             return 1;
         }
 
@@ -527,11 +532,27 @@ public final class DungeonCommand {
             player.sendSystemMessage(Component.literal(
                     "§aMazmorra " + built.id() + " construida: " + built.layout().rooms().size()
                             + " salas, semilla " + built.layout().seedString()));
-            player.sendSystemMessage(Component.literal(LayoutAscii.render(built.layout())));
+            player.sendSystemMessage(mapa(LayoutAscii.render(built.layout())));
         });
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "Construyendo mazmorra " + id + " (" + layout.rooms().size() + " salas)…"), false);
         return 1;
+    }
+
+    /**
+     * The floor printout, in a font whose columns are columns.
+     *
+     * <p>No stock font is fixed-width: Minecraft derives a glyph's advance from its <i>ink</i>
+     * ({@code UnihexProvider.Glyph.getAdvance()} is {@code width / 2 + 1} over the columns that
+     * actually have pixels), so against {@code minecraft:uniform} every glyph this map uses
+     * advances 4px except {@code █}, which reaches column 0 and advances 5, and {@code !}, which is
+     * one column wide and advances 1. A pixel per cell is enough to walk a room out from under its
+     * own column by the far side of the grid, which is how a connected boss comes to read as
+     * sealed. {@code assets/teras/font/mapa.json} pins every advance with {@code size_overrides}
+     * instead of trusting the ink.</p>
+     */
+    private static Component mapa(String printout) {
+        return Component.literal(printout).withStyle(style -> style.withFont(MAP_FONT));
     }
 
     private static int list(CommandContext<CommandSourceStack> ctx) {
@@ -543,7 +564,7 @@ public final class DungeonCommand {
         }
         for (BuiltDungeon dungeon : built) {
             ctx.getSource().sendSuccess(() -> Component.literal(
-                    "#" + dungeon.id() + " — etapa " + dungeon.layout().stage()
+                    "#" + dungeon.id() + " — etapa " + dungeon.layout().floor()
                             + ", semilla " + dungeon.layout().seedString()
                             + ", " + dungeon.dimension().location()
                             + " @ " + dungeon.origin().toShortString()), false);
@@ -783,7 +804,7 @@ public final class DungeonCommand {
         }
         int first = slot < 0 ? 0 : slot;
         int last = slot < 0 ? DungeonsConfig.maxSlots() - 1 : slot;
-        int grid = es.boffmedia.teras.dungeon.gen.GenConfig.defaults().gridSize();
+        int grid = DungeonsConfig.genConfig().gridSize();
         int slots = 0;
         int cells = 0;
         for (int s = first; s <= last; s++) {

@@ -59,6 +59,15 @@ public final class PisoCatalog {
     private static Map<String, List<String>> mismatched = new LinkedHashMap<>();
     private static Map<String, DungeonDef> dungeons = new LinkedHashMap<>();
 
+    /**
+     * How deep the canonical sequence goes, so a dungeon window past its end is refused here.
+     * Read per call, not captured at class-init: the curve comes from config.yml, and this class
+     * can load before or after it.
+     */
+    private static int canonicalFloors() {
+        return es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig().canonicalFloors();
+    }
+
     /** One entry of the retired {@code salas} block. */
     private record LegacyVariant(String template, double weight) {}
 
@@ -143,7 +152,7 @@ public final class PisoCatalog {
         // A dungeon whose tramo has lost every piso can no longer build a floor; say so once here
         // rather than when a party is standing at the entrance.
         for (DungeonDef dungeon : dungeons.values()) {
-            List<String> problems = dungeon.problems(pisos);
+            List<String> problems = dungeon.problems(pisos, canonicalFloors());
             if (!problems.isEmpty()) {
                 Teras.LOGGER.error("Dungeons: mazmorra '{}' cannot run — {}",
                         dungeon.id(), String.join("; ", problems));
@@ -548,7 +557,7 @@ public final class PisoCatalog {
             if (dungeon == null) {
                 continue;
             }
-            List<String> problems = dungeon.problems(pisos);
+            List<String> problems = dungeon.problems(pisos, canonicalFloors());
             if (!problems.isEmpty()) {
                 Teras.LOGGER.error("Dungeons: mazmorra '{}' is unusable — {}",
                         id, String.join("; ", problems));
@@ -579,7 +588,8 @@ public final class PisoCatalog {
                         strings(tramo.get("jefes")),
                         strings(tramo.get("minijefes"))));
             }
-            return new DungeonDef(id, string(json, "nombre", id), tramos);
+            return new DungeonDef(id, string(json, "nombre", id),
+                    json.has("primerPiso") ? json.get("primerPiso").getAsInt() : 1, tramos);
         } catch (Exception e) {
             Teras.LOGGER.error("Dungeons: could not read mazmorra '{}': {}", id, e.toString());
             return null;
@@ -913,7 +923,7 @@ public final class PisoCatalog {
         // sharing the instances is safe.
         shipped = new LinkedHashMap<>(pisos);
         dungeons = new LinkedHashMap<>();
-        dungeons.put("cripta", new DungeonDef("cripta", "La Cripta", List.of(
+        dungeons.put("cripta", new DungeonDef("cripta", "La Cripta", 1, List.of(
                 new TierDef(2, 1.0,
                         List.of(new WeightedRef("cuevas", 3),
                                 new WeightedRef("cuevas_infestadas", 1)),
@@ -1214,6 +1224,7 @@ public final class PisoCatalog {
         for (DungeonDef dungeon : dungeons.values()) {
             JsonObject json = new JsonObject();
             json.addProperty("nombre", dungeon.nombre());
+            json.addProperty("primerPiso", dungeon.primerPiso());
             JsonArray tramos = new JsonArray();
             for (TierDef tier : dungeon.tramos()) {
                 JsonObject tramo = new JsonObject();

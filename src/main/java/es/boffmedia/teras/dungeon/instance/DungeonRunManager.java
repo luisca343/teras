@@ -126,13 +126,13 @@ public final class DungeonRunManager {
 
         DungeonLayout layout;
         try {
-            layout = DungeonGenerator.generate(GenConfig.defaults()
+            layout = DungeonGenerator.generate(es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig()
                             .withShapeWeights(plan.piso().pesoFormas())
                             .withExitRoom(es.boffmedia.teras.dungeon.build.RoomTemplates
                                     .hasExitRoom(plan.piso()))
                             .withForceBossQuad(plan.piso().shapes()
                                     .contains(es.boffmedia.teras.dungeon.model.RoomShape.QUAD)),
-                    FloorDepth.of(GenConfig.defaults(), stage, dungeon.length()),
+                    FloorDepth.ofStage(es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig(), dungeon.primerPiso(), stage),
                     plan.curses(), plan.piso().shapes(), runSeed,
                     // Nobody has played anything yet, so the ledger is empty and the floor blank —
                     // which still leaves him his base chance. He may visit the first floor.
@@ -283,13 +283,13 @@ public final class DungeonRunManager {
                 completeRun(server, run);
                 return;
             }
-            newLayout = DungeonGenerator.generate(GenConfig.defaults()
+            newLayout = DungeonGenerator.generate(es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig()
                             .withShapeWeights(plan.piso().pesoFormas())
                             .withExitRoom(es.boffmedia.teras.dungeon.build.RoomTemplates
                                     .hasExitRoom(plan.piso()))
                             .withForceBossQuad(plan.piso().shapes()
                                     .contains(es.boffmedia.teras.dungeon.model.RoomShape.QUAD)),
-                    FloorDepth.of(GenConfig.defaults(), next, dungeon.length()),
+                    FloorDepth.ofStage(es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig(), dungeon.primerPiso(), next),
                     plan.curses(), plan.piso().shapes(), run.layout().seedString(),
                     // Read now, at the descent — the one moment every input is finally known: the
                     // floor just played has been scored and any deal or refusal on it recorded.
@@ -467,7 +467,7 @@ public final class DungeonRunManager {
             SLOTS.clear(run.slot());
             return;
         }
-        int grid = GenConfig.defaults().gridSize();
+        int grid = es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig().gridSize();
         DungeonMaterializer.enqueuePadClear(level, padOrigin(run.slot(), 0), grid, () -> { });
         DungeonMaterializer.enqueuePadClear(level, padOrigin(run.slot(), 1), grid, () -> {
             RunJournal.delete(run.id());

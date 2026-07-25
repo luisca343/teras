@@ -1,0 +1,12 @@
+{
+  "providers": [
+    {
+      "type": "unihex",
+      "hex_file": "minecraft:font/unifont.zip",
+      "size_overrides": [
+        { "from": " ", "to": "~", "left": 0, "right": 7 },
+        { "from": "─", "to": "□", "left": 0, "right": 7 }
+      ]
+    }
+  ]
+}

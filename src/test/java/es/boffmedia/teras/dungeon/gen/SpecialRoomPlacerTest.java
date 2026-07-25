@@ -8,6 +8,8 @@ import es.boffmedia.teras.dungeon.model.RoomType;
 import es.boffmedia.teras.dungeon.model.SeededRng;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -68,13 +70,48 @@ class SpecialRoomPlacerTest {
     @Test
     void placeAssignsBossFarthestAndRequiredRooms() {
         GenConfig config = GenConfig.defaults();
-        SeededRng rng = new SeededRng(7);
-        RoomGrid grid = RoomCarver.carve(config, 22, 6, ALL_SHAPES, rng);
-        SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 3), ALL_SHAPES, rng);
+        for (int seed = 0; seed < 200; seed++) {
+            SeededRng rng = new SeededRng(seed);
+            RoomGrid grid = RoomCarver.carve(config, 22, 6, ALL_SHAPES, rng);
+            SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 3), ALL_SHAPES, rng);
 
-        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.BOSS));
-        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SHOP)
-                || grid.rooms().stream().anyMatch(r -> r.type() == RoomType.TREASURE));
+            Room boss = firstOfType(grid, RoomType.BOSS);
+            assertNotNull(boss, "seed " + seed + " placed no boss");
+            assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SHOP),
+                    "seed " + seed + " placed no shop");
+            assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.TREASURE),
+                    "seed " + seed + " placed no treasure");
+
+            // The invariant the feature name always claimed but never checked: no special
+            // destination sits beyond the boss. Every special room is a 1×1 dead end, and the boss
+            // claims the farthest dead end, so they are all nearer by construction — this is the bug
+            // that is fixed (SUPER_SECRET/SHOP used to take the dead ends beyond a non-growable
+            // boss). NORMAL rooms are maze, not destinations: a multi-cell one can incidentally poke
+            // a cell deeper, which is harmless and measured separately. The exit and its satellites
+            // do not exist yet — they are appended after validation, behind the boss.
+            Map<GridPos, Integer> distances = grid.distancesFromCenter();
+            int bossDistance = maxDistance(boss, distances);
+            for (Room room : grid.rooms()) {
+                if (room == boss || room.type().isSecret() || !room.type().isSpecial()) {
+                    continue;
+                }
+                assertTrue(maxDistance(room, distances) <= bossDistance,
+                        "seed " + seed + ": " + room.type() + " sits beyond the boss");
+            }
+        }
+    }
+
+    private static Room firstOfType(RoomGrid grid, RoomType type) {
+        return grid.rooms().stream().filter(r -> r.type() == type).findFirst().orElse(null);
+    }
+
+    /** A room's deepest cell from the start; 0 for a room the distance map does not reach. */
+    private static int maxDistance(Room room, Map<GridPos, Integer> distances) {
+        int max = 0;
+        for (GridPos cell : room.cells()) {
+            max = Math.max(max, distances.getOrDefault(cell, 0));
+        }
+        return max;
     }
 
     /** A corridor of rooms ending in a clear corner: the chamber has somewhere to go. */
@@ -166,7 +203,7 @@ class SpecialRoomPlacerTest {
                 chance, chance, chance,
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
                 d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
-                d.referenceLength(), d.finalStageRooms(), d.maxAttempts(), d.exitRoom(),
+                d.celdas(), d.jitter(), d.maxAttempts(), d.exitRoom(),
                 d.postMargin(), d.forceBossQuad());
     }
 

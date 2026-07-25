@@ -41,15 +41,22 @@ public final class DungeonShop {
     private static final class Slot {
         final BlockPos pos;
         final ShopStock.StockKind kind;
-        final int price;
+        final int basePrice;
+        /** The ganga's cut, 0 for a full-price slot (PISOS §66). */
+        int discountPct;
         UUID itemDisplay;
         UUID textDisplay;
         boolean bought;
 
-        Slot(BlockPos pos, ShopStock.StockKind kind, int price) {
+        Slot(BlockPos pos, ShopStock.StockKind kind, int basePrice) {
             this.pos = pos;
             this.kind = kind;
-            this.price = price;
+            this.basePrice = basePrice;
+        }
+
+        /** What the party actually pays — never below one coin, even at a steep discount. */
+        int price() {
+            return Math.max(1, basePrice - basePrice * discountPct / 100);
         }
     }
 
@@ -75,20 +82,50 @@ public final class DungeonShop {
                         + "to its template with the room editor.", room);
                 continue;
             }
-            // Salted by the room's grid position, not its identity: Room has no value hashCode, so
-            // an identity hash would re-roll the same floor's stock differently every launch.
+            // Floor-wise, not per-room (PISOS §66): the inventory is the floor's, so it is salted by
+            // the floor seed alone. There is exactly one shop per floor, and rolling the set as a set
+            // is what lets the planogram guarantee a spread.
             SeededRng rng = new SeededRng(DungeonSeeds.derive(floor.built().layout().baseSeed(),
-                    0x53484F50L + room.anchor().x() * 31L + room.anchor().y()));
-            List<ShopStock.StockKind> rolled = ShopStock.roll(pedestals.size(), rng,
-                    kind -> DungeonsConfig.shopWeight(kind.configKey()));
+                    0x53484F50L));
             int stage = floor.run().stage();
+            List<ShopStock.StockKind> rolled = ShopStock.planogram(pedestals.size(), stage,
+                    DungeonsConfig.shopPremiumStage(), rng,
+                    kind -> DungeonsConfig.shopWeight(kind.configKey()));
+            List<Slot> built = new ArrayList<>();
             for (int i = 0; i < pedestals.size(); i++) {
                 BlockPos pos = floor.built().clampInside(room, pedestals.get(i), 1);
-                Slot slot = new Slot(pos, rolled.get(i),
-                        priceOf(rolled.get(i), stage, floor.run()));
+                built.add(new Slot(pos, rolled.get(i), priceOf(rolled.get(i), stage, floor.run())));
+            }
+            markGanga(built, rng, floor.run().descuentoNivel());
+            for (Slot slot : built) {
                 slots.add(slot);
                 spawnDisplays(floor.level(), slot);
             }
+        }
+    }
+
+    /**
+     * Marks the floor deal — la ganga (PISOS §66). At discount level 0 it appears only with a base
+     * chance and on a single slot; each level the party has earned (the Steam-Sale hook on
+     * {@link es.boffmedia.teras.dungeon.instance.DungeonRun}) makes it certain, then adds a second.
+     * Never the charge or the gamble: the deal should be on something worth deciding about.
+     */
+    private static void markGanga(List<Slot> built, SeededRng rng, int discountLevel) {
+        int chance = Math.min(100, DungeonsConfig.gangaChance() + discountLevel * 100);
+        if (rng.between(0, 99) >= chance) {
+            return;
+        }
+        List<Slot> eligible = new ArrayList<>();
+        for (Slot slot : built) {
+            if (slot.kind != ShopStock.StockKind.ROMPEMUROS
+                    && slot.kind != ShopStock.StockKind.CAJA_SORPRESA) {
+                eligible.add(slot);
+            }
+        }
+        int deals = Math.min(eligible.size(), 1 + Math.max(0, discountLevel - 1));
+        for (int i = 0; i < deals && !eligible.isEmpty(); i++) {
+            eligible.remove(rng.between(0, eligible.size() - 1)).discountPct =
+                    DungeonsConfig.gangaDiscountPct();
         }
     }
 
@@ -112,15 +149,15 @@ public final class DungeonShop {
             if (slot.bought || !RunEngine.isAtFixture(slot.pos, clicked, CLICK_RANGE)) {
                 continue;
             }
-            if (!floor.run().wallet().trySpend(slot.price)) {
-                player.displayClientMessage(Component.literal("§cNecesitas " + slot.price
+            if (!floor.run().wallet().trySpend(slot.price())) {
+                player.displayClientMessage(Component.literal("§cNecesitas " + slot.price()
                         + " monedas — tienes " + floor.run().wallet().coins() + "."), true);
                 RunEngine.playAt(floor, slot.pos, DungeonSound.PURCHASE_DENIED, 1.0f);
                 return true;
             }
             slot.bought = true;
             despawn(floor.level(), slot);
-            apply(floor, player, slot.kind);
+            apply(floor, player, slot);
             RunEngine.playAt(floor, slot.pos, DungeonSound.PURCHASE, 1.2f);
             RunEngine.broadcastWallet(floor);
             return true;
@@ -129,8 +166,8 @@ public final class DungeonShop {
     }
 
     /** What the buyer walks away with. Party-wide for the two map items, personal for the rest. */
-    private void apply(RunEngine.ActiveFloor floor, ServerPlayer player, ShopStock.StockKind kind) {
-        switch (kind) {
+    private void apply(RunEngine.ActiveFloor floor, ServerPlayer player, Slot slot) {
+        switch (slot.kind) {
             case POCION -> give(player, new ItemStack(ItemInit.POCION_VITAL.get()));
             case POCION_MAYOR -> give(player, new ItemStack(ItemInit.POCION_VITAL_MAYOR.get()));
             case MAPA -> {
@@ -162,8 +199,17 @@ public final class DungeonShop {
                 floor.seguro = true;
                 RunEngine.message(floor, "§eSeguro contratado — este piso la muerte cuesta la mitad.");
             }
-            case CAJA_SORPRESA -> RunEngine.rollLootAt(floor, player.blockPosition(),
-                    DungeonsConfig.treasureLootTable());
+            case CAJA_SORPRESA -> {
+                // The gamble, revealed. Ejected onto the pedestal, not dropped loose at the buyer's
+                // feet — loose reward items despawn, the bug the reward pedestals were built to kill.
+                // Its own steady table (no epic jackpot, PISOS §66).
+                for (ItemStack won : RunEngine.rollLoot(floor, DungeonsConfig.gambleLootTable())) {
+                    RunEngine.ejectTo(floor, player, slot.pos, won);
+                }
+                RunEngine.broadcastWallet(floor);
+                RunEngine.message(floor, "§d" + player.getName().getString()
+                        + " abre la caja sorpresa.");
+            }
         }
     }
 
@@ -203,9 +249,22 @@ public final class DungeonShop {
     }
 
     private void spawnDisplays(ServerLevel level, Slot slot) {
-        Entity item = DungeonDisplays.spawnItem(level, slot.pos, 1.2, iconOf(slot.kind));
-        Entity text = DungeonDisplays.spawnText(level, slot.pos, 1.9,
-                Component.literal(labelOf(slot.kind) + " §e" + slot.price + "⛁"));
+        // The gamble hides what it holds — that is the gamble. A sealed box over its pedestal, its
+        // real reward not rolled until it is bought.
+        boolean gamble = slot.kind == ShopStock.StockKind.CAJA_SORPRESA;
+        ItemStack icon = gamble ? new ItemStack(net.minecraft.world.item.Items.CHEST)
+                : iconOf(slot.kind);
+        Component label;
+        if (slot.discountPct > 0) {
+            // The ganga: struck-through sticker, the deal in gold, so the floor's one bargain reads
+            // from across the room.
+            label = Component.literal("§6¡Ganga! " + labelOf(slot.kind) + " §m§7" + slot.basePrice
+                    + "§r §e" + slot.price() + "⛁");
+        } else {
+            label = Component.literal(labelOf(slot.kind) + " §e" + slot.price() + "⛁");
+        }
+        Entity item = DungeonDisplays.spawnItem(level, slot.pos, 1.2, icon);
+        Entity text = DungeonDisplays.spawnText(level, slot.pos, 1.9, label);
         slot.itemDisplay = item == null ? null : item.getUUID();
         slot.textDisplay = text == null ? null : text.getUUID();
     }
@@ -260,7 +319,7 @@ public final class DungeonShop {
             case BENDICION_VELOCIDAD -> "§fVelocidad";
             case FENIX -> "§6Fénix";
             case SEGURO -> "§eSeguro";
-            case CAJA_SORPRESA -> "§dCaja sorpresa";
+            case CAJA_SORPRESA -> "§d¿? Caja";
         };
     }
 

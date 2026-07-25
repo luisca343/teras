@@ -16,12 +16,14 @@ import java.util.Map;
 /**
  * Special-room placement on carved floors, ported from the legacy {@code
  * DungeonGenerator.placeSpecialRooms}: 1×1 NORMAL dead ends are claimed farthest-first in the order
- * BOSS, SUPER_SECRET, SHOP, CURSE?, MINI_BOSS?, CHALLENGE?, TREASURE. Two departures from legacy,
- * both from the 2×2 boss chamber: the boss takes the farthest dead end its chamber actually
- * <i>fits</i> into ({@link #claimBoss}), and the treasure takes the nearest one left rather than
- * the next in order, so it can never end up beyond a boss no longer chosen by distance. Treasure
- * keeps its add-a-dead-end fallback that hands the new room to the boss instead when it lands
- * farther out. The SECRET room converts the empty cell touching the most rooms.
+ * BOSS, SUPER_SECRET, SHOP, CURSE?, MINI_BOSS?, CHALLENGE?, TREASURE. The <b>boss takes the farthest
+ * dead end outright</b> ({@link #claimBoss}), so it is the deepest point of the playfield and every
+ * special sits nearer than it — the 2×2 chamber is kept not by choosing a growable dead end but by
+ * the reroll ({@link LayoutValidator#checkBossQuad} rejects a floor whose farthest boss did not
+ * grow). The treasure takes the nearest dead end left rather than the next in order, a second guard
+ * that it never ends up beyond the boss, and keeps its add-a-dead-end fallback that hands the new
+ * room to the boss when it lands farther out. The SECRET room converts the empty cell touching the
+ * most rooms.
  *
  * <p>Placement makes no promises: when dead ends run short, rooms are simply not placed (as in
  * legacy, where a floor could silently lack its shop). The validator now runs on every floor and
@@ -36,42 +38,50 @@ final class SpecialRoomPlacer {
         Map<GridPos, Integer> distances = grid.distancesFromCenter();
         List<Room> deadEnds = normalDeadEnds(grid, distances);
 
-        Room boss = claimBoss(grid, deadEnds);
+        Room boss = claimBoss(deadEnds);
+
+        // The treasure's dead end is reserved before anything else is claimed. It is the only
+        // special room the validator errors on, so a floor that spent its last dead end on an
+        // arcade is not a floor with one room missing — it is a whole layout thrown away and
+        // rerolled. The side-room comment below always said the treasure outranks them; the guard
+        // said only "if any dead end is left", which is not the same thing once a small floor has
+        // exactly as many dead ends as there are rooms wanting one.
+        int spendable = deadEnds.size() - 1;
 
         int index = 0;
-        if (index < deadEnds.size()) {
+        if (index < spendable) {
             deadEnds.get(index++).setType(RoomType.SUPER_SECRET);
         }
-        if (index < deadEnds.size()) {
+        if (index < spendable) {
             deadEnds.get(index++).setType(RoomType.SHOP);
         }
-        if (index < deadEnds.size() && rng.chance(config.curseRoomChance())) {
+        if (index < spendable && rng.chance(config.curseRoomChance())) {
             deadEnds.get(index++).setType(RoomType.CURSE);
         }
-        if (index < deadEnds.size() && rng.chance(miniBossChance(config, depth))) {
+        if (index < spendable && rng.chance(miniBossChance(config, depth))) {
             deadEnds.get(index++).setType(RoomType.MINI_BOSS);
         }
-        if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.challengeRoomChance())) {
+        if (index < spendable && !depth.isFirst() && rng.chance(config.challengeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.CHALLENGE);
         }
         // The three optional side rooms, claimed after the classics and before the treasure so a
         // short floor loses these rather than something the validator requires. Arcade and devil
         // deal wait for stage 2: on the first floor a party has neither the coins to gamble nor
         // the health to sell.
-        if (index < deadEnds.size() && rng.chance(config.sacrificeRoomChance())) {
+        if (index < spendable && rng.chance(config.sacrificeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.SACRIFICE);
         }
-        if (index < deadEnds.size() && !depth.isFirst() && rng.chance(config.arcadeRoomChance())) {
+        if (index < spendable && !depth.isFirst() && rng.chance(config.arcadeRoomChance())) {
             deadEnds.get(index++).setType(RoomType.ARCADE);
         }
         // Only when the piso has no sala del sello to hang it off: with an exit, El Acreedor moves
         // to the exit's flank ({@code PostRooms.appendDevilSatellite}) instead of the playfield.
-        if (index < deadEnds.size() && !depth.isFirst() && !config.exitRoom()
+        if (index < spendable && !depth.isFirst() && !config.exitRoom()
                 && rng.chance(config.devilDealChance())) {
             deadEnds.get(index++).setType(RoomType.DEVIL_DEAL);
         }
 
-        if (index < deadEnds.size()) {
+        if (!deadEnds.isEmpty()) {
             // The nearest unclaimed dead end, not the next one in order. Sequential worked only
             // while the boss was guaranteed to be dead end 0; now that it is chosen by chamber
             // space, taking the next in a farthest-first list can hand the treasure a room beyond
@@ -174,27 +184,25 @@ final class SpecialRoomPlacer {
     }
 
     /**
-     * The boss claims the farthest dead end <b>that has room for its chamber</b>, rather than the
-     * farthest outright. Measured over 400 floors, the farthest dead end could grow on only 29% of
-     * them — but on 94% <i>some</i> dead end could, so insisting on the farthest bought nothing and
-     * cost the chamber three times out of four. Picking this way lands it at 92–95% across stages.
-     * It still comes from the same farthest-first list, so the boss stays deep in the floor.
+     * The boss claims the <b>farthest</b> dead end, full stop — so it is the deepest point of the
+     * playfield <i>by construction</i>, and every special below draws from a nearer one. Nothing the
+     * player can walk to sits beyond the boss (the exit and its satellites are appended after
+     * validation, behind the boss on purpose — the reward chamber past it).
      *
-     * <p>Growability is re-checked at growth time: the treasure fallback can add a dead end that
-     * spoils the pick, and a boss that ends up 1×1 is a worse floor, not a broken one.</p>
+     * <p>This replaces an earlier "farthest that can grow its 2×2 chamber" pick, which was a real
+     * bug: when the farthest dead end could not grow (measured ~71% of floors), the boss landed on a
+     * nearer one and {@code SUPER_SECRET}/{@code SHOP} took the dead ends beyond it. Growability is
+     * no longer this method's concern — it belongs to the reroll: a piso that builds 2×2 rooms sets
+     * {@link GenConfig#forceBossQuad()}, {@link LayoutValidator#checkBossQuad} rejects a floor whose
+     * (now farthest) boss did not grow, and the generator rerolls onto one where it did.
+     * {@link #growBossRoom} still grows the pick when it can, and a piso without 2×2 rooms simply
+     * keeps a 1×1 boss at the farthest dead end.</p>
      */
-    private static Room claimBoss(RoomGrid grid, List<Room> deadEnds) {
+    private static Room claimBoss(List<Room> deadEnds) {
         if (deadEnds.isEmpty()) {
             return null;
         }
-        int chosen = 0;
-        for (int i = 0; i < deadEnds.size(); i++) {
-            if (!growableAnchors(grid, deadEnds.get(i)).isEmpty()) {
-                chosen = i;
-                break;
-            }
-        }
-        Room boss = deadEnds.remove(chosen);
+        Room boss = deadEnds.remove(0);
         boss.setType(RoomType.BOSS);
         return boss;
     }

@@ -1,67 +1,67 @@
 package es.boffmedia.teras.dungeon.gen;
 
 /**
- * Where a floor sits in its run, for the generator. Three questions that used to be one {@code int
- * stage} and are only the same number in a dungeon of the reference length:
+ * Which floor of the canonical sequence this is. Not which floor of the current <i>run</i> — the
+ * generator is never told that, and the distinction is the whole point of this type.
  *
- * <ul>
- *   <li>{@link #isFirst()} — the party's first floor, with no coins and no gear yet. What
- *       {@code SpecialRoomPlacer} means when it withholds the shop, arcade and devil deal.</li>
- *   <li>{@link #isFinal()} — the last floor of <i>this</i> dungeon, whatever its length.</li>
- *   <li>{@link #curveStage()} — how deep this floor is <i>proportionally</i>, which is what the
- *       room-count and difficulty curves are authored against.</li>
- * </ul>
+ * <p>A dungeon is a <b>window</b> onto one canonical sequence of {@code canonicalFloors} floors: it
+ * declares where it opens ({@code primerPiso}) and how many floors it spans, and its stage
+ * {@code n} is canonical floor {@code primerPiso + n - 1}. Everything generation decides —
+ * the cell budget, whether the shop is withheld, the seed — reads that absolute number, so floor 10
+ * builds the same whether it was reached at stage 10 of the full descent or opened directly by a
+ * one-floor challenge.</p>
  *
- * <p>The curve is authored for a {@code referenceLength}-floor dungeon, so a dungeon of another
- * length has its floors mapped onto it: a six-floor dungeon's third floor sits where a twelve-floor
- * dungeon's sixth does. Without this a two-floor dungeon would generate two starter floors and never
- * reach its own climax, and a twenty-floor one would plateau by a quarter of the way in.</p>
+ * <p>The predecessor of this record carried the run-relative stage plus the dungeon's own length and
+ * mapped one onto the other proportionally, so a two-floor dungeon's opening floor generated as
+ * floor six and its second as the twelfth. Two floors are not a twelve-floor descent compressed;
+ * they are floors one and two. Run position and floor identity are separate facts, and only the
+ * second belongs here — which is why there is no {@code stage} field to reach for.</p>
  *
- * <p>The last floor always maps exactly onto the reference length — {@code length * ref / length} —
- * so "the final floor" and "the end of the curve" cannot drift apart however odd the length.</p>
+ * @param floor          1-based position in the canonical sequence
+ * @param canonicalFloors how deep the canonical sequence goes, so {@link #isFinal()} has a meaning
+ *                        that does not change with the window looking at it
  */
-public record FloorDepth(int stage, int dungeonLength, int referenceLength) {
+public record FloorDepth(int floor, int canonicalFloors) {
 
     public FloorDepth {
-        if (stage < 1) {
-            throw new IllegalArgumentException("stage is 1-based: " + stage);
+        if (floor < 1) {
+            throw new IllegalArgumentException("floor is 1-based: " + floor);
         }
-        if (dungeonLength < 1) {
-            throw new IllegalArgumentException("dungeonLength must be positive: " + dungeonLength);
-        }
-        if (referenceLength < 1) {
-            throw new IllegalArgumentException("referenceLength must be positive: " + referenceLength);
+        if (canonicalFloors < 1) {
+            throw new IllegalArgumentException("canonicalFloors must be positive: " + canonicalFloors);
         }
     }
 
-    /** A floor of a dungeon exactly as long as the curve was authored for. */
-    public static FloorDepth of(GenConfig config, int stage) {
-        return new FloorDepth(stage, config.referenceLength(), config.referenceLength());
-    }
-
-    /** A floor of a dungeon of any length. */
-    public static FloorDepth of(GenConfig config, int stage, int dungeonLength) {
-        return new FloorDepth(stage, dungeonLength, config.referenceLength());
-    }
-
-    public boolean isFirst() {
-        return stage == 1;
-    }
-
-    public boolean isFinal() {
-        return stage == dungeonLength;
-    }
-
-    public boolean isValid() {
-        return stage >= 1 && stage <= dungeonLength;
+    /** The canonical floor {@code floor}, against the sequence {@code config} describes. */
+    public static FloorDepth of(GenConfig config, int floor) {
+        return new FloorDepth(floor, config.canonicalFloors());
     }
 
     /**
-     * This floor's position on the authored difficulty curve, in {@code 1..referenceLength}.
-     * Identical to {@link #stage()} when the dungeon is the reference length.
+     * The canonical floor a dungeon's stage lands on: a window opening at {@code primerPiso} maps
+     * its stage 1 to that floor, its stage 2 to the next, and so on.
      */
-    public int curveStage() {
-        int mapped = stage * referenceLength / dungeonLength;
-        return Math.max(1, Math.min(referenceLength, mapped));
+    public static FloorDepth ofStage(GenConfig config, int primerPiso, int stage) {
+        return new FloorDepth(primerPiso + stage - 1, config.canonicalFloors());
+    }
+
+    /**
+     * The sequence's opening floor, where the party has no coins and no gear yet. What
+     * {@code SpecialRoomPlacer} means when it withholds the challenge room, the arcade and the
+     * devil deal, and boosts the mini-boss instead — the shop and the treasure are placed on every
+     * floor, this one included. A property of floor one itself, so a challenge that opens deeper
+     * does not inherit it.
+     */
+    public boolean isFirst() {
+        return floor == 1;
+    }
+
+    /** The sequence's last floor. A run can end anywhere; only this floor is the finale. */
+    public boolean isFinal() {
+        return floor == canonicalFloors;
+    }
+
+    public boolean isValid() {
+        return floor >= 1 && floor <= canonicalFloors;
     }
 }

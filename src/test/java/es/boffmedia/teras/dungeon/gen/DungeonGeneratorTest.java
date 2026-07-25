@@ -56,7 +56,7 @@ class DungeonGeneratorTest {
     @Test
     void layoutEchoesItsInputs() {
         DungeonLayout layout = DungeonGenerator.generate(CONFIG, 6, Set.of(Curse.LABYRINTH), "echo");
-        assertEquals(6, layout.stage());
+        assertEquals(6, layout.floor());
         assertEquals(Set.of(Curse.LABYRINTH), layout.curses());
         assertEquals("echo", layout.seedString());
         assertTrue(layout.attempt() < CONFIG.maxAttempts());

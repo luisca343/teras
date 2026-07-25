@@ -44,27 +44,29 @@ class GenerationInvariantsTest {
     }
 
     /**
-     * The 2x2 chamber is the point of the feature and its constraint is strict enough — three free
-     * cells that themselves touch nothing — that a tightening elsewhere could silently switch it
-     * off. Pinned as a rate rather than per seed: a floor with nowhere to put the chamber correctly
-     * keeps a 1x1 boss.
+     * The 2×2 chamber, on the production path. The boss now claims the farthest dead end outright,
+     * which grows on its own only ~29% of the time — so the guarantee moved to the reroll: a piso
+     * that builds 2×2 rooms sets {@code forceBossQuad}, {@link LayoutValidator#checkBossQuad} rejects
+     * a floor whose farthest boss did not grow, and the generator rerolls onto one where it did. The
+     * result is a boss that is both the deepest room <b>and</b> a 2×2 on nearly every floor; the rare
+     * miss is the {@code forceBossQuad(false)} fallback (a 1×1 boss, still at the farthest).
      *
-     * <p>Measured at 92–95% across stages once the boss started claiming the farthest dead end that
-     * can actually grow rather than the farthest outright; it was 29% before. The bar sits well
-     * under that so ordinary generation drift does not fail the build, but a regression to the old
-     * pick-then-hope behaviour would.</p>
+     * <p>Swept with {@code forceBossQuad}, the way every quad piso runs. Without the reroll the rate
+     * would be the placer's own ~29%, which is the point: this pins that production does not ship
+     * that.</p>
      */
     @Test
     void theBossChamberGrowsIntoAQuadOnMostFloors() {
+        GenConfig config = CONFIG.withForceBossQuad(true);
         int floors = 200;
         int quads = 0;
         for (int i = 0; i < floors; i++) {
-            DungeonLayout layout = DungeonGenerator.generate(CONFIG, 6, Set.of(), "grow-" + i);
+            DungeonLayout layout = DungeonGenerator.generate(config, 6, Set.of(), "grow-" + i);
             if (layout.roomOfType(RoomType.BOSS).orElseThrow().shape() == RoomShape.QUAD) {
                 quads++;
             }
         }
-        assertTrue(quads >= floors * 85 / 100,
+        assertTrue(quads >= floors * 98 / 100,
                 "boss grew on only " + quads + " of " + floors + " floors");
     }
 
@@ -142,11 +144,13 @@ class GenerationInvariantsTest {
     }
 
     /**
-     * With the boss forced to 2×2, the reroll turns the ~92–95% natural growth into a near-
-     * guarantee — every floor but the rare one where a 2×2 boss and the dead-end minimum cannot
-     * both be met, which falls back to a 1×1 boss rather than failing the run (~3 in 100k, all
-     * stage 1). Pinned as a rate so the fallback cannot flake the build, and so a regression that
-     * quietly stopped forcing the quad would fail it.
+     * With the boss forced to 2×2, the reroll makes the quad a near-guarantee. The bar is looser
+     * than the old 99.9% on purpose: the boss now claims the <b>farthest</b> dead end, which grows
+     * on its own only ~29% of the time, so the reroll has to find a floor where <i>that</i> dead end
+     * is growable rather than any. On small early floors it sometimes cannot within the attempt
+     * budget and falls back to a 1×1 boss — still at the farthest, so the invariant that matters
+     * holds; only the chamber shrinks. Pinned so the fallback cannot flake the build and a
+     * regression that quietly stopped forcing the quad still fails it.
      */
     @Test
     void forcedBossQuadIsAQuadSaveTheRareFallback() {
@@ -164,7 +168,7 @@ class GenerationInvariantsTest {
                 }
             }
         }
-        assertTrue(quad >= floors * 999 / 1000, quad + " of " + floors + " bosses are 2×2");
+        assertTrue(quad >= floors * 98 / 100, quad + " of " + floors + " bosses are 2×2");
     }
 
     /** The margin ring exists on every floor — post-room space is uniform, exit or not. */

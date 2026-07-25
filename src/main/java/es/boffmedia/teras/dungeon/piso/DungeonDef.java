@@ -4,18 +4,23 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A whole dungeon: an ordered list of tramos, and nothing else that decides how long it is.
+ * A whole dungeon: a <b>window</b> onto the canonical floor sequence. It declares where it opens
+ * ({@code primerPiso}) and, through its tramos, how many floors it spans.
  *
- * <p>Length is <b>emergent</b> — the sum of its tramos' {@code largo}. That is why
- * {@code GenConfig.finalStage} is deleted rather than made configurable: "the last floor" stopped
- * being a constant the moment two dungeons could differ, and a number declared in two places drifts.
- * </p>
+ * <p>Length is <b>emergent</b> — the sum of its tramos' {@code largo} — but length does not decide
+ * how a floor generates. That is the distinction the two numbers here exist to keep: a
+ * <i>stage</i> is a position in this run, a <i>floor</i> is a position in the sequence, and only
+ * the second reaches the generator. A one-tramo dungeon at {@code primerPiso 10} is the tenth floor
+ * of the descent played on its own, not a first floor; a two-floor dungeon at {@code primerPiso 1}
+ * is floors one and two, not a twelve-floor descent compressed into two.</p>
  *
- * @param id     config key; folded into the run seed so two dungeons never generate the same floor
- * @param nombre what players are offered at the entrance
- * @param tramos in depth order, first tramo first
+ * @param id         config key; folded into the run seed so two dungeons never generate the same floor
+ * @param nombre     what players are offered at the entrance
+ * @param primerPiso the canonical floor this dungeon's stage 1 lands on. 1 for a dungeon played
+ *                   from the top; higher for a challenge that starts partway down
+ * @param tramos     in depth order, first tramo first
  */
-public record DungeonDef(String id, String nombre, List<TierDef> tramos) {
+public record DungeonDef(String id, String nombre, int primerPiso, List<TierDef> tramos) {
 
     /** Where a floor sits: which tramo owns it, and how deep into that tramo it is. */
     public record Position(int tierIndex, TierDef tier, int indexInTier) {
@@ -36,6 +41,19 @@ public record DungeonDef(String id, String nombre, List<TierDef> tramos) {
 
     public boolean isValidStage(int stage) {
         return stage >= 1 && stage <= length();
+    }
+
+    /**
+     * The canonical floor a stage of this dungeon lands on. The one place run position becomes
+     * floor identity — everything generation-side takes the result, never the stage.
+     */
+    public int floorFor(int stage) {
+        return Math.max(1, primerPiso) + stage - 1;
+    }
+
+    /** The deepest canonical floor this window reaches. */
+    public int lastFloor() {
+        return floorFor(length());
     }
 
     /**
@@ -69,14 +87,26 @@ public record DungeonDef(String id, String nombre, List<TierDef> tramos) {
      * catalog and be usable itself; a dungeon referencing a broken piso is broken, because
      * selection has no fallback to reach for.
      */
-    public List<String> problems(java.util.Map<String, FloorDef> catalog) {
+    public List<String> problems(java.util.Map<String, FloorDef> catalog, int canonicalFloors) {
         List<String> problems = new ArrayList<>();
         if (id == null || id.isBlank()) {
             problems.add("dungeon has no id");
         }
+        if (primerPiso < 1) {
+            problems.add("dungeon '" + id + "' opens on floor " + primerPiso
+                    + "; the sequence is 1-based");
+        }
         if (tramos == null || tramos.isEmpty()) {
             problems.add("dungeon '" + id + "' has no tramos, so it has no floors");
             return problems;
+        }
+        // Caught here rather than clamped in the curve lookup: a window reaching past the sequence
+        // is an authoring mistake, and silently building floor 12 four times over would look like
+        // it worked.
+        if (lastFloor() > canonicalFloors) {
+            problems.add("dungeon '" + id + "' spans floors " + Math.max(1, primerPiso) + "-"
+                    + lastFloor() + ", past the " + canonicalFloors
+                    + " the curve declares; shorten it or extend 'celdas'");
         }
         for (int index = 0; index < tramos.size(); index++) {
             TierDef tier = tramos.get(index);

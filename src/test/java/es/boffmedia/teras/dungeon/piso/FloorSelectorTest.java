@@ -45,7 +45,7 @@ class FloorSelectorTest {
     }
 
     private static DungeonDef cripta() {
-        return new DungeonDef("cripta", "La Cripta", List.of(
+        return new DungeonDef("cripta", "La Cripta", 1, List.of(
                 tier(2, 1.0, new WeightedRef("cuevas", 3), new WeightedRef("infestadas", 1)),
                 tier(2, 1.4, new WeightedRef("cuevas", 1)),
                 tier(2, 1.8, new WeightedRef("infestadas", 1))));
@@ -85,7 +85,7 @@ class FloorSelectorTest {
 
     @Test
     void tramosOfUnequalSpanStillWalk() {
-        DungeonDef odd = new DungeonDef("odd", "Odd", List.of(
+        DungeonDef odd = new DungeonDef("odd", "Odd", 1, List.of(
                 tier(1, 1.0, new WeightedRef("cuevas", 1)),
                 tier(3, 1.5, new WeightedRef("cuevas", 1))));
         assertEquals(4, odd.length());
@@ -234,7 +234,7 @@ class FloorSelectorTest {
     void dungeonIdSeparatesTheSeeds() {
         Map<String, FloorDef> catalog = bothPisos();
         DungeonDef cripta = cripta();
-        DungeonDef minas = new DungeonDef("minas", "Las Minas", cripta.tramos());
+        DungeonDef minas = new DungeonDef("minas", "Las Minas", 1, cripta.tramos());
         FloorPlan a = FloorSelector.select(cripta, catalog, 3, "semilla", Map.of());
         FloorPlan b = FloorSelector.select(minas, catalog, 3, "semilla", Map.of());
         assertNotNull(a);
@@ -263,7 +263,7 @@ class FloorSelectorTest {
     void bossPoolInheritsFromTheTramo() {
         FloorDef plain = piso("cuevas", ALL, Set.of());
         FloorPlan plan = FloorSelector.select(
-                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("cuevas", 1)))),
+                new DungeonDef("d", "D", 1, List.of(tier(2, 1.0, new WeightedRef("cuevas", 1)))),
                 catalog(plain), 1, "s", Map.of());
         assertEquals(List.of("jefe"), plan.jefes());
         assertEquals(List.of("minijefe"), plan.minijefes());
@@ -275,7 +275,7 @@ class FloorSelectorTest {
                 "", "", "infestacion", EnumSet.of(Curse.LOST),
                 List.of("reina_madre"), List.of());
         FloorPlan plan = FloorSelector.select(
-                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
+                new DungeonDef("d", "D", 1, List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
                 catalog(queenPiso), 1, "s", Map.of());
         assertEquals(List.of("reina_madre"), plan.jefes(),
                 "the queen's piso must override, or she never appears");
@@ -302,7 +302,7 @@ class FloorSelectorTest {
                 "", "", "infestacion", EnumSet.of(Curse.LOST),
                 List.of("reina_madre"), List.of(), roster, DecorTables.EMPTY);
         FloorPlan plan = FloorSelector.select(
-                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
+                new DungeonDef("d", "D", 1, List.of(tier(2, 1.0, new WeightedRef("infestadas", 1)))),
                 catalog(withElites), 1, "s", Map.of());
         assertEquals(List.of("tejedora"), plan.minijefes(),
                 "the floor's own elite should be promoted before the tramo's humanoid");
@@ -321,7 +321,7 @@ class FloorSelectorTest {
         FloorDef clones = new FloorDef("cuevas", "Cuevas", "", ALL, 7,
                 "", "", "", Set.of(), List.of(), List.of(), roster, DecorTables.EMPTY);
         FloorPlan plan = FloorSelector.select(
-                new DungeonDef("d", "D", List.of(tier(2, 1.0, new WeightedRef("cuevas", 1)))),
+                new DungeonDef("d", "D", 1, List.of(tier(2, 1.0, new WeightedRef("cuevas", 1)))),
                 catalog(clones), 1, "s", Map.of());
         assertEquals(List.of("minijefe"), plan.minijefes());
     }

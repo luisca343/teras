@@ -10,6 +10,7 @@ import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,6 +49,14 @@ public final class DungeonsConfig {
     private static String superSecretLootTable;
     private static String devilLootTable;
     private static String ordenLootTable;
+    private static String treasureArmaLootTable;
+    private static String treasureVitalidadLootTable;
+    private static int treasureProvisionCoins;
+    private static int treasureProvisionCharges;
+    private static int gangaChance;
+    private static int gangaDiscountPct;
+    private static String gambleLootTable;
+    private static int shopPremiumStage;
     private static String bossLootTable;
     private static String crackBlock;
     private static String spikeBlock;
@@ -66,6 +75,14 @@ public final class DungeonsConfig {
      */
     private static final Map<es.boffmedia.teras.dungeon.model.Curse, Double> CURSE_CHANCES =
             new LinkedHashMap<>();
+
+    /**
+     * Cell budget per canonical floor, index 0 = floor 1, and the 0..jitter spread added to it.
+     * A floor's size is a property of <i>which floor it is</i>, never of how long the run using it
+     * happens to be — see {@code FloorDepth}.
+     */
+    private static List<Integer> celdas = List.of();
+    private static int jitter;
 
     // Coins: what enemies pay, how it is picked up, and what it is worth on the way out.
     private static int coinsNormalMin;
@@ -223,6 +240,12 @@ public final class DungeonsConfig {
             superSecretLootTable = yaml.string("lootSupersecreta", superSecretLootTable);
             devilLootTable = yaml.string("lootTrato", devilLootTable);
             ordenLootTable = yaml.string("lootOrden", ordenLootTable);
+            treasureArmaLootTable = yaml.string("lootTesoroArma", treasureArmaLootTable);
+            treasureVitalidadLootTable = yaml.string("lootTesoroVitalidad",
+                    treasureVitalidadLootTable);
+            treasureProvisionCoins = yaml.integer("tesoroProvisionMonedas", treasureProvisionCoins);
+            treasureProvisionCharges = yaml.integer("tesoroProvisionCargas",
+                    treasureProvisionCharges);
             bossLootTable = yaml.string("lootJefe", bossLootTable);
             crackBlock = yaml.string("bloqueGrieta", crackBlock);
             spikeBlock = yaml.string("bloquePinchos", spikeBlock);
@@ -233,6 +256,29 @@ public final class DungeonsConfig {
             maxParty = Math.max(1, yaml.integer("maxGrupo", maxParty));
             entranceRadius = Math.max(1, yaml.integer("radioEntrada", entranceRadius));
             backendPostEnabled = yaml.bool("enviarResultados", backendPostEnabled);
+
+            YamlConfig gen = yaml.section("generacion");
+            jitter = Math.max(0, gen.integer("jitter", jitter));
+            List<Object> curve = gen.list("celdas");
+            if (!curve.isEmpty()) {
+                List<Integer> parsed = new java.util.ArrayList<>();
+                for (Object cell : curve) {
+                    try {
+                        parsed.add(Integer.parseInt(String.valueOf(cell).trim()));
+                    } catch (NumberFormatException e) {
+                        parsed.clear();
+                        break;
+                    }
+                }
+                // All or nothing: half a curve would silently reshape whichever floors survived
+                // parsing, and a floor quietly changing size is the bug this table was built to end.
+                if (parsed.isEmpty() || parsed.stream().anyMatch(cells -> cells < 1)) {
+                    Teras.LOGGER.error("Dungeons: 'generacion.celdas' is not a list of positive "
+                            + "integers; keeping the built-in curve {}", celdas);
+                } else {
+                    celdas = List.copyOf(parsed);
+                }
+            }
 
             YamlConfig curseBlock = yaml.section("maldiciones");
             for (es.boffmedia.teras.dungeon.model.Curse curse
@@ -263,6 +309,10 @@ public final class DungeonsConfig {
                 shopWeights.put(kind, shopWeightBlock.integer(kind, shopWeights.get(kind)));
                 shopPrices.put(kind, shopPriceBlock.integer(kind, shopPrices.get(kind)));
             }
+            gangaChance = shop.integer("gangaProbabilidad", gangaChance);
+            gangaDiscountPct = shop.integer("gangaDescuentoPct", gangaDiscountPct);
+            gambleLootTable = shop.string("lootCaja", gambleLootTable);
+            shopPremiumStage = shop.integer("pisoPremium", shopPremiumStage);
 
             YamlConfig challenge = yaml.section("desafio");
             challengeWaves = Math.max(1, challenge.integer("oleadasBase", challengeWaves));
@@ -300,6 +350,8 @@ public final class DungeonsConfig {
     }
 
     private static void resetToDefaults() {
+        celdas = es.boffmedia.teras.dungeon.gen.GenConfig.defaults().celdas();
+        jitter = es.boffmedia.teras.dungeon.gen.GenConfig.defaults().jitter();
         roomSize = 21;
         roomHeight = 12;
         doorWidth = 3;
@@ -339,6 +391,21 @@ public final class DungeonsConfig {
         superSecretLootTable = "teras:dungeon/boss";
         devilLootTable = "teras:dungeon/devil";
         ordenLootTable = "teras:dungeon/orden";
+        // The treasure choice room's three stands (PISOS §66). arma and vitalidad are loot tables
+        // so their bundles are data; provisión is coins + a wall charge, handled in code because
+        // both go to the shared purse rather than into a pocket.
+        treasureArmaLootTable = "teras:dungeon/treasure_arma";
+        treasureVitalidadLootTable = "teras:dungeon/treasure_vitalidad";
+        treasureProvisionCoins = 40;
+        treasureProvisionCharges = 1;
+        // The shop's floor deal and its gamble (PISOS §66). The ganga shows only sometimes at base;
+        // future economy items raise a run's discount level toward always (the Steam-Sale hook, held
+        // on DungeonRun). The gamble draws its own steady table — no epic jackpot. Premium stock
+        // (fénix/seguro) waits until the runs that can afford it.
+        gangaChance = 40;
+        gangaDiscountPct = 30;
+        gambleLootTable = "teras:dungeon/gamble";
+        shopPremiumStage = 3;
         bossLootTable = "teras:dungeon/boss";
         crackBlock = "teras:muro_agrietado";
         spikeBlock = "minecraft:pointed_dripstone";
@@ -402,6 +469,25 @@ public final class DungeonsConfig {
                 alturaSala: 12
                 anchoPuerta: 3
                 altoPuerta: 3
+                # The difficulty curve: how many grid cells each floor of the canonical sequence is
+                # worth, floor 1 first. A 2x2 room spends four cells, so this is not a room count.
+                #
+                # Size is a property of WHICH FLOOR this is, never of how long the run using it is.
+                # A mazmorra declares where it opens with 'primerPiso' in mazmorras.json, so a
+                # one-floor challenge with primerPiso 10 builds floor 10 — the same 30 cells the
+                # full descent gives it — instead of a floor 1. Adding a tramo to a mazmorra
+                # lengthens the run and changes nothing about the floors it already had.
+                #
+                # The list also declares how deep the sequence goes: 12 entries means 12 floors, and
+                # a mazmorra whose window reaches past that is refused at load with an error naming
+                # it. Entries 1-6 are the values the old Isaac formula produced; 7-12 are authored,
+                # and are the reason this is a table at all — the formula flattened everything past
+                # floor 5 to the same size.
+                #
+                # 'jitter' is added on top, 0..n, drawn per floor from the run seed.
+                generacion:
+                  celdas: [10, 13, 17, 20, 22, 22, 24, 26, 28, 30, 34, 40]
+                  jitter: 2
                 # Per-floor curse chances, as percentages. A piso only receives the curses its own
                 # 'maldiciones' accepts, so one every eligible piso refuses never occurs at that depth.
                 maldiciones:
@@ -457,6 +543,13 @@ public final class DungeonsConfig {
                 lootTrato: teras:dungeon/devil
                 lootOrden: teras:dungeon/orden
                 lootJefe: teras:dungeon/boss
+                # The treasure room's three-stand choice (PISOS 66): each player picks one of arma
+                # (a gear piece), vitalidad (potions) or provision (coins + a wall charge). arma and
+                # vitalidad are tables; provision is these two numbers, scaled by floor.
+                lootTesoroArma: teras:dungeon/treasure_arma
+                lootTesoroVitalidad: teras:dungeon/treasure_vitalidad
+                tesoroProvisionMonedas: 40
+                tesoroProvisionCargas: 1
                 # Party play: group size cap, and how close to a marked entrance NPC a player must
                 # stand for 'entrar' to work (also the gather radius for their party members).
                 maxGrupo: 4
@@ -512,6 +605,14 @@ public final class DungeonsConfig {
                     fenix: 40
                     seguro: 8
                     caja_sorpresa: 12
+                  # The floor deal and the gamble (PISOS 66). gangaProbabilidad is the BASE chance a
+                  # shop shows one discounted slot; future economy items raise a run's discount level
+                  # toward always-on (Steam-Sale style). The gamble (caja_sorpresa) draws lootCaja,
+                  # its own steady table. pisoPremium is the floor from which fenix/seguro stock in.
+                  gangaProbabilidad: 40
+                  gangaDescuentoPct: 30
+                  lootCaja: teras:dungeon/gamble
+                  pisoPremium: 3
                 # --- Challenge room ---------------------------------------------------------
                 # Stepping on the plate seals the doors and runs the waves; surviving pays out.
                 desafio:
@@ -592,6 +693,15 @@ public final class DungeonsConfig {
 
     public static int doorHeight() {
         return doorHeight;
+    }
+
+    /**
+     * The generation config a floor is built with: the compiled-in defaults, with the server's own
+     * curve laid over them. Every generate() call site goes through this, so the curve is read from
+     * one place and the built-in table stays the fallback rather than a second source of truth.
+     */
+    public static es.boffmedia.teras.dungeon.gen.GenConfig genConfig() {
+        return es.boffmedia.teras.dungeon.gen.GenConfig.defaults().withCurve(celdas, jitter);
     }
 
     public static Map<es.boffmedia.teras.dungeon.model.Curse, Double> curseChances() {
@@ -684,6 +794,46 @@ public final class DungeonsConfig {
      */
     public static String ordenLootTable() {
         return ordenLootTable;
+    }
+
+    /** The fighter's stand: one gear piece, rarity leaning raro, and an occasional book (PISOS §66). */
+    public static String treasureArmaLootTable() {
+        return treasureArmaLootTable;
+    }
+
+    /** The survivor's stand: a greater potion and a smaller heal. */
+    public static String treasureVitalidadLootTable() {
+        return treasureVitalidadLootTable;
+    }
+
+    /** The merchant's stand: this many coins to the shared purse, before the stage scale. */
+    public static int treasureProvisionCoins() {
+        return treasureProvisionCoins;
+    }
+
+    /** …and this many wall charges with them. */
+    public static int treasureProvisionCharges() {
+        return treasureProvisionCharges;
+    }
+
+    /** Base chance (0–100) that a floor's shop features one discounted ganga slot. */
+    public static int gangaChance() {
+        return gangaChance;
+    }
+
+    /** How deep the ganga cuts, as a percentage off the sticker price. */
+    public static int gangaDiscountPct() {
+        return gangaDiscountPct;
+    }
+
+    /** The gamble slot's reward table — its own, so it can be steady (no epic jackpot). */
+    public static String gambleLootTable() {
+        return gambleLootTable;
+    }
+
+    /** The stage from which premium stock (fénix, seguro) enters the shop's planogram. */
+    public static int shopPremiumStage() {
+        return shopPremiumStage;
     }
 
     public static String crackBlock() {

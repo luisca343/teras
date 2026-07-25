@@ -91,7 +91,7 @@ final class LayoutValidator {
             warnings.add("Missing SUPER_SECRET room");
         }
         if (depth.isFinal() && !challenge) {
-            warnings.add("Final stage without CHALLENGE room");
+            warnings.add("Final floor without CHALLENGE room");
         }
     }
 

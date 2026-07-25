@@ -123,7 +123,7 @@ class RoomPlacementCellTest {
         for (int stage : new int[] {1, 3, 6, 12}) {
             for (int i = 0; i < 120; i++) {
                 DungeonLayout layout = DungeonGenerator.generate(CONFIG,
-                        FloorDepth.of(CONFIG, stage, 12), Set.<Curse>of(),
+                        FloorDepth.of(CONFIG, stage), Set.<Curse>of(),
                         EnumSet.allOf(RoomShape.class), "tile-" + stage + "-" + i);
                 assertTiles(layout, "stage " + stage + " seed " + layout.seedString());
             }

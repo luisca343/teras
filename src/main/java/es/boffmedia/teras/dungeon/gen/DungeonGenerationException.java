@@ -12,8 +12,8 @@ public class DungeonGenerationException extends RuntimeException {
     private final String seedString;
     private final List<String> lastErrors;
 
-    public DungeonGenerationException(int stage, String seedString, int attempts, List<String> lastErrors) {
-        super("Dungeon generation failed after " + attempts + " attempts (stage " + stage
+    public DungeonGenerationException(int floor, String seedString, int attempts, List<String> lastErrors) {
+        super("Dungeon generation failed after " + attempts + " attempts (piso " + floor
                 + ", seed \"" + seedString + "\"): " + String.join("; ", lastErrors));
         this.seedString = seedString;
         this.lastErrors = List.copyOf(lastErrors);

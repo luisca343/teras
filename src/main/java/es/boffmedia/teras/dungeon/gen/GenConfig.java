@@ -6,10 +6,18 @@ package es.boffmedia.teras.dungeon.gen;
  * "normalization" divided large-shape odds by an accidental {@code largeSum + 1.0} on top of
  * halving them; the decay factor is that intent made explicit.
  *
- * <p>{@code referenceLength} was {@code finalStage} while every run was twelve floors. It is no
- * longer "the last floor" — a dungeon declares its own length from its tramos — but the length the
- * room-count and difficulty curves are <i>authored against</i>. {@link FloorDepth} maps a floor of
- * any dungeon onto it.</p>
+ * <p>{@code celdas} is the cell budget of each canonical floor, indexed from floor one, and
+ * {@code canonicalFloors} is simply how many entries it has — the depth of the sequence is the
+ * length of the curve, so the two cannot drift. It replaces both the Isaac formula
+ * ({@code min(20, coin + 5 + stage*10/3)}) and the {@code finalStageRooms} override: the first
+ * saturated at floor five, so no floor past it could be authored as deeper than another, and the
+ * second was a flat 50 applied to whichever floor a dungeon happened to end on, which made a
+ * two-floor dungeon's second floor the size of a twelve-floor climax. Entries one through six are
+ * still exactly what the formula produced; the rest are authored.</p>
+ *
+ * <p>A floor is indexed by its <i>canonical</i> number, never by its position in the current run —
+ * see {@link FloorDepth}. That is what lets a one-floor challenge opening on floor ten build the
+ * floor ten of the full descent rather than a floor one.</p>
  *
  * <p>{@code gridSize} is the playfield — the diameter the carve, placement and validation see,
  * untouched by anything below. {@code postMargin} is reserved space <i>around</i> it: the built
@@ -42,8 +50,8 @@ public record GenConfig(
         double labyrinthMultiplier,
         int labyrinthRoomCap,
         int lostRoomBonus,
-        int referenceLength,
-        int finalStageRooms,
+        java.util.List<Integer> celdas,
+        int jitter,
         int maxAttempts,
         boolean exitRoom,
         int postMargin,
@@ -56,6 +64,36 @@ public record GenConfig(
         if (maxAttempts < 1) {
             throw new IllegalArgumentException("maxAttempts must be positive: " + maxAttempts);
         }
+        if (celdas == null || celdas.isEmpty()) {
+            throw new IllegalArgumentException("celdas must name at least one floor");
+        }
+        for (int i = 0; i < celdas.size(); i++) {
+            Integer cells = celdas.get(i);
+            if (cells == null || cells < 1) {
+                throw new IllegalArgumentException(
+                        "celdas[" + i + "] is " + cells + "; every floor needs a positive budget");
+            }
+        }
+        if (jitter < 0) {
+            throw new IllegalArgumentException("jitter cannot be negative: " + jitter);
+        }
+        celdas = java.util.List.copyOf(celdas);
+    }
+
+    /** How deep the canonical sequence goes — the length of the curve, not a second declaration. */
+    public int canonicalFloors() {
+        return celdas.size();
+    }
+
+    /**
+     * The cell budget of a canonical floor, before jitter and curses. Floors past the end of the
+     * curve take its last entry rather than throwing: a dungeon window reaching past the sequence
+     * is refused at config load ({@code DungeonDef.problems}), and generation is not the place to
+     * discover it.
+     */
+    public int cellsFor(int floor) {
+        int index = Math.max(1, Math.min(canonicalFloors(), floor)) - 1;
+        return celdas.get(index);
     }
 
     /**
@@ -85,8 +123,26 @@ public record GenConfig(
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
                 labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
-                referenceLength, finalStageRooms, maxAttempts, exitRoom, postMargin,
+                celdas, jitter, maxAttempts, exitRoom, postMargin,
                 forceBossQuad);
+    }
+
+    /**
+     * This config with the curve a server authored. Kept separate from {@link #defaults()} so the
+     * factory stays a pure constant — tests and the generator itself must not depend on a config
+     * file having been read.
+     */
+    public GenConfig withCurve(java.util.List<Integer> curve, int jitterValue) {
+        if (curve == null || curve.isEmpty()) {
+            return this;
+        }
+        return new GenConfig(gridSize,
+                chanceQuad, chanceHorizontal, chanceVertical, chanceLShape,
+                largeShapeDecay, shapeResetInterval,
+                curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
+                devilDealChance, miniBossChance, firstStageMiniBossBoost,
+                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                curve, Math.max(0, jitterValue), maxAttempts, exitRoom, postMargin, forceBossQuad);
     }
 
     /**
@@ -105,7 +161,7 @@ public record GenConfig(
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
                 labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
-                referenceLength, finalStageRooms, maxAttempts, exit, postMargin, forceBossQuad);
+                celdas, jitter, maxAttempts, exit, postMargin, forceBossQuad);
     }
 
     /**
@@ -123,7 +179,7 @@ public record GenConfig(
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
                 labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
-                referenceLength, finalStageRooms, maxAttempts, exitRoom, postMargin, force);
+                celdas, jitter, maxAttempts, exitRoom, postMargin, force);
     }
 
     private static double weight(
@@ -132,6 +188,15 @@ public record GenConfig(
         Double value = weights.get(family);
         return value == null ? 1.0 : Math.max(0.0, value);
     }
+
+    /**
+     * Floors one to six are the Isaac formula's own values, so the floors that have content today
+     * are untouched. Seven to twelve are authored, and they are the reason the curve is a table:
+     * the formula's {@code min(20, …)} saturated at floor five, which made every floor past it the
+     * same size and left no way to say that the tenth is deeper than the seventh.
+     */
+    private static final java.util.List<Integer> DEFAULT_CELDAS =
+            java.util.List.of(10, 13, 17, 20, 22, 22, 24, 26, 28, 30, 34, 40);
 
     public static GenConfig defaults() {
         return new GenConfig(
@@ -142,7 +207,7 @@ public record GenConfig(
                 0.35, 0.35, 0.30,
                 0.25, 0.75,
                 1.8, 45, 4,
-                12, 50,
+                DEFAULT_CELDAS, 2,
                 20, false, 2, false);
     }
 }

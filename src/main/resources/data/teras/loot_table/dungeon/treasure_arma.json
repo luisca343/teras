@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:chest",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "teras:gear_espada",
+          "weight": 1,
+          "functions": [
+            {
+              "function": "teras:gear_aleatorio",
+              "comun": 40,
+              "raro": 50,
+              "epico": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rolls": 1,
+      "entries": [
+        { "type": "minecraft:empty", "weight": 55 },
+        { "type": "minecraft:item", "name": "minecraft:enchanted_book", "weight": 30 },
+        { "type": "minecraft:item", "name": "minecraft:experience_bottle", "weight": 15, "functions": [ { "function": "minecraft:set_count", "count": { "min": 2, "max": 4 } } ] }
+      ]
+    }
+  ]
+}

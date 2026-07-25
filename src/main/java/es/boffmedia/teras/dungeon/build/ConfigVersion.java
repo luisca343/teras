@@ -101,9 +101,34 @@ public final class ConfigVersion {
      *       declared mini-boss. An older {@code pisos/cuevas.json} keeps the old table: it still
      *       fields the gólem, still names it as its mini-boss, and never sees any of the three —
      *       the same shape as the §51 entry below, and invisible for the same reason.</p></li>
+     *   <li>the treasure room becomes a choice and the shop is reworked (PISOS §66): treasure now
+     *       stands up <b>three</b> picks — arma, vitalidad, provisión, each player takes one — read
+     *       from {@code loot:<archetype>} markers, and the shop rolls one <b>floor-wise</b> planogram
+     *       (a guaranteed spread, not a raw roll), with a face-down gamble and an occasional
+     *       discounted ganga. New shipped templates carry the three treasure stands and a
+     *       north-wall shop counter (turned onto a doorless wall at build). Folder discovery puts the
+     *       new {@code start}/{@code shop}/{@code treasure} variants on old worlds by themselves;
+     *       what an existing {@code config.yml} misses is the new {@code loot.*} tables
+     *       ({@code lootTesoroArma}, {@code lootTesoroVitalidad}, {@code lootCaja}), the
+     *       {@code tesoroProvision*} numbers and the {@code tienda} deal/gamble knobs
+     *       ({@code gangaProbabilidad}, {@code gangaDescuentoPct}, {@code pisoPremium}) — all
+     *       defaulted when absent, so an old file plays correctly and only misses the tuning.</li>
+     *   <li>floors become absolute (PISOS §67): a floor's cell budget is read from a table indexed
+     *       by its <b>canonical</b> floor number rather than derived from the length of whatever
+     *       dungeon is using it. An existing {@code config.yml} has no {@code generacion:} block, so
+     *       it falls back to the compiled-in curve — which is the shipped one, so nothing is lost
+     *       and only the tuning is out of reach. An existing {@code mazmorras.json} has no
+     *       {@code primerPiso}, which defaults to 1: correct for a dungeon played from the top, and
+     *       the only thing to add for a challenge that starts partway down.
+     *
+     *       <p>What genuinely changes on an old world: floor sizes. A two-floor mazmorra used to
+     *       generate its floors as the sixth and twelfth of a twelve-floor descent (22 and 52
+     *       cells) and now generates them as floors one and two (10-12 and 13-15). Recorded seeds
+     *       no longer reproduce their floors either, because the seed folds in the canonical floor
+     *       so that one floor is one layout however it was reached.</p></li>
      * </ol>
      */
-    public static final int CURRENT = 11;
+    public static final int CURRENT = 13;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

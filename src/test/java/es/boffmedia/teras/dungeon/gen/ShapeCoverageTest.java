@@ -41,7 +41,7 @@ class ShapeCoverageTest {
         for (int stage : STAGES) {
             for (int i = 0; i < FLOORS_PER_STAGE; i++) {
                 DungeonLayout layout = DungeonGenerator.generate(CONFIG,
-                        FloorDepth.of(CONFIG, stage, 12), Set.<Curse>of(), shapes,
+                        FloorDepth.of(CONFIG, stage), Set.<Curse>of(), shapes,
                         "coverage-" + stage + "-" + i);
                 for (Room room : layout.rooms()) {
                     counts.merge(room.shape(), 1, Integer::sum);
@@ -101,7 +101,7 @@ class ShapeCoverageTest {
         for (int stage : STAGES) {
             for (int i = 0; i < FLOORS_PER_STAGE; i++) {
                 DungeonLayout layout = DungeonGenerator.generate(CONFIG,
-                        FloorDepth.of(CONFIG, stage, 12), Set.<Curse>of(),
+                        FloorDepth.of(CONFIG, stage), Set.<Curse>of(),
                         EnumSet.allOf(RoomShape.class), "spread-" + stage + "-" + i);
                 GridPos centre = layout.grid().center();
                 for (Room room : layout.rooms()) {

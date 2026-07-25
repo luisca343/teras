@@ -26,11 +26,16 @@ public final class DungeonSeeds {
     }
 
     /**
-     * The base seed for one floor. Stage and curses fold in so every floor of a run derives from
-     * the run seed yet differs, and the same three inputs always rebuild the same floor.
+     * The base seed for one floor. The <b>canonical floor</b> and the curses fold in so every floor
+     * of a run derives from the run seed yet differs, and the same three inputs always rebuild the
+     * same floor.
+     *
+     * <p>The floor, not the run's stage: a challenge opening on floor ten and a full descent
+     * reaching it must derive the same seed, or floor ten would build differently depending on how
+     * it was arrived at — the rules would match and the layout would not.</p>
      */
-    public static long baseSeed(int stage, Set<Curse> curses, String seedString) {
-        StringBuilder canonical = new StringBuilder().append(stage).append('|').append(seedString);
+    public static long baseSeed(int floor, Set<Curse> curses, String seedString) {
+        StringBuilder canonical = new StringBuilder().append(floor).append('|').append(seedString);
         for (Curse curse : Curse.values()) {
             if (curses.contains(curse)) {
                 canonical.append('|').append(curse.name());

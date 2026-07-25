@@ -24,6 +24,12 @@ import java.util.Set;
  * when it would touch two existing rooms, then a coin decides expansion — that pairing is what
  * produces the corridor-and-loop floors. Large shapes roll with decaying odds; a fill pass tops up
  * to the target cell count, then dead ends are added until the minimum the special rooms need.</p>
+ *
+ * <p>Of those two, the dead-end top-up is what decides how big a floor ends up. The carve grows
+ * only about one dead end per four cells, so reaching a minimum of six from the ~2.8 it grew
+ * itself costs some seven cells of extra corridor — which is why a floor cannot be made smaller
+ * by lowering {@code targetCells} alone. The fill honours its target exactly; the top-up is the
+ * curve.</p>
  */
 final class RoomCarver {
 
@@ -61,7 +67,10 @@ final class RoomCarver {
         ArrayDeque<Room> pending = new ArrayDeque<>();
 
         for (GridPos edge : perimeter(start)) {
-            Room created = tryExpand(grid, edge, rng, odds);
+            if (cellsCarved >= targetCells) {
+                break;
+            }
+            Room created = tryExpand(grid, edge, rng, odds, targetCells - cellsCarved);
             if (created != null) {
                 cellsCarved += created.shape().cellCount();
                 pending.add(created);
@@ -71,7 +80,10 @@ final class RoomCarver {
         while (cellsCarved < targetCells && !pending.isEmpty()) {
             Room current = pending.poll();
             for (GridPos edge : perimeter(current)) {
-                Room created = tryExpand(grid, edge, rng, odds);
+                if (cellsCarved >= targetCells) {
+                    break;
+                }
+                Room created = tryExpand(grid, edge, rng, odds, targetCells - cellsCarved);
                 if (created != null) {
                     cellsCarved += created.shape().cellCount();
                     if (cellsCarved < targetCells) {
@@ -86,7 +98,7 @@ final class RoomCarver {
             if (spaces.isEmpty()) {
                 break;
             }
-            Room created = tryShapes(grid, rng.pick(spaces), rng, odds);
+            Room created = tryShapes(grid, rng.pick(spaces), rng, odds, targetCells - cellsCarved);
             if (created != null) {
                 cellsCarved += created.shape().cellCount();
             }
@@ -109,11 +121,12 @@ final class RoomCarver {
      * two rooms, and win a coin toss. Only that cell is gated — a large shape's other cells may
      * touch more rooms, as in the original.
      */
-    private static Room tryExpand(RoomGrid grid, GridPos pos, SeededRng rng, ShapeOdds odds) {
+    private static Room tryExpand(RoomGrid grid, GridPos pos, SeededRng rng, ShapeOdds odds,
+                                  int budget) {
         if (!grid.isEmpty(pos) || grid.occupiedNeighborCount(pos) >= 2 || !rng.chance(0.5)) {
             return null;
         }
-        return tryShapes(grid, pos, rng, odds);
+        return tryShapes(grid, pos, rng, odds, budget);
     }
 
     /**
@@ -131,11 +144,17 @@ final class RoomCarver {
      * cell it does <i>not</i> own, so anchoring it at the frontier cell demanded a fourth free cell
      * no other shape needed — the sole reason it appeared four times less often.</p>
      */
-    private static Room tryShapes(RoomGrid grid, GridPos seed, SeededRng rng, ShapeOdds odds) {
+    private static Room tryShapes(RoomGrid grid, GridPos seed, SeededRng rng, ShapeOdds odds,
+                                  int budget) {
         for (RoomShape shape : tryOrder(rng)) {
             // A shape the piso never authored is not rolled for at all, rather than rolled and
             // rejected: the piso has no other piso to borrow the room from.
             if (!odds.allows(shape)) {
+                continue;
+            }
+            // A shape that would spend more cells than the floor has left is not offered, so the
+            // fill lands on targetCells rather than up to three cells past it.
+            if (shape.cellCount() > budget) {
                 continue;
             }
             if (!rng.chance(odds.of(shape))) {

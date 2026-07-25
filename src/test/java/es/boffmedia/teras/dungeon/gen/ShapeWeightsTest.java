@@ -37,9 +37,9 @@ class ShapeWeightsTest {
         assertEquals(base.labyrinthMultiplier(), tight.labyrinthMultiplier());
         assertEquals(base.labyrinthRoomCap(), tight.labyrinthRoomCap());
         assertEquals(base.lostRoomBonus(), tight.lostRoomBonus());
-        assertEquals(base.finalStageRooms(), tight.finalStageRooms());
+        assertEquals(base.celdas(), tight.celdas());
         assertEquals(base.maxAttempts(), tight.maxAttempts());
-        assertEquals(base.referenceLength(), tight.referenceLength());
+        assertEquals(base.jitter(), tight.jitter());
     }
 
     /** No weights is the normal case, and must cost nothing. */

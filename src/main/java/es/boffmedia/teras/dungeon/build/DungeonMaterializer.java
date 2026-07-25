@@ -332,6 +332,13 @@ public final class DungeonMaterializer {
                 // its own — it is turned to point its entrance at whichever side the boss landed on.
                 entry = new RoomTemplates.TemplateEntry(entry.name(), entry.template(),
                         entry.weight(), exitFacing(room));
+            } else if (room.type() == RoomType.SHOP) {
+                // Directional like the exit, for the same reason: the shop is authored with its
+                // counter on the north wall, and it is turned so that wall lands on a doorless side
+                // (PISOS §66) — a shopfront the party walks up to, not wares scattered around the
+                // doorway they entered through.
+                entry = new RoomTemplates.TemplateEntry(entry.name(), entry.template(),
+                        entry.weight(), shopFacing(room));
             }
             StructureTemplate template = level.getStructureManager().get(entry.template()).orElse(null);
             if (template == null) {
@@ -406,6 +413,46 @@ public final class DungeonMaterializer {
                 return dx < 0 ? Rotation.CLOCKWISE_90 : Rotation.COUNTERCLOCKWISE_90;
             }
             return dz >= 0 ? Rotation.NONE : Rotation.CLOCKWISE_180;
+        }
+
+        /**
+         * Turns a shop so its authored counter (on the north wall) lands on a wall with no door,
+         * preferring the wall opposite a doorway so the party enters facing the wares. Falls back to
+         * the authored orientation only when all four walls carry doors — then the counter stays
+         * split around a doorway, as it always did.
+         */
+        private Rotation shopFacing(Room room) {
+            java.util.EnumSet<es.boffmedia.teras.dungeon.model.GridDir> doors =
+                    java.util.EnumSet.noneOf(es.boffmedia.teras.dungeon.model.GridDir.class);
+            for (es.boffmedia.teras.dungeon.model.DoorEdge door : layout.doors()) {
+                if (door.from() == room) {
+                    doors.add(door.dir());
+                } else if (door.to() == room) {
+                    doors.add(door.dir().opposite());
+                }
+            }
+            for (es.boffmedia.teras.dungeon.model.GridDir door : doors) {
+                if (!doors.contains(door.opposite())) {
+                    return counterToward(door.opposite());
+                }
+            }
+            for (es.boffmedia.teras.dungeon.model.GridDir dir
+                    : es.boffmedia.teras.dungeon.model.GridDir.values()) {
+                if (!doors.contains(dir)) {
+                    return counterToward(dir);
+                }
+            }
+            return Rotation.NONE;
+        }
+
+        /** The rotation that carries the authored north counter to {@code target}. */
+        private static Rotation counterToward(es.boffmedia.teras.dungeon.model.GridDir target) {
+            return switch (target) {
+                case NORTH -> Rotation.NONE;
+                case EAST -> Rotation.CLOCKWISE_90;
+                case SOUTH -> Rotation.CLOCKWISE_180;
+                case WEST -> Rotation.COUNTERCLOCKWISE_90;
+            };
         }
 
         private static double avgX(Room room) {

@@ -167,6 +167,24 @@ public final class DungeonRun {
      */
     private final Map<String, Integer> pisoFloors = new LinkedHashMap<>();
 
+    /**
+     * The run's discount disposition — the Steam-Sale hook (PISOS §66). At level 0 a floor's shop
+     * shows the discounted <i>ganga</i> only sometimes (a base chance); each level makes discounts
+     * more certain, then deeper. <b>No item raises it yet</b> — the raisers are future §7.1
+     * bendiciones (economy relics); this is the plumbing they will call, kept so the shop reads one
+     * decided answer rather than growing the hook later.
+     */
+    private int descuentoNivel;
+
+    public int descuentoNivel() {
+        return descuentoNivel;
+    }
+
+    /** A future economy relic makes the party's shops kinder. */
+    public void raiseDescuento() {
+        descuentoNivel++;
+    }
+
     /** This piso's floor ordinal for the floor about to be built, then counts it. */
     public int claimPisoOrdinal(String pisoId) {
         int ordinal = pisoFloors.getOrDefault(pisoId, 0);

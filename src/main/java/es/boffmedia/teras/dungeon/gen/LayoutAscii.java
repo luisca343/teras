@@ -9,6 +9,10 @@ import es.boffmedia.teras.dungeon.model.RoomType;
 /**
  * The chat/console floor printout, kept from the legacy command — one symbol per grid cell, legacy
  * glyphs. Also the canonical structural fingerprint the determinism tests compare.
+ *
+ * <p>Plain {@link String}, no {@code Component}: this package is Minecraft-free so it can be unit
+ * tested, and the chat wrapper that gives the grid its fixed-width font lives with the command that
+ * sends it ({@code DungeonCommand.mapa}).</p>
  */
 public final class LayoutAscii {
 
@@ -16,7 +20,7 @@ public final class LayoutAscii {
 
     public static String render(DungeonLayout layout) {
         return render(layout.grid()) + "Seed: " + layout.seedString()
-                + " (stage " + layout.stage() + ", attempt " + layout.attempt() + ")\n";
+                + " (piso " + layout.floor() + ", attempt " + layout.attempt() + ")\n";
     }
 
     public static String render(RoomGrid grid) {

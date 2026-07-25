@@ -92,7 +92,7 @@ public final class EnemySpawner {
         if (spawned.isEmpty()) {
             Teras.LOGGER.warn("Dungeons: {} spawned no enemies — the room clears itself on entry. "
                     + "Check the piso's enemigos table (or enemies.json) for stage {}.",
-                    room, built.layout().stage());
+                    room, built.layout().floor());
         } else {
             Teras.LOGGER.debug("Dungeons: {} spawned {} enemies", room, spawned.size());
         }
@@ -116,12 +116,12 @@ public final class EnemySpawner {
      */
     private static List<SpawnTables.SpawnEntry> bossPool(BuiltDungeon built) {
         return poolOr(built.plan() == null ? List.of() : built.plan().jefes(),
-                SpawnTables.bossPool(built.layout().stage()));
+                SpawnTables.bossPool(built.layout().floor()));
     }
 
     private static List<SpawnTables.SpawnEntry> miniBossPool(BuiltDungeon built) {
         return poolOr(built.plan() == null ? List.of() : built.plan().minijefes(),
-                SpawnTables.miniBossPool(built.layout().stage()));
+                SpawnTables.miniBossPool(built.layout().floor()));
     }
 
     private static List<SpawnTables.SpawnEntry> poolOr(List<String> ids,
@@ -354,7 +354,7 @@ public final class EnemySpawner {
      */
     private static List<Entity> spawnLegacyWave(ServerLevel level, BuiltDungeon built, Room room,
                                                 SeededRng rng, float sizeFactor, int partySize) {
-        SpawnTables.StageTable table = SpawnTables.stageTable(built.layout().stage());
+        SpawnTables.StageTable table = SpawnTables.stageTable(built.layout().floor());
         List<BlockPos> positions = spawnPositions(built, room, "spawn");
         int count = rng.between(table.countMin(), table.countMax());
         if (room.shape().cellCount() > 1) {

@@ -69,14 +69,14 @@ class ValidationTest {
     // --- dungeon level --------------------------------------------------------------------------
 
     private static DungeonDef dungeonNaming(String pisoId) {
-        return new DungeonDef("cripta", "La Cripta", List.of(
+        return new DungeonDef("cripta", "La Cripta", 1, List.of(
                 new TierDef(2, 1.0, List.of(new WeightedRef(pisoId, 1)),
                         List.of("jefe"), List.of("minijefe"))));
     }
 
     @Test
     void aDungeonNamingAMissingPisoIsRejected() {
-        List<String> problems = dungeonNaming("fantasma").problems(Map.of("cuevas", good()));
+        List<String> problems = dungeonNaming("fantasma").problems(Map.of("cuevas", good()), 12);
         assertEquals(1, problems.size());
         assertTrue(problems.get(0).contains("fantasma"), problems.toString());
     }
@@ -85,40 +85,40 @@ class ValidationTest {
     @Test
     void aDungeonNamingABrokenPisoIsRejected() {
         FloorDef broken = piso("cuevas", "Cuevas", EnumSet.noneOf(ShapeFamily.class), 7);
-        assertFalse(dungeonNaming("cuevas").problems(Map.of("cuevas", broken)).isEmpty());
+        assertFalse(dungeonNaming("cuevas").problems(Map.of("cuevas", broken), 12).isEmpty());
     }
 
     @Test
     void aTramoWithoutABossPoolIsRejected() {
-        DungeonDef noBoss = new DungeonDef("cripta", "La Cripta", List.of(
+        DungeonDef noBoss = new DungeonDef("cripta", "La Cripta", 1, List.of(
                 new TierDef(2, 1.0, List.of(new WeightedRef("cuevas", 1)),
                         List.of(), List.of("minijefe"))));
-        assertFalse(noBoss.problems(Map.of("cuevas", good())).isEmpty());
+        assertFalse(noBoss.problems(Map.of("cuevas", good()), 12).isEmpty());
     }
 
     @Test
     void aTramoWithNoPisosIsRejected() {
-        DungeonDef empty = new DungeonDef("cripta", "La Cripta", List.of(
+        DungeonDef empty = new DungeonDef("cripta", "La Cripta", 1, List.of(
                 new TierDef(2, 1.0, List.of(), List.of("jefe"), List.of())));
-        assertFalse(empty.problems(Map.of()).isEmpty());
+        assertFalse(empty.problems(Map.of(), 12).isEmpty());
     }
 
     @Test
     void aZeroSpanTramoIsRejected() {
-        DungeonDef zero = new DungeonDef("cripta", "La Cripta", List.of(
+        DungeonDef zero = new DungeonDef("cripta", "La Cripta", 1, List.of(
                 new TierDef(0, 1.0, List.of(new WeightedRef("cuevas", 1)),
                         List.of("jefe"), List.of())));
-        assertFalse(zero.problems(Map.of("cuevas", good())).isEmpty());
+        assertFalse(zero.problems(Map.of("cuevas", good()), 12).isEmpty());
     }
 
     @Test
     void aDungeonWithNoTramosIsRejected() {
-        assertFalse(new DungeonDef("vacia", "Vacía", List.of()).problems(Map.of()).isEmpty());
+        assertFalse(new DungeonDef("vacia", "Vacía", 1, List.of()).problems(Map.of(), 12).isEmpty());
     }
 
     @Test
     void aWellFormedDungeonHasNoProblems() {
-        assertTrue(dungeonNaming("cuevas").problems(Map.of("cuevas", good())).isEmpty());
+        assertTrue(dungeonNaming("cuevas").problems(Map.of("cuevas", good()), 12).isEmpty());
     }
 
     /** Weights below one would drop a piso out of a weighted draw entirely. */
@@ -132,7 +132,7 @@ class ValidationTest {
     /** isFinalStage replaces GenConfig.finalStage, which could not vary per dungeon. */
     @Test
     void finalStageComesFromTheDungeon() {
-        DungeonDef six = new DungeonDef("cripta", "La Cripta", List.of(
+        DungeonDef six = new DungeonDef("cripta", "La Cripta", 1, List.of(
                 new TierDef(2, 1.0, List.of(new WeightedRef("cuevas", 1)), List.of("j"), List.of()),
                 new TierDef(4, 1.5, List.of(new WeightedRef("cuevas", 1)), List.of("j"), List.of())));
         assertEquals(6, six.length());

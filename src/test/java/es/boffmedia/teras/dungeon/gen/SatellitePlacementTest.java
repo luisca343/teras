@@ -32,7 +32,7 @@ class SatellitePlacementTest {
             GenConfig.defaults().withExitRoom(true).withForceBossQuad(true);
 
     private static DungeonLayout floor(String seed, int stage, SatelliteChances chances) {
-        return DungeonGenerator.generate(CONFIG, FloorDepth.of(CONFIG, stage, 9), Set.of(),
+        return DungeonGenerator.generate(CONFIG, FloorDepth.of(CONFIG, stage), Set.of(),
                 EnumSet.allOf(RoomShape.class), seed, chances);
     }
 
