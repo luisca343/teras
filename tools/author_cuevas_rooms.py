@@ -980,6 +980,12 @@ def build_mini_boss():
     return r
 
 
+# Where a shop's pedestals stand along the counter. Six, because ShopStock.planogram fills its
+# shelves in priority order and stops at the counter's length — at four the gamble and the premium
+# shelf can never appear at all. Clear of x 9..11, the north doorway band.
+SHOP_SLOT_X = (3, 5, 7, 13, 15, 17)
+
+
 def build_shop():
     r = Room('shop', 'single', 'cuevas:shop')
     r.shell()
@@ -995,11 +1001,11 @@ def build_shop():
                 r.set(x, 0, z, r.block('minecraft:polished_andesite')
                       if (x + z) % 3 else brick)
     # counter row along the north side, split by the door band: plinths under lanterns
-    for i, (px, pz) in enumerate(((4, 3), (7, 3), (13, 3), (16, 3)), start=1):
-        r.set(px, 1, pz, r.block('minecraft:chiseled_stone_bricks'))
-        r.mark(f'shopslot:{i}', px, 2, pz)
-        r.set(px, 5, pz, beam)
-        r.set(px, 4, pz, r.block('minecraft:lantern', hanging='true'))
+    for i, px in enumerate(SHOP_SLOT_X, start=1):
+        r.set(px, 1, 3, r.block('minecraft:chiseled_stone_bricks'))
+        r.mark(f'shopslot:{i}', px, 2, 3)
+        r.set(px, 5, 3, beam)
+        r.set(px, 4, 3, r.block('minecraft:lantern', hanging='true'))
     for (px, pz) in ((3, 2), (8, 2), (12, 2), (17, 2)):
         for y in range(1, 6):
             r.set(px, y, pz, log)
@@ -1022,12 +1028,18 @@ def build_treasure():
     r.shell()
     rng = r.rng
     r.rough_walls(ore_chance=0.10)
-    # the vault: a pedestal under a shaft of light, gold seams in the rock
-    for (x, z) in ((9, 9), (11, 11), (9, 11), (11, 9)):
-        r.set(x, 0, z, r.block('minecraft:polished_andesite'))
+    # The vault: three stands under one shaft of light, gold seams in the rock. Three, not one —
+    # the treasure room is a visible choice and each player takes a single stand (§66), and the
+    # qualifier on each `loot` marker is what names the archetype to TreasureChoice.
+    for x in range(7, 14):
+        for z in range(7, 14):
+            if (x, z) not in r.keep_clear and max(abs(x - 10), abs(z - 10)) <= 3:
+                r.set(x, 0, z, r.block('minecraft:polished_andesite'))
     r.set(10, 0, 10, r.block('minecraft:calcite'))
-    r.set(10, 1, 10, r.block('minecraft:chiseled_stone_bricks'))
-    r.mark('loot', 10, 2, 10)
+    for (px, pz, tag) in ((8, 10, 'loot:arma'), (10, 8, 'loot:vitalidad'),
+                          (12, 10, 'loot:provision')):
+        r.set(px, 1, pz, r.block('minecraft:chiseled_stone_bricks'))
+        r.mark(tag, px, 2, pz)
     for (x, z) in ((9, 10), (11, 10), (10, 9), (10, 11), (10, 10)):
         r.set(x, 11, z, r.block('minecraft:shroomlight'))
     for (x, z) in ((5, 5), (15, 5), (5, 15), (15, 15)):
@@ -1914,6 +1926,468 @@ def build_normal_big_cuatro_pilares():
     return r
 
 
+# ------------------------------------------------- the once-per-floor rooms, deepened
+#
+# Two sets live here. The first six are the §66 rooms — start, treasure and shop variants — which
+# shipped as .nbt with no builder behind them; a template with no source cannot be regenerated,
+# audited on change, or dressed by infest(), so they are authored here and the old files are
+# overwritten. `--check` refuses the reverse case from now on.
+#
+# The rest are second variants for the keys that were singletons. They are approached rooms, not
+# recognized ones (§66): the boss arena and la sala del sello stay at one variant forever, and every
+# other room that a run meets once a floor is better for not being the same room every floor.
+# VariantDraw deals these from a run-long bag, so two variants is already enough for a six-floor
+# descent to never repeat one.
+
+def build_start_falla():
+    """The other side of the fault is a step up, not a cliff: the whole west half of the chamber
+    sits one block higher, split from the east by a seam of deepslate. One block is deliberate —
+    the party arrives here, and an arrival room that needs a ramp to leave is a room that can strand
+    somebody who logs in on the wrong side of it."""
+    r = Room('start', 'single', 'cuevas:start:falla')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.ceiling_relief(blobs=7, dripstone=4)
+    r.shelf(1, 1, 7, 19, top=1, light=False)
+    seam = r.block('minecraft:cobbled_deepslate')
+    for z in range(1, 20):
+        if (8, z) in r.keep_clear:
+            continue
+        r.set(8, 1, z, seam)
+        if rng.random() < 0.4:
+            r.set(9, 1, z, r.block('minecraft:deepslate'))
+    # Light rides the fault line, so the seam is the first thing read on arrival.
+    for z in (4, 8, 12, 16):
+        if (8, z) not in r.keep_clear:
+            r.set(8, 2, z, r.block('minecraft:shroomlight'))
+    for x in range(12, 15):
+        for z in range(12, 15):
+            r.set(x, 1, z, r.block('minecraft:polished_andesite'))
+    r.set(13, 1, 13, r.block('minecraft:calcite'))
+    r.stalagmite(16, 4, 3)
+    r.stalagmite(4, 16, 2)
+    for (x, z) in ((3, 3), (17, 17), (16, 3)):
+        r.stalactite(x, z, 3)
+    r.ore_seam(4)
+    r.lichen(19, 3, 14, 'east')
+    r.lichen(14, 3, 19, 'south')
+    r.enforce_aprons()
+    r.mark('inicio', 13, 2, 13)
+    r.deco('decoracion:techo', 5, 9, 5)
+    r.deco('decoracion:pared', 19, 3, 6)
+    return r
+
+
+def build_start_campamento():
+    """Somebody camped here and did not come back. The dais is their fire pit's flagstones, which
+    is the only reason a start room may have a feature at its landing point: the party lands on the
+    flat the campers levelled, not on the fire."""
+    r = Room('start', 'single', 'cuevas:start:campamento')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.ceiling_relief(blobs=6, dripstone=5)
+    for x in range(7, 14):
+        for z in range(7, 14):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 0, z, r.block('minecraft:gravel') if rng.random() < 0.6
+                      else r.block('minecraft:cobblestone'))
+    r.set(10, 1, 12, r.block('minecraft:campfire', lit='true', facing='north'))
+    for (x, z) in ((9, 12), (11, 12), (9, 13), (11, 13), (10, 13)):
+        r.set(x, 1, z, r.block('minecraft:cobblestone_slab', type='bottom'))
+    # Bedrolls and stores in the corner the fire's light reaches, left where they were dropped.
+    for (x, z) in ((14, 15), (16, 15)):
+        r.set(x, 1, z, r.block('minecraft:white_wool'))
+        r.set(x, 1, z + 1, r.block('minecraft:white_wool'))
+        r.set(x, 2, z, r.block('minecraft:oak_slab', type='bottom'))
+    r.set(15, 1, 17, r.block('minecraft:barrel', facing='up'))
+    r.set(17, 1, 16, r.block('minecraft:barrel', facing='up'))
+    r.set(16, 1, 17, r.block('minecraft:lantern', hanging='false'))
+    for y in range(1, 4):
+        r.set(5, y, 5, r.block('minecraft:spruce_fence'))
+    r.set(5, 4, 5, r.block('minecraft:lantern', hanging='false'))
+    r.set(4, 1, 5, r.block('minecraft:barrel', facing='up'))
+    r.stalactite(4, 15, 3)
+    r.stalactite(16, 5, 2)
+    r.ore_seam(3)
+    r.lichen(1, 3, 8, 'west')
+    r.enforce_aprons()
+    r.mark('inicio', 10, 1, 9)
+    r.deco('decoracion:techo', 6, 9, 14)
+    r.deco('decoracion:suelo', 3, 1, 12)
+    return r
+
+
+def build_treasure_veta():
+    """The three stands are cut into a mining face, which is what makes the choice legible before
+    you are close enough to read the labels: one is set in ore, one over water, one on the crates
+    the miners left. Three `loot` markers, qualified — see TreasureChoice."""
+    r = Room('treasure', 'single', 'cuevas:treasure:veta')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(ore_chance=0.18, light_chance=0.0)
+    r.ceiling_relief(blobs=5, dripstone=3)
+    # the worked face along the north quadrants, squared off and lit
+    for x in list(range(2, 8)) + list(range(13, 19)):
+        for z in range(2, 6):
+            r.set(x, 0, z, r.block('minecraft:stone_bricks') if (x + z) % 3
+                  else r.block('minecraft:polished_andesite'))
+    for (x, z, ore) in ((3, 3, 'minecraft:gold_ore'), (6, 4, 'minecraft:iron_ore'),
+                        (15, 3, 'minecraft:copper_ore'), (17, 4, 'minecraft:gold_ore')):
+        for y in range(1, 4):
+            r.set(x, y, z, r.block(ore if y == 2 else 'minecraft:stone'))
+    for (px, pz, tag, cap) in ((4, 4, 'loot:arma', 'minecraft:chiseled_stone_bricks'),
+                               (10, 6, 'loot:vitalidad', 'minecraft:calcite'),
+                               (16, 4, 'loot:provision', 'minecraft:chiseled_stone_bricks')):
+        r.set(px, 1, pz, r.block(cap))
+        r.mark(tag, px, 2, pz)
+        r.set(px, 5, pz, r.block('minecraft:chain'))
+        r.set(px, 4, pz, r.block('minecraft:lantern', hanging='true'))
+    r.pool(14, 14, 16, 16)
+    r.set(6, 1, 15, r.block('minecraft:barrel', facing='up'))
+    r.set(5, 1, 16, r.block('minecraft:barrel', facing='up'))
+    r.stalagmite(8, 16, 3)
+    r.stalactite(12, 15, 3)
+    r.ore_seam(5)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 4, 9, 12)
+    r.deco('decoracion:suelo', 17, 1, 12)
+    return r
+
+
+def build_treasure_ofrenda():
+    """Three bowls on a stepped platform, which somebody built to be knelt in front of. The stands
+    ring the centre rather than lining a wall: the party walks in and is surrounded by the choice
+    instead of queueing at it."""
+    r = Room('treasure', 'single', 'cuevas:treasure:ofrenda')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    calcite = r.block('minecraft:calcite')
+    for x in range(6, 15):
+        for z in range(6, 15):
+            if (x, z) in r.keep_clear:
+                continue
+            d = max(abs(x - 10), abs(z - 10))
+            r.set(x, 0, z, calcite if d <= 2 else r.block('minecraft:smooth_basalt'))
+    for (px, pz, tag) in ((7, 10, 'loot:arma'), (10, 7, 'loot:vitalidad'),
+                          (13, 10, 'loot:provision')):
+        r.set(px, 1, pz, r.block('minecraft:polished_basalt', axis='y'))
+        r.mark(tag, px, 2, pz)
+    for (x, z) in ((7, 7), (13, 7), (7, 13), (13, 13)):
+        r.set(x, 1, z, r.block('minecraft:polished_basalt', axis='y'))
+        r.set(x, 2, z, r.block('minecraft:candle', candles='3', lit='true'))
+    for (x, z) in ((9, 10), (11, 10), (10, 9), (10, 11), (10, 10)):
+        r.set(x, 11, z, r.block('minecraft:shroomlight'))
+    r.set(10, 1, 13, calcite)
+    r.set(10, 2, 13, r.block('minecraft:end_rod', facing='up'))
+    for (x, z) in ((4, 4), (16, 16), (4, 16)):
+        r.stalactite(x, z, 3)
+    r.ore_seam(3)
+    r.lichen(1, 3, 12, 'west')
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 15, 9, 5)
+    r.deco('decoracion:pared', 1, 3, 15)
+    return r
+
+
+def build_shop_caravana():
+    """A trader who travels: the counter is a row of crates under an awning, pitched against the
+    north wall. North matters — DungeonMaterializer.shopFacing turns the template so the authored
+    counter lands on a doorless wall, and it reads the north face to do it."""
+    r = Room('shop', 'single', 'cuevas:shop:caravana')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.ceiling_relief(blobs=5, dripstone=3)
+    for x in range(2, 19):
+        for z in range(1, 7):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 0, z, r.block('minecraft:packed_mud') if (x + z) % 4
+                      else r.block('minecraft:mud_bricks'))
+    for i, px in enumerate(SHOP_SLOT_X, start=1):
+        r.set(px, 1, 3, r.block('minecraft:barrel', facing='up'))
+        r.mark(f'shopslot:{i}', px, 2, 3)
+    # The awning: wool stretched between two poles, so the counter reads as pitched, not built.
+    for (px, pz) in ((2, 2), (7, 2), (13, 2), (18, 2)):
+        for y in range(1, 6):
+            r.set(px, y, pz, r.block('minecraft:spruce_fence'))
+        r.set(px, 6, pz, r.block('minecraft:spruce_log', axis='x'))
+    for x in range(2, 19):
+        if (x, 2) not in r.keep_clear:
+            r.set(x, 7, 2, r.block('minecraft:brown_wool'))
+        if (x, 2) not in r.keep_clear and x % 4 == 0:
+            r.set(x, 6, 2, r.block('minecraft:lantern', hanging='true'))
+    for (x, z) in ((3, 16), (4, 17), (17, 16)):
+        r.set(x, 1, z, r.block('minecraft:hay_block', axis='y'))
+    r.set(16, 1, 17, r.block('minecraft:cauldron'))
+    r.stalagmite(9, 16, 3)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 10, 9, 14)
+    r.deco('decoracion:suelo', 6, 1, 13)
+    return r
+
+
+def build_shop_socavon():
+    """The shop as an adit driven into the north rock: six alcoves cut in a timbered face, a rail
+    running past them. Same counter contract as the others — the wares sit on the north wall."""
+    r = Room('shop', 'single', 'cuevas:shop:socavon')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    deepslate = r.block('minecraft:cobbled_deepslate')
+    for x in range(1, 20):
+        for z in range(1, 7):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 0, z, deepslate if (x * z) % 5 else r.block('minecraft:polished_deepslate'))
+    for i, px in enumerate(SHOP_SLOT_X, start=1):
+        r.set(px, 1, 4, r.block('minecraft:deepslate_bricks'))
+        r.mark(f'shopslot:{i}', px, 2, 4)
+        r.set(px, 4, 4, r.block('minecraft:chain'))
+        r.set(px, 3, 4, r.block('minecraft:lantern', hanging='true'))
+    # The timbering: uprights between the alcoves, a cap beam over the whole face.
+    for px in (2, 6, 8, 12, 14, 18):
+        for y in range(1, 6):
+            r.set(px, y, 5, r.block('minecraft:spruce_log', axis='y'))
+    for x in range(2, 19):
+        if (x, 5) not in r.keep_clear:
+            r.set(x, 6, 5, r.block('minecraft:spruce_log', axis='x'))
+    for z in range(8, 18):
+        if (5, z) not in r.keep_clear:
+            r.set(5, 1, z, r.block('minecraft:rail', shape='north_south'))
+    r.set(5, 1, 18, r.block('minecraft:rail', shape='north_south'))
+    r.set(15, 1, 15, r.block('minecraft:barrel', facing='up'))
+    r.set(15, 1, 16, r.block('minecraft:barrel', facing='up'))
+    r.stalactite(16, 12, 3)
+    r.ore_seam(4)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 12, 9, 12)
+    r.deco('decoracion:pared', 19, 3, 14)
+    return r
+
+
+def build_mini_boss_estanque():
+    """The elite stands in water. Wading is the whole idea: the dry rim is where the party wants to
+    fight from and the pool is where the mini-boss is, so the room asks whether to go in after it or
+    hold the edge and lose the damage. Its `boss` marker sits on the island, not in the water —
+    a spawn in a pool is a spawn that may drift."""
+    r = Room('mini_boss', 'single', 'cuevas:mini_boss:estanque')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=6, dripstone=4)
+    r.pool(3, 3, 7, 7)
+    r.pool(13, 13, 17, 17)
+    for x in range(8, 13):
+        for z in range(8, 13):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 1, z, r.block('minecraft:mossy_cobblestone'))
+    r.set(10, 2, 10, r.block('minecraft:shroomlight'))
+    for (x, z) in ((6, 14), (14, 6)):
+        r.stalagmite(x, z, 3)
+    r.set(4, 6, 4, r.block('minecraft:shroomlight'))
+    r.set(16, 6, 16, r.block('minecraft:shroomlight'))
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.mark('boss', 10, 3, 10)
+    r.deco('decoracion:techo', 10, 9, 4)
+    r.deco('decoracion:suelo', 15, 1, 6)
+    return r
+
+
+def build_mini_boss_grieta():
+    """A crack in the floor of the cave, walled on two sides, with the elite between the party and
+    the far door. No perch and no cover: this is the flat one, and it is here so the mini-boss is
+    not always a fight around a column."""
+    r = Room('mini_boss', 'single', 'cuevas:mini_boss:grieta')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.02)
+    r.ceiling_relief(blobs=9, dripstone=6)
+    for (x0, z0, x1, z1) in ((2, 2, 6, 6), (14, 14, 18, 18)):
+        r.shelf(x0, z0, x1, z1, top=2, light=False)
+    r.ramp(7, 4, -1, 0, top=2)
+    r.ramp(13, 16, 1, 0, top=2)
+    for (x, z) in ((4, 4), (16, 16)):
+        r.set(x, 2, z, r.block('minecraft:shroomlight'))
+    for (x, z) in ((8, 14), (14, 8), (12, 15)):
+        r.stalagmite(x, z, 2)
+    r.set(10, 10, 10, r.block('minecraft:shroomlight'))
+    r.ore_seam(4)
+    r.enforce_aprons()
+    r.mark('boss', 10, 1, 10)
+    r.deco('decoracion:techo', 6, 9, 15)
+    r.deco('decoracion:pared', 1, 3, 12)
+    return r
+
+
+def build_challenge_cisterna():
+    """The plate stands on an island in a flooded cistern. The waves wade; the party does too if it
+    steps off. Its spawn markers are on the dry banks, because a wave that stands up in water is a
+    wave that arrives late and in single file."""
+    r = Room('challenge', 'single', 'cuevas:challenge:cisterna')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    for (x0, z0, x1, z1) in ((3, 3, 6, 6), (14, 3, 17, 6), (3, 14, 6, 17), (14, 14, 17, 17)):
+        r.pool(x0, z0, x1, z1)
+    for x in range(8, 13):
+        for z in range(8, 13):
+            if (x, z) in r.keep_clear:
+                continue
+            r.set(x, 1, z, r.block('minecraft:stone_bricks') if (x + z) % 2
+                  else r.block('minecraft:mossy_stone_bricks'))
+    for (x, z) in ((8, 8), (12, 8), (8, 12), (12, 12)):
+        r.set(x, 2, z, r.block('minecraft:stone_brick_wall'))
+    for (x, z) in ((6, 10), (14, 10), (10, 6), (10, 14)):
+        r.set(x, 11, z, r.block('minecraft:shroomlight'))
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.mark('challenge', 10, 2, 10)
+    r.auto_spawns(wave_bar('challenge'), ranged=2)
+    r.deco('decoracion:techo', 10, 9, 10)
+    return r
+
+
+def build_curse_osario():
+    """The same market, kept by the dead. Its stands are laid out exactly as the shrine's — three
+    offers in a forecourt, the purga behind them — because the curse room is a shop and moving the
+    counter around between variants is how a player learns to distrust the layout."""
+    r = Room('curse', 'single', 'cuevas:curse:osario')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    bone = r.block('minecraft:bone_block', axis='y')
+    for x in range(1, 20):
+        for z in range(1, 20):
+            d = abs(x - 10) + abs(z - 14)
+            if d < 9 and rng.random() < (9 - d) / 16:
+                r.set(x, 0, z, r.block('minecraft:deepslate_tiles') if rng.random() < 0.6
+                      else r.block('minecraft:cracked_deepslate_tiles'))
+    for (px, pz) in ((6, 15), (14, 15)):
+        for y in range(1, 5):
+            r.set(px, y, pz, bone)
+        r.set(px, 5, pz, r.block('minecraft:soul_lantern', hanging='false'))
+    r.set(10, 1, 14, r.block('minecraft:chiseled_deepslate'))
+    r.mark('purga', 10, 2, 14)
+    r.set(9, 1, 14, r.block('minecraft:soul_sand'))
+    r.set(11, 1, 14, r.block('minecraft:soul_sand'))
+    r.set(9, 2, 14, r.block('minecraft:soul_fire'))
+    r.set(11, 2, 14, r.block('minecraft:soul_fire'))
+    for ox in (6, 10, 14):
+        r.set(ox, 1, 11, r.block('minecraft:polished_deepslate'))
+        r.mark('oferta', ox, 2, 11)
+    for (x, z) in ((4, 5), (16, 6), (5, 17)):
+        r.set(x, 1, z, bone)
+    r.stalactite(6, 8, 3)
+    r.stalactite(15, 9, 2)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 15, 9, 15)
+    return r
+
+
+def build_sacrifice_pozo():
+    """The altar over a shaft instead of on a platform: the spikes ring a well the light comes out
+    of. Same stand, same contract — what changes is that you stand at the edge of something to use
+    it, which is the fiction the room already had and the altar version did not show."""
+    r = Room('sacrifice', 'single', 'cuevas:sacrifice:pozo')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    basalt = r.block('minecraft:smooth_basalt')
+    for x in range(5, 16):
+        for z in range(5, 16):
+            if (x, z) in r.keep_clear:
+                continue
+            d = max(abs(x - 10), abs(z - 10))
+            if d <= 2:
+                r.set(x, 0, z, r.block('minecraft:magma_block'))
+            elif d <= 5:
+                r.set(x, 1, z, basalt if rng.random() < 0.75
+                      else r.block('minecraft:polished_basalt', axis='y'))
+    # The rim: a wall course around the shaft, open where the stand is approached.
+    for (x, z) in ((7, 8), (7, 12), (13, 8), (13, 12), (8, 7), (12, 7), (8, 13), (12, 13)):
+        r.set(x, 2, z, r.block('minecraft:polished_blackstone_wall'))
+    r.set(10, 1, 13, r.block('minecraft:chiseled_polished_blackstone'))
+    r.mark('sacrifice', 10, 2, 13)
+    r.stalactite(5, 5, 2)
+    r.stalactite(15, 15, 3)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 5, 9, 15)
+    return r
+
+
+def build_arcade_tragaperras():
+    """The machine wedged into a niche somebody widened for it, rather than standing in the open.
+    The plinth is the same height and the marker the same block above it — ArcadeMachine matches on
+    proximity, so the only thing a variant may move is the scenery around it."""
+    r = Room('arcade', 'single', 'cuevas:arcade:tragaperras')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=6, dripstone=5)
+    for x in range(13, 19):
+        for z in range(13, 19):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 0, z, r.block('minecraft:polished_deepslate'))
+    for y in range(1, 5):
+        r.set(13, y, 16, r.block('minecraft:deepslate_bricks'))
+        r.set(16, y, 13, r.block('minecraft:deepslate_bricks'))
+    r.set(16, 1, 16, r.block('minecraft:quartz_block'))
+    r.mark('arcade', 16, 2, 16)
+    for (x, z) in ((15, 15), (17, 17)):
+        r.set(x, 1, z, r.block('minecraft:quartz_slab', type='bottom'))
+    r.set(16, 5, 16, r.block('minecraft:chain'))
+    r.set(16, 4, 16, r.block('minecraft:soul_lantern', hanging='true'))
+    r.pool(4, 4, 6, 6)
+    r.stalagmite(8, 15, 3)
+    r.ore_seam(4)
+    r.enforce_aprons()
+    r.deco('decoracion:suelo', 6, 1, 14)
+    r.deco('decoracion:techo', 8, 9, 8)
+    return r
+
+
+def build_super_secret_ahogada():
+    """The other wrongness: not a geode but a flooded vault the cave grew around. It reads as an
+    older building than anything else in the dungeon, which is the only job a super secret has —
+    look like somewhere you were not meant to reach."""
+    r = Room('super_secret', 'single', 'cuevas:super_secret:ahogada')
+    r.shell()
+    rng = r.rng
+    bricks = r.block('minecraft:stone_bricks')
+    mossy = r.block('minecraft:mossy_stone_bricks')
+    cracked = r.block('minecraft:cracked_stone_bricks')
+    for x in range(1, 20):
+        for z in range(1, 20):
+            roll = rng.random()
+            r.set(x, 0, z, mossy if roll < 0.4 else (cracked if roll < 0.6 else bricks))
+    for x in range(21):
+        for z in range(21):
+            if r.is_wall(x, z):
+                for y in range(1, H - 1):
+                    r.set(x, y, z, mossy if rng.random() < 0.5 else bricks)
+    for (px, pz) in ((5, 5), (15, 5), (5, 15), (15, 15)):
+        for y in range(1, H - 1):
+            r.set(px, y, pz, r.block('minecraft:stone_brick_wall') if y > 4 else bricks)
+    r.pool(8, 8, 12, 12)
+    for (x, z) in ((7, 4), (13, 16)):
+        r.set(x, 1, z, r.block('minecraft:chiseled_stone_bricks'))
+        r.set(x, 2, z, r.block('minecraft:candle', candles='2', lit='true'))
+    r.set(4, 8, 10, r.block('minecraft:shroomlight'))
+    r.set(16, 8, 10, r.block('minecraft:shroomlight'))
+    r.set(5, 1, 16, r.block('minecraft:chiseled_stone_bricks'))
+    r.mark('loot', 5, 2, 16)
+    r.lichen(2, 3, 10, 'west')
+    r.lichen(18, 3, 10, 'east')
+    r.enforce_aprons()
+    r.deco('decoracion:techo', 10, 9, 6)
+    return r
+
+
 # ------------------------------------------------- rooms only Cuevas Infestadas has
 #
 # These are the answer to "is Infestadas a place or a filter". Every other infested room is
@@ -2252,26 +2726,39 @@ def infest(base):
 # inside it is a peer variant, so a name has to say what the room IS: "normal.nbt" inside normal/
 # would be the only file in the folder that told you nothing.
 VARIANTS = {
-    'start':        {'cupula': build_start},                    # the domed arrival chamber
+    'start':        {'cupula': build_start,                     # the domed arrival chamber
+                     'falla': build_start_falla,                # the fault, one half stepped up
+                     'campamento': build_start_campamento},     # somebody else's camp
     'normal':       {'repisa': build_normal,                    # shelf along the east wall
                      'pozo': build_normal_pozo,                 # central basin, no high ground
                      'columnas': build_normal_columnas,         # column forest, broken sightlines
                      'derrumbe': build_normal_derrumbe,         # collapsed quarter, rubble slope
                      'balcon': build_normal_balcon},            # a real balcony to contest
-    'boss':         {'anillo': build_boss},                     # rimmed arena
-    'mini_boss':    {'columna': build_mini_boss},               # one column, one shelf
-    'shop':         {'alcoba': build_shop},                     # the worked, paved end of a cave
-    'treasure':     {'pedestal': build_treasure},               # pedestal under a shaft of light
+    'boss':         {'anillo': build_boss},                     # rimmed arena — one variant, by §66
+    'mini_boss':    {'columna': build_mini_boss,                # one column, one shelf
+                     'estanque': build_mini_boss_estanque,      # the elite stands in water
+                     'grieta': build_mini_boss_grieta},         # flat ground, no cover
+    'shop':         {'alcoba': build_shop,                      # the worked, paved end of a cave
+                     'caravana': build_shop_caravana,           # crates under an awning
+                     'socavon': build_shop_socavon},            # alcoves in a timbered adit
+    'treasure':     {'pedestal': build_treasure,                # pedestal under a shaft of light
+                     'veta': build_treasure_veta,               # three stands in a mining face
+                     'ofrenda': build_treasure_ofrenda},        # three bowls, ringing the centre
     'secret':       {'rendija': build_secret,                   # cramped natural pocket
                      'alacena': build_secret_alacena,           # a walled-up cache
                      'veta': build_secret_veta,                 # an abandoned mining face
                      'derrumbado': build_secret_derrumbado,     # a collapsed passage to climb
                      'burbuja': build_secret_burbuja},          # a smooth calcite void
-    'super_secret': {'geoda': build_super_secret},              # calcite and amethyst
-    'challenge':    {'galerias': build_challenge},              # corner galleries
-    'curse':        {'santuario': build_curse},                 # blackstone shrine
-    'sacrifice':    {'altar': build_sacrifice},                 # basalt altar, magma channels
-    'arcade':       {'vitrina': build_arcade},                  # a lit plinth in a dim cave
+    'super_secret': {'geoda': build_super_secret,               # calcite and amethyst
+                     'ahogada': build_super_secret_ahogada},    # a flooded vault, older than here
+    'challenge':    {'galerias': build_challenge,               # corner galleries
+                     'cisterna': build_challenge_cisterna},     # an island in flooded ground
+    'curse':        {'santuario': build_curse,                  # blackstone shrine
+                     'osario': build_curse_osario},             # the same market, kept by the dead
+    'sacrifice':    {'altar': build_sacrifice,                  # basalt altar, magma channels
+                     'pozo': build_sacrifice_pozo},             # the altar at the lip of a shaft
+    'arcade':       {'vitrina': build_arcade,                   # a lit plinth in a dim cave
+                     'tragaperras': build_arcade_tragaperras},  # wedged into a widened niche
     'devil_deal':   {'circulo': build_devil_deal},              # gilded circle, cage arcs
     'normal_large': {'garganta': build_normal_large,            # two chambers, arched neck
                      'columnata': build_normal_large_columnata, # one hall, colonnade
@@ -2313,9 +2800,40 @@ def variants_for(piso):
     return out
 
 
+def check_disk(out, builders):
+    """Fails when the shipped templates are not exactly what this tool builds.
+
+    The six §66 rooms — start/falla, treasure/veta, shop/caravana and the rest — were committed as
+    .nbt with no builder behind them, so regenerating cuevas produced a quietly different piso than
+    the one that shipped, and infest() could not derive their Infestadas twins either. A template
+    with no source is not authored content, it is a binary nobody can change. Run this in CI or
+    before a release; --room and --variante are ignored, since a subset cannot answer the question.
+    """
+    expected = {os.path.join(key, name + '.nbt')
+                for key, named in builders.items() for name in named}
+    found = set()
+    for folder, _, files in os.walk(out):
+        for name in files:
+            if name.endswith('.nbt'):
+                found.add(os.path.relpath(os.path.join(folder, name), out))
+    orphans = sorted(found - expected)
+    missing = sorted(expected - found)
+    for path in orphans:
+        print(f'x orphan   {path} — on disk with no builder', file=sys.stderr)
+    for path in missing:
+        print(f'x missing  {path} — a builder exists but nothing is shipped', file=sys.stderr)
+    if orphans or missing:
+        return 1
+    print(f'{len(found)} templates, all authored by this tool')
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--preview', action='store_true', help='print floor plans, write nothing')
+    parser.add_argument('--check', action='store_true',
+                        help='write nothing; fail if the templates on disk are not exactly the '
+                             'ones this tool builds')
     parser.add_argument('--room', help='build only this room key')
     parser.add_argument('--piso', default='cuevas',
                         choices=['cuevas', 'cuevas_infestadas', 'comun'],
@@ -2329,6 +2847,9 @@ def main():
         os.path.dirname(os.path.abspath(__file__)), '..',
         'src/main/resources/data/teras/structure/dungeon', args.piso)
     builders = SHARED[args.piso] if args.piso in SHARED else variants_for(args.piso)
+
+    if args.check:
+        return check_disk(out, builders)
 
     failed = False
     for key, named in builders.items():
