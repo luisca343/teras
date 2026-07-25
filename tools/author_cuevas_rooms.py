@@ -730,9 +730,43 @@ class Room:
                     queue.append(n)
         return seen
 
+    # Blocks that fall when what is under them goes away. A room's floor layer has the VOID under
+    # it — the pad is a slot in an empty dimension — so one of these at y=0 does not settle, it
+    # falls forever and leaves a hole the party drops through. `campamento` shipped with a gravel
+    # floor and killed everyone on arrival, because a start room's hole is under the spawn point.
+    GRAVITY_BLOCKS = {'minecraft:gravel', 'minecraft:sand', 'minecraft:red_sand',
+                      'minecraft:suspicious_gravel', 'minecraft:suspicious_sand',
+                      'minecraft:anvil', 'minecraft:chipped_anvil', 'minecraft:damaged_anvil',
+                      'minecraft:pointed_dripstone'}
+
+    # Markers whose fixture hangs a floating item and a label over itself, at roughly +1.2 and
+    # +1.9. Anything solid in those two blocks stands in front of what the fixture is showing —
+    # which is how a shop shipped with a lantern hung directly over every ware for sale.
+    DISPLAY_MARKERS = {'shopslot', 'loot', 'premio', 'oferta', 'purga', 'cofre'}
+
     def audit(self):
         """RoomAudit mirrored, plus the physics checks the game never makes."""
         errors, warnings = [], []
+        for (x, y, z), idx in self.grid.items():
+            name = self.palette[idx][0]
+            if name not in self.GRAVITY_BLOCKS:
+                continue
+            # Dripstone is in the set for its upward form only; the hanging kind is checked below.
+            if name == 'minecraft:pointed_dripstone' \
+                    and dict(self.palette[idx][1]).get('vertical_direction') != 'up':
+                continue
+            if y == 0:
+                errors.append(f'{name} at {x},0,{z} is in the floor layer — it falls into the void')
+            elif not self.solid_at(x, y - 1, z):
+                errors.append(f'{name} at {x},{y},{z} has nothing under it and will fall')
+        for (tag, x, y, z) in self.markers:
+            if tag.split(':')[0] not in self.DISPLAY_MARKERS:
+                continue
+            for dy in (1, 2):
+                if self.solid_at(x, y + dy, z):
+                    errors.append(f'{tag} at {x},{y},{z} is covered at +{dy} — its floating item '
+                                  f'and price would be hidden behind '
+                                  f'{self.get_name(x, y + dy, z)}')
         for (cx, cz) in self.cells:
             for lx in range(S):
                 for lz in range(S):
@@ -1053,6 +1087,9 @@ def build_shop():
     for i, px in enumerate(SHOP_SLOT_X, start=1):
         r.set(px, 1, 3, r.block('minecraft:chiseled_stone_bricks'))
         r.mark(f'shopslot:{i}', px, 2, 3)
+    # Between the plinths, for the same reason as socavon: the ware and its price float in the
+    # slot's own column, and anything hung there is in front of them.
+    for px in (4, 6, 14, 16):
         r.set(px, 5, 3, beam)
         r.set(px, 4, 3, r.block('minecraft:lantern', hanging='true'))
     for (px, pz) in ((3, 2), (8, 2), (12, 2), (17, 2)):
@@ -1258,6 +1295,9 @@ def build_secret_derrumbado():
         if (x, z) not in r.keep_clear:
             r.set(x, 5, z, r.block('minecraft:cobblestone_slab', type='bottom'))
     r.set(4, 5, 4, r.block('minecraft:chiseled_stone_bricks'))
+    # An alcove over the cache. Without it the lowered ceiling sits on the marker and the reward —
+    # a floating item and its label — is inside the rock: visible only by clipping the camera in.
+    r.clear(4, 6, 4, 4, 8, 4)
     r.mark('loot', 4, 6, 4)
     r.set(7, 6, 7, r.block('minecraft:lantern', hanging='true'))
     r.stalactite(14, 14, 2)
@@ -2344,7 +2384,9 @@ def build_start_campamento():
     for x in range(7, 14):
         for z in range(7, 14):
             if (x, z) not in r.keep_clear:
-                r.set(x, 0, z, r.block('minecraft:gravel') if rng.random() < 0.6
+                # Coarse dirt, not gravel: the floor layer has the void under it, so a gravity
+                # block there falls forever and takes the party's arrival tile with it.
+                r.set(x, 0, z, r.block('minecraft:coarse_dirt') if rng.random() < 0.6
                       else r.block('minecraft:cobblestone'))
     r.set(10, 1, 12, r.block('minecraft:campfire', lit='true', facing='north'))
     for (x, z) in ((9, 12), (11, 12), (9, 13), (11, 13), (10, 13)):
@@ -2395,6 +2437,8 @@ def build_treasure_veta():
                                (16, 4, 'loot:provision', 'minecraft:chiseled_stone_bricks')):
         r.set(px, 1, pz, r.block(cap))
         r.mark(tag, px, 2, pz)
+    # Lit from beside the stands, never over them: each reward floats in its own column.
+    for (px, pz) in ((6, 3), (13, 3), (8, 6)):
         r.set(px, 5, pz, r.block('minecraft:chain'))
         r.set(px, 4, pz, r.block('minecraft:lantern', hanging='true'))
     r.pool(14, 14, 16, 16)
@@ -2498,8 +2542,11 @@ def build_shop_socavon():
     for i, px in enumerate(SHOP_SLOT_X, start=1):
         r.set(px, 1, 4, r.block('minecraft:deepslate_bricks'))
         r.mark(f'shopslot:{i}', px, 2, 4)
-        r.set(px, 4, 4, r.block('minecraft:chain'))
-        r.set(px, 3, 4, r.block('minecraft:lantern', hanging='true'))
+    # Light BETWEEN the alcoves, never over one: the ware floats two blocks above its slot, so a
+    # lantern in that column is a lantern standing in front of the thing for sale.
+    for px in (4, 6, 14, 16):
+        r.set(px, 5, 4, r.block('minecraft:chain'))
+        r.set(px, 4, 4, r.block('minecraft:lantern', hanging='true'))
     # The timbering: uprights between the alcoves, a cap beam over the whole face.
     for px in (2, 6, 8, 12, 14, 18):
         for y in range(1, 6):

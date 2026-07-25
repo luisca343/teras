@@ -37,12 +37,20 @@ public final class RoomAudit {
      * @param shape    the footprint the key is authored at
      * @param solid    every local position holding something that is not air or structure void
      * @param markers  marker tag to the local positions carrying it, e.g. {@code spawn} → …
+     * @param falling  every position holding a block that falls when unsupported
      * @param sizeY    the template's height, to catch a room shorter than the configured cell
      */
     public record Room(RoomShape shape,
                        Set<Pos> solid,
                        Map<String, List<Pos>> markers,
-                       int sizeY) {}
+                       Set<Pos> falling,
+                       int sizeY) {
+
+        /** A room whose blocks were never identified — every falling-block check is skipped. */
+        public Room(RoomShape shape, Set<Pos> solid, Map<String, List<Pos>> markers, int sizeY) {
+            this(shape, solid, markers, Set.of(), sizeY);
+        }
+    }
 
     /** A block position local to the template's minimum corner. */
     public record Pos(int x, int y, int z) {}
@@ -63,8 +71,58 @@ public final class RoomAudit {
         checkRequiredMarkers(room, roomKey, findings);
         checkSpawnCount(room, roomKey, waveMax, findings);
         checkWalkable(room, roomSize, doorWidth, doorHeight, cells, findings);
+        checkFalling(room, findings);
+        checkDisplayColumns(room, findings);
         return findings;
     }
+
+    /**
+     * Gravity blocks, which a room may not rest on nothing.
+     *
+     * <p>The floor layer is the case that kills: a pad is a slot in an <b>empty dimension</b>, so
+     * there is void under y=0 and a gravel floor does not settle — it falls forever and leaves a
+     * hole. {@code campamento} shipped with one and the party died on arrival, because a start
+     * room's hole is under the spawn point.</p>
+     */
+    private static void checkFalling(Room room, List<Finding> findings) {
+        for (Pos pos : room.falling()) {
+            if (pos.y() == 0) {
+                findings.add(new Finding(Level.ERROR, "a falling block at " + pos.x() + ",0,"
+                        + pos.z() + " is in the floor layer — there is void under it, so it falls "
+                        + "away and leaves a hole"));
+            } else if (!room.solid().contains(new Pos(pos.x(), pos.y() - 1, pos.z()))) {
+                findings.add(new Finding(Level.ERROR, "a falling block at " + pos.x() + ","
+                        + pos.y() + "," + pos.z() + " has nothing under it"));
+            }
+        }
+    }
+
+    /**
+     * The two blocks over a fixture that shows something.
+     *
+     * <p>A shop slot, a reward stand and a chest all hang a floating item and a label roughly one
+     * and two blocks above their marker. Anything solid there stands in front of what the fixture
+     * is for — a shop shipped with a lantern hung directly over every ware, and the wares could
+     * not be seen at all.</p>
+     */
+    private static void checkDisplayColumns(Room room, List<Finding> findings) {
+        for (String kind : DISPLAY_MARKERS) {
+            for (Pos pos : room.markers().getOrDefault(kind, List.of())) {
+                for (int dy = 1; dy <= 2; dy++) {
+                    if (room.solid().contains(new Pos(pos.x(), pos.y() + dy, pos.z()))) {
+                        findings.add(new Finding(Level.ERROR, kind + " at " + pos.x() + ","
+                                + pos.y() + "," + pos.z() + " is covered at +" + dy
+                                + " — what it offers floats there and would be hidden"));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /** Marker kinds whose fixture hangs a floating item and a label over itself. */
+    private static final List<String> DISPLAY_MARKERS =
+            List.of("shopslot", "loot", "premio", "oferta", "purga", "cofre");
 
     /**
      * Can the room actually be entered and crossed?

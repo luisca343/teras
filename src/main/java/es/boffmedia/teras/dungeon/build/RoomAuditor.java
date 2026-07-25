@@ -123,12 +123,20 @@ public final class RoomAuditor {
         net.minecraft.nbt.ListTag palette =
                 tag.getList("palette", net.minecraft.nbt.CompoundTag.TAG_COMPOUND);
         boolean[] empty = new boolean[palette.size()];
+        boolean[] falls = new boolean[palette.size()];
         for (int i = 0; i < palette.size(); i++) {
             String name = palette.getCompound(i).getString("Name");
             empty[i] = name.equals("minecraft:air") || name.equals("minecraft:cave_air")
                     || name.equals("minecraft:void_air") || name.equals("minecraft:structure_void");
+            // Read off the block itself rather than a name list here: the registry already knows
+            // what falls, and a list would go stale the first time a pack adds one.
+            net.minecraft.world.level.block.Block block =
+                    net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                            net.minecraft.resources.ResourceLocation.parse(name));
+            falls[i] = block instanceof net.minecraft.world.level.block.FallingBlock;
         }
 
+        java.util.Set<RoomAudit.Pos> falling = new java.util.HashSet<>();
         java.util.Set<RoomAudit.Pos> solid = new java.util.HashSet<>();
         net.minecraft.nbt.ListTag blocks =
                 tag.getList("blocks", net.minecraft.nbt.CompoundTag.TAG_COMPOUND);
@@ -141,7 +149,11 @@ public final class RoomAuditor {
             net.minecraft.nbt.ListTag pos =
                     block.getList("pos", net.minecraft.nbt.CompoundTag.TAG_INT);
             if (pos.size() >= 3) {
-                solid.add(new RoomAudit.Pos(pos.getInt(0), pos.getInt(1), pos.getInt(2)));
+                RoomAudit.Pos at = new RoomAudit.Pos(pos.getInt(0), pos.getInt(1), pos.getInt(2));
+                solid.add(at);
+                if (state >= 0 && state < falls.length && falls[state]) {
+                    falling.add(at);
+                }
             }
         }
 
@@ -152,6 +164,6 @@ public final class RoomAuditor {
                     .add(new RoomAudit.Pos(marker.pos().getX(), marker.pos().getY(),
                             marker.pos().getZ()));
         }
-        return new RoomAudit.Room(shape, solid, markers, template.getSize().getY());
+        return new RoomAudit.Room(shape, solid, markers, falling, template.getSize().getY());
     }
 }

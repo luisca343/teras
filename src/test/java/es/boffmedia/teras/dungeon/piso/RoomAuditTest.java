@@ -36,6 +36,7 @@ class RoomAuditTest {
         private final RoomShape shape;
         private final Set<RoomAudit.Pos> solid = new HashSet<>();
         private final Map<String, List<RoomAudit.Pos>> markers = new LinkedHashMap<>();
+        private final Set<RoomAudit.Pos> falling = new HashSet<>();
         private int sizeY = HEIGHT;
 
         Builder(RoomShape shape) {
@@ -50,6 +51,12 @@ class RoomAuditTest {
         }
 
         Builder solidAt(int x, int y, int z) {
+            solid.add(new RoomAudit.Pos(x, y, z));
+            return this;
+        }
+
+        Builder fallingAt(int x, int y, int z) {
+            falling.add(new RoomAudit.Pos(x, y, z));
             solid.add(new RoomAudit.Pos(x, y, z));
             return this;
         }
@@ -79,7 +86,7 @@ class RoomAuditTest {
         }
 
         List<RoomAudit.Finding> audit(String key) {
-            return RoomAudit.audit(new RoomAudit.Room(shape, solid, markers, sizeY),
+            return RoomAudit.audit(new RoomAudit.Room(shape, solid, markers, falling, sizeY),
                     key, SIZE, HEIGHT, DOOR_W, DOOR_H, WAVE_MAX);
         }
     }
@@ -289,5 +296,39 @@ class RoomAuditTest {
             boxed.solidAt(4, y, 5);
         }
         assertTrue(mentions(boxed.marker("spawn", 4, 1, 4).audit("normal"), "sealed off"));
+    }
+
+    /**
+     * A gravity block in the floor layer is fatal, not untidy: the pad is a slot in an empty
+     * dimension, so the void is what holds the floor up. `campamento` shipped a gravel floor and
+     * killed the party on arrival — a start room's hole is under the spawn point.
+     */
+    @Test
+    void aFallingBlockInTheFloorIsAnError() {
+        List<RoomAudit.Finding> findings = good(RoomShape.SINGLE).fallingAt(5, 0, 5).audit("normal");
+        assertTrue(findings.stream().anyMatch(f -> f.level() == RoomAudit.Level.ERROR
+                && f.message().contains("floor layer")), findings.toString());
+    }
+
+    /** …and one resting on air anywhere else is the same defect, one layer up. */
+    @Test
+    void aFallingBlockOverAirIsAnError() {
+        List<RoomAudit.Finding> findings = good(RoomShape.SINGLE).fallingAt(5, 4, 5).audit("normal");
+        assertTrue(findings.stream().anyMatch(f -> f.level() == RoomAudit.Level.ERROR
+                && f.message().contains("nothing under it")), findings.toString());
+    }
+
+    /**
+     * What a shop slot sells floats above it, so the two blocks over a display marker have to stay
+     * clear. Two shops shipped with a lantern hung directly over every ware.
+     */
+    @Test
+    void somethingHungOverAShopSlotHidesIt() {
+        List<RoomAudit.Finding> findings = good(RoomShape.SINGLE)
+                .marker("shopslot", 5, 2, 5)
+                .solidAt(5, 4, 5)
+                .audit("shop");
+        assertTrue(findings.stream().anyMatch(f -> f.level() == RoomAudit.Level.ERROR
+                && f.message().contains("covered at +2")), findings.toString());
     }
 }
