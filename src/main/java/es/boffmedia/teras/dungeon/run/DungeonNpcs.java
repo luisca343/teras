@@ -112,6 +112,17 @@ public final class DungeonNpcs {
         // Read, not assigned: dialogues live in the NPC's own NBT and therefore in the stored
         // clone, so whatever the operator set up in the editor arrives here by itself.
         boolean dialog = CnpcBridge.hasDialog(spawned);
+        if (!dialog) {
+            // Said out loud, because the fallback is silent and looks like a regression: the party
+            // gets a clickable chat offer that works, and no sign of the authored character. The
+            // clone is a copy-on-spawn snapshot of its NBT, so a dialogue attached to a spawned
+            // NPC on a floor is thrown away with that floor — it has to be set on the clone in the
+            // tab below. See docs/DUNGEONS_DIALOGOS.md for the pack and how to attach it.
+            Teras.LOGGER.warn("Dungeons: the '{}' clone in tab {} carries no dialogue in slots 0-11 "
+                    + "— falling back to the chat offer. Attach the authored dialogues to the CLONE "
+                    + "(editing a spawned one is discarded); see docs/DUNGEONS_DIALOGOS.md.",
+                    idOf(role), TAB);
+        }
         STANDING.put(spawned.getUUID(), new Standing(floor.run().id(), role, room, dialog));
     }
 

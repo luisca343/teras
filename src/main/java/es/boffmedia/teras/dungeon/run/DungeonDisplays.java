@@ -29,6 +29,20 @@ public final class DungeonDisplays {
     /** Marks a display as a run's, so teardown can find it without a bookkeeping list. */
     public static final String DISPLAY_TAG = "teras_dungeon_display";
 
+    /**
+     * The tag that says <b>which fixture</b> a display belongs to.
+     *
+     * <p>Without it a sweep can only ask "is this one of ours", which is a question about the floor
+     * and not about the pedestal — so clearing one bought shop slot discarded the displays of every
+     * neighbouring slot inside the sweep box. A six-pedestal counter stands two blocks apart and the
+     * box was three, so buying at one end blanked the whole counter: the wares were still for sale
+     * and nothing could be seen. The treasure room's three stands wiped each other the same way, one
+     * refresh at a time, and the chest stands inherited it (PISOS §70).</p>
+     */
+    public static String fixtureTag(BlockPos fixture) {
+        return "teras_fixture_" + fixture.getX() + "_" + fixture.getY() + "_" + fixture.getZ();
+    }
+
     /** A slowly spinning item hanging over a pedestal. Returns null if the level refuses it. */
     public static Entity spawnItem(ServerLevel level, BlockPos pos, double yOffset, ItemStack stack) {
         CompoundTag tag = base("minecraft:item_display", pos, yOffset);
@@ -65,6 +79,10 @@ public final class DungeonDisplays {
         position.add(DoubleTag.valueOf(pos.getZ() + 0.5));
         tag.put("Pos", position);
         tag.putFloat("view_range", 1.0f);
+        ListTag tags = new ListTag();
+        tags.add(net.minecraft.nbt.StringTag.valueOf(DISPLAY_TAG));
+        tags.add(net.minecraft.nbt.StringTag.valueOf(fixtureTag(pos)));
+        tag.put("Tags", tags);
         return tag;
     }
 
@@ -112,7 +130,28 @@ public final class DungeonDisplays {
      * <p>Chunks are touched first for exactly that reason. Boxes here are a few blocks across, so
      * the cost is a handful of loads.</p>
      */
+    /**
+     * Discards the displays of <b>one fixture</b>, wherever they drifted to.
+     *
+     * <p>This is what every caller wants: a pedestal clearing its own stand. Matching on the
+     * fixture's tag rather than on a box means two pedestals may stand side by side — or on the same
+     * block — and still never touch each other's displays. The box is kept only as a broad phase, so
+     * the entity query stays cheap; it is deliberately generous, because correctness now comes from
+     * the tag and not from the geometry.</p>
+     */
+    public static void sweep(ServerLevel level, BlockPos fixture) {
+        sweepTagged(level, fixture, 3, fixtureTag(fixture));
+    }
+
+    /**
+     * Discards every display of this system inside a box, whichever fixture it belongs to. For a
+     * teardown that has no fixture list to walk — a floor being discarded, not a stand being cleared.
+     */
     public static void sweep(ServerLevel level, BlockPos centre, int radius) {
+        sweepTagged(level, centre, radius, DISPLAY_TAG);
+    }
+
+    private static void sweepTagged(ServerLevel level, BlockPos centre, int radius, String tag) {
         int minChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getX() - radius);
         int maxChunkX = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getX() + radius);
         int minChunkZ = net.minecraft.core.SectionPos.blockToSectionCoord(centre.getZ() - radius);
@@ -126,7 +165,7 @@ public final class DungeonDisplays {
                 centre.getX() - radius, centre.getY() - radius, centre.getZ() - radius,
                 centre.getX() + radius + 1, centre.getY() + radius + 1, centre.getZ() + radius + 1);
         for (Entity entity : level.getEntities((Entity) null, box,
-                e -> e.getTags().contains(DISPLAY_TAG))) {
+                e -> e.getTags().contains(tag))) {
             entity.discard();
         }
     }

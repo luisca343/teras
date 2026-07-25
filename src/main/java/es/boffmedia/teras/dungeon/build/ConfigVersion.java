@@ -126,9 +126,21 @@ public final class ConfigVersion {
      *       cells) and now generates them as floors one and two (10-12 and 13-15). Recorded seeds
      *       no longer reproduce their floors either, because the seed folds in the canonical floor
      *       so that one floor is one layout however it was reached.</p></li>
+     *   <li>chests and el plomo (PISOS §69). Chests are a new {@code cofre} marker any template may
+     *       carry, so an old world gets them the moment it takes the new room templates — there is
+     *       nothing to migrate, and a piso whose rooms carry none simply has no chests. What an
+     *       existing {@code config.yml} misses is the {@code cofres:} block (loot tables and the
+     *       spike/trap numbers) and the {@code parcool:} block, both defaulted when absent.
+     *
+     *       <p>{@code plomo} is a new curse, so an existing file's {@code maldiciones:} has no entry
+     *       for it and it therefore <b>never occurs</b> — the fallback for an absent key is zero, not
+     *       the shipped 6 %. That is the safe direction (a curse nobody asked for should not appear
+     *       on an upgrade) but it does mean the curse is invisible until the key is added by hand.
+     *       Shipped pisos accept it; a {@code pisos/*.json} on disk keeps whatever
+     *       {@code maldiciones} list it already had.</p></li>
      * </ol>
      */
-    public static final int CURRENT = 13;
+    public static final int CURRENT = 14;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

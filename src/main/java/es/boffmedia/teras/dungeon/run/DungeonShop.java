@@ -249,10 +249,14 @@ public final class DungeonShop {
     }
 
     private void spawnDisplays(ServerLevel level, Slot slot) {
-        // The gamble hides what it holds — that is the gamble. A sealed box over its pedestal, its
-        // real reward not rolled until it is bought.
+        // The gamble hides what it holds — that is the gamble. A sealed vessel over its pedestal,
+        // its real reward not rolled until it is bought.
+        //
+        // A decorated pot rather than a chest, since §71: chests are real blocks you walk up to and
+        // open, so a floating chest icon now names the wrong thing. A sealed pot is a vessel you
+        // break open, which is what buying this does.
         boolean gamble = slot.kind == ShopStock.StockKind.CAJA_SORPRESA;
-        ItemStack icon = gamble ? new ItemStack(net.minecraft.world.item.Items.CHEST)
+        ItemStack icon = gamble ? new ItemStack(net.minecraft.world.item.Items.DECORATED_POT)
                 : iconOf(slot.kind);
         Component label;
         if (slot.discountPct > 0) {
@@ -278,7 +282,7 @@ public final class DungeonShop {
         DungeonDisplays.discard(level, slot.textDisplay);
         // And by tag, because the ids only work while the chunk is loaded: a pad the party has left
         // hands back null for both lookups and the pedestal keeps its displays.
-        DungeonDisplays.sweep(level, slot.pos, DISPLAY_SWEEP_RADIUS);
+        DungeonDisplays.sweep(level, slot.pos);
         slot.itemDisplay = null;
         slot.textDisplay = null;
     }
@@ -303,7 +307,7 @@ public final class DungeonShop {
             case BENDICION_VELOCIDAD -> new ItemStack(net.minecraft.world.item.Items.SUGAR);
             case FENIX -> new ItemStack(net.minecraft.world.item.Items.TOTEM_OF_UNDYING);
             case SEGURO -> new ItemStack(net.minecraft.world.item.Items.GOLD_INGOT);
-            case CAJA_SORPRESA -> new ItemStack(net.minecraft.world.item.Items.CHEST);
+            case CAJA_SORPRESA -> new ItemStack(net.minecraft.world.item.Items.DECORATED_POT);
         };
     }
 

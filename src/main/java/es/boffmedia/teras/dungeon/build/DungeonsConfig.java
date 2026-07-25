@@ -57,6 +57,14 @@ public final class DungeonsConfig {
     private static int gangaDiscountPct;
     private static String gambleLootTable;
     private static int shopPremiumStage;
+    private static boolean parkourLimitsEnabled;
+    private static final List<String> PARKOUR_LIMIT_COMMANDS = new java.util.ArrayList<>();
+    private static final List<String> PARKOUR_RESTORE_COMMANDS = new java.util.ArrayList<>();
+    private static String chestLootTable;
+    private static String chestProezaLootTable;
+    private static float chestSpikeDamage;
+    private static float chestTrapDamage;
+    private static int chestTrapChancePct;
     private static String bossLootTable;
     private static String crackBlock;
     private static String spikeBlock;
@@ -327,6 +335,18 @@ public final class DungeonsConfig {
             sacrificeCoinsMin = sacrifice.integer("monedasMin", sacrificeCoinsMin);
             sacrificeCoinsMax = sacrifice.integer("monedasMax", sacrificeCoinsMax);
 
+            YamlConfig parkour = yaml.section("parcool");
+            parkourLimitsEnabled = parkour.bool("habilitado", parkourLimitsEnabled);
+            readCommands(parkour, "comandosQuitar", PARKOUR_LIMIT_COMMANDS);
+            readCommands(parkour, "comandosDevolver", PARKOUR_RESTORE_COMMANDS);
+
+            YamlConfig chest = yaml.section("cofres");
+            chestLootTable = chest.string("loot", chestLootTable);
+            chestProezaLootTable = chest.string("lootProeza", chestProezaLootTable);
+            chestSpikeDamage = chest.integer("danoPuas", Math.round(chestSpikeDamage));
+            chestTrapDamage = chest.integer("danoTrampa", Math.round(chestTrapDamage));
+            chestTrapChancePct = chest.integer("probTrampaPct", chestTrapChancePct);
+
             YamlConfig arcade = yaml.section("arcada");
             arcadePrice = arcade.integer("precio", arcadePrice);
             arcadeBreakChancePct = arcade.integer("probRoturaPct", arcadeBreakChancePct);
@@ -398,6 +418,27 @@ public final class DungeonsConfig {
         treasureVitalidadLootTable = "teras:dungeon/treasure_vitalidad";
         treasureProvisionCoins = 40;
         treasureProvisionCharges = 1;
+        // Chests (PISOS §69). Every price is charged at the click, never at the approach, because
+        // ParCool makes terrain a stamina cost rather than a lock. proeza draws the boss table on
+        // purpose: it is placed where only parkour reaches, and the route is the whole price.
+        // El plomo (PISOS §69). The action names are ParCool's, not ours, and they are the one part
+        // of this that can rot: verify them once on the live server with /parcool limitation get
+        // global, and fix them here rather than in code if they have moved.
+        parkourLimitsEnabled = true;
+        PARKOUR_LIMIT_COMMANDS.clear();
+        PARKOUR_RESTORE_COMMANDS.clear();
+        for (String action : List.of("WallJump", "HorizontalWallRun", "CatLeap", "ClingToCliff",
+                "Dive", "PoleClimb")) {
+            PARKOUR_LIMIT_COMMANDS.add(
+                    "parcool limitation set individual of %player% boolean " + action + " false");
+            PARKOUR_RESTORE_COMMANDS.add(
+                    "parcool limitation set individual of %player% boolean " + action + " true");
+        }
+        chestLootTable = "teras:dungeon/treasure";
+        chestProezaLootTable = "teras:dungeon/boss";
+        chestSpikeDamage = 4;
+        chestTrapDamage = 6;
+        chestTrapChancePct = 35;
         // The shop's floor deal and its gamble (PISOS §66). The ganga shows only sometimes at base;
         // future economy items raise a run's discount level toward always (the Steam-Sale hook, held
         // on DungeonRun). The gamble draws its own steady table — no epic jackpot. Premium stock
@@ -493,6 +534,9 @@ public final class DungeonsConfig {
                 maldiciones:
                   labyrinth: 10
                   lost: 10
+                  # El plomo takes the party's parkour for the floor (see 'parcool' below). Rarer
+                  # than the other two: it is the one that changes how you MOVE, not how far.
+                  plomo: 6
                 # Places live in pisos/*.json and the dungeons that use them in mazmorras.json.
                 # There is no global theme: a piso owns its own rooms outright.
                 # Instanced runs build in this dimension, on a slot lattice at slotY. The void is
@@ -629,6 +673,40 @@ public final class DungeonsConfig {
                   probPorPasoPct: 10
                   monedasMin: 20
                   monedasMax: 40
+                # --- El plomo (ParCool) -----------------------------------------------------
+                # The 'plomo' curse takes the party's parkour away for a floor. ParCool is NOT a
+                # Teras dependency: this drives its own limitation commands as the server, so a
+                # server without it plays the floor unmodified and logs nothing louder than debug.
+                # The action names below belong to ParCool and are the one part that can rot -
+                # check them with /parcool limitation get global and fix them HERE, not in code.
+                parcool:
+                  habilitado: true
+                  comandosQuitar:
+                    - parcool limitation set individual of %player% boolean WallJump false
+                    - parcool limitation set individual of %player% boolean HorizontalWallRun false
+                    - parcool limitation set individual of %player% boolean CatLeap false
+                    - parcool limitation set individual of %player% boolean ClingToCliff false
+                    - parcool limitation set individual of %player% boolean Dive false
+                    - parcool limitation set individual of %player% boolean PoleClimb false
+                  comandosDevolver:
+                    - parcool limitation set individual of %player% boolean WallJump true
+                    - parcool limitation set individual of %player% boolean HorizontalWallRun true
+                    - parcool limitation set individual of %player% boolean CatLeap true
+                    - parcool limitation set individual of %player% boolean ClingToCliff true
+                    - parcool limitation set individual of %player% boolean Dive true
+                    - parcool limitation set individual of %player% boolean PoleClimb true
+                # --- Chests -----------------------------------------------------------------
+                # A reward that may stand in ANY room, priced in something other than coins
+                # (PISOS 69). Kinds are authored on the marker: cofre:libre / sellado / puas /
+                # trampa / proeza. Every price is charged at the CLICK, never at the approach:
+                # ParCool is in the pack, so a ledge costs stamina, not access. proeza is the
+                # exception that proves it - no price at all, placed where only parkour reaches.
+                cofres:
+                  loot: teras:dungeon/treasure
+                  lootProeza: teras:dungeon/boss
+                  danoPuas: 4
+                  danoTrampa: 6
+                  probTrampaPct: 35
                 # --- Arcade room ------------------------------------------------------------
                 arcada:
                   precio: 5
@@ -814,6 +892,65 @@ public final class DungeonsConfig {
     /** …and this many wall charges with them. */
     public static int treasureProvisionCharges() {
         return treasureProvisionCharges;
+    }
+
+    /**
+     * Replaces {@code target} with the file's list, or leaves the built-in one when the key is
+     * absent. Never merges: a half-overridden command list would take the moveset away and give back
+     * something else, which is worse than either doing nothing or doing all of it.
+     */
+    private static void readCommands(YamlConfig section, String key, List<String> target) {
+        List<Object> raw = section.list(key);
+        if (raw.isEmpty()) {
+            return;
+        }
+        target.clear();
+        for (Object line : raw) {
+            String command = String.valueOf(line).trim();
+            if (!command.isEmpty()) {
+                target.add(command);
+            }
+        }
+    }
+
+    /** Whether el plomo tries to drive ParCool at all. Off makes the curse a no-op, not an error. */
+    public static boolean parkourLimitsEnabled() {
+        return parkourLimitsEnabled;
+    }
+
+    /** The commands that take the moveset away, with {@code %player%} still in them. */
+    public static List<String> parkourLimitCommands() {
+        return List.copyOf(PARKOUR_LIMIT_COMMANDS);
+    }
+
+    /** …and the ones that give it back. */
+    public static List<String> parkourRestoreCommands() {
+        return List.copyOf(PARKOUR_RESTORE_COMMANDS);
+    }
+
+    /** What a chest pays. Every kind but proeza draws this one. */
+    public static String chestLootTable() {
+        return chestLootTable;
+    }
+
+    /** What a proeza chest pays — the one placed where only parkour reaches. */
+    public static String chestProezaLootTable() {
+        return chestProezaLootTable;
+    }
+
+    /** Health a spiked chest takes from each claimant, before the floor's scale. */
+    public static float chestSpikeDamage() {
+        return chestSpikeDamage;
+    }
+
+    /** Health a doubtful chest takes when the gamble goes wrong. */
+    public static float chestTrapDamage() {
+        return chestTrapDamage;
+    }
+
+    /** Chance (0–100) that a doubtful chest bites instead of paying double. */
+    public static int chestTrapChancePct() {
+        return chestTrapChancePct;
     }
 
     /** Base chance (0–100) that a floor's shop features one discounted ganga slot. */

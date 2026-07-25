@@ -297,7 +297,8 @@ class Room:
         heights = self.walk_heights()
         entries = [e for e in self.door_entries() if e in heights]
         reachable = self._can_descend_to(heights, entries) if entries else set()
-        climbable = self._reachable(heights, entries[0]) if entries else set()
+        climbable = self._parkour_reach(
+            heights, self._reachable(heights, entries[0])) if entries else set()
         taken = {(mx, mz) for (_, mx, _, mz) in self.markers}
         for (cx, cz) in self.cells:
             for lx in range(2, S - 2):
@@ -320,6 +321,37 @@ class Room:
                         break
         return out
 
+    # How far up a player can take a ledge with ParCool, which ships in the pack: wall-run and
+    # cling-to-cliff put a four-block lip inside everybody's reach. Deliberately short of what a
+    # chained wall-jump can do — this bounds where a RANGED ENEMY may stand, and the cost of being
+    # generous is an archer nobody can answer.
+    PARKOUR_CLIMB = 4
+
+    @staticmethod
+    def _parkour_reach(heights, walkable):
+        """Walkable tiles, plus the ledges a player can climb to from them, plus ledges off those.
+
+        The walking rule (one block up per step) is the floor a room is held to and stays that way —
+        it is what a player with no client mod can do, and doorways still have to satisfy it. But it
+        is no longer the ceiling: a perch that only walking could not take is not out of reach, it is
+        four blocks and some stamina away, and holding ranged spawns to the walking rule would forbid
+        every free-standing perch the parkour pass was built to introduce.
+        """
+        seen = set(walkable)
+        frontier = list(walkable)
+        while frontier:
+            nxt = []
+            for (x, z) in frontier:
+                for n in Room._neighbours(x, z):
+                    if n in seen or n not in heights:
+                        continue
+                    if heights[n] - heights[(x, z)] > Room.PARKOUR_CLIMB:
+                        continue
+                    seen.add(n)
+                    nxt.append(n)
+            frontier = nxt
+        return seen
+
     @staticmethod
     def _far_enough(placed, x, z, count):
         # Loosens as the room fills: a bar of 23 cannot also demand they stay far apart.
@@ -336,6 +368,23 @@ class Room:
         self.set(x, y, z, self.block('minecraft:dark_oak_wall_sign', facing=facing))
         msgs = [json.dumps({'text': t}, ensure_ascii=False) for t in (list(lines) + [''] * 4)[:4]]
         self.block_nbt[(x, y, z)] = {'front_text': {'messages': msgs, 'color': color}}
+
+    def chest(self, kind, x, z, y=1):
+        """Where a chest stands (PISOS §69, §71).
+
+        The marker is the chest's own block, not a stand under one: at runtime ChestPedestal puts a
+        real chest there, on the ground, because a chest is a container and you walk up to a
+        container. Pedestals are for items — the shop's wares, the treasure stands — and putting a
+        chest on one is what made them read as an icon hovering over a plinth.
+
+        So `y` is the block the chest occupies, and it needs something solid under it: the floor for
+        most, a ledge or a deck for a proeza. Kind is libre / sellado / puas / trampa / proeza.
+        Nothing here checks that a proeza is out of walking reach — the audit models walking on
+        purpose — so mark the route with `parkour` and the next author will know it is load-bearing.
+        """
+        assert self.solid_at(x, y - 1, z), \
+            f'{self.key}: chest at {x},{y},{z} has nothing under it'
+        self.mark('cofre:' + kind, x, y, z)
 
     def deco(self, tag, x, y, z):
         """A decoration marker; whatever sculpting left there yields to it, since the
@@ -1926,6 +1975,310 @@ def build_normal_big_cuatro_pilares():
     return r
 
 
+# ------------------------------------------------- the normal family, deepened for ParCool
+#
+# The room a player actually walks. Five variants was the least depth in the piso and the most
+# visible, and all five were the same idea — flat floor plus a piece of wall-backed high ground,
+# reached by a ramp.
+#
+# ParCool ships in the pack, which is what makes that one idea thin rather than merely repeated: a
+# wall-backed shelf is a wall-run away, so the ramp is decoration and the perch is three seconds
+# from the door. These eight are built for the moveset the party actually has:
+#
+#   - a perch meant to be CONTESTED is free-standing with an overhanging lip, which is what
+#     defeats wall-run and cling-to-cliff; a wall-backed shelf is now a courtesy, not a cost;
+#   - breakfall kills fall damage, so height is position and never a hazard;
+#   - a 1-block obstacle is vaulted, so low walls are 2; a 1-block gap is a legitimate route,
+#     because slide and crawl exist;
+#   - cat-leap and dive extend a jump, so a gap gates only if it is wide or has no run-up;
+#   - mobs do NOT parkour, so every reachable perch owes a ranged spawn or the room is a place to
+#     stand and be safe in.
+
+def build_normal_lago():
+    """Water is the only movement denial the cave has, and nothing used it. The dry ground is the
+    cross between the pools, so the fight is over footing rather than over height."""
+    r = Room('normal', 'single', 'cuevas:normal:lago')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=8, dripstone=5)
+    for (x0, z0, x1, z1) in ((2, 2, 7, 7), (13, 2, 18, 7), (2, 13, 7, 18)):
+        r.pool(x0, z0, x1, z1)
+    # Stepping stones: a dry line across the widest pool for anyone unwilling to wade.
+    for (x, z) in ((3, 5), (5, 5), (7, 5)):
+        r.set(x, 2, z, r.block('minecraft:mossy_cobblestone'))
+    # The dry quarter, raised just enough to be worth holding, and lit so it reads from the door.
+    r.shelf(13, 13, 18, 18, top=2, light=False)
+    r.ramp(12, 15, 1, 0, top=2)
+    r.set(16, 2, 16, r.block('minecraft:shroomlight'))
+    r.chest('libre', 16, 12)
+    r.stalagmite(10, 16, 3)
+    r.stalactite(10, 4, 3)
+    r.ore_seam(4)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=2)
+    r.deco('decoracion:techo', 15, 9, 8)
+    r.deco('decoracion:suelo', 9, 1, 12)
+    return r
+
+
+def build_normal_puente():
+    """Four raised quarters and a trench cross between them, bridged twice. It splits a party —
+    the trench and the bridges do not see each other — and the pillar at the crossing holds a
+    proeza chest that only a leap off a bridge reaches."""
+    r = Room('normal', 'single', 'cuevas:normal:puente')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    for (x0, z0, x1, z1) in ((1, 1, 7, 7), (13, 1, 19, 7), (1, 13, 7, 19), (13, 13, 19, 19)):
+        r.shelf(x0, z0, x1, z1, top=4, light=False)
+    # One ramp per quarter, so the trench is a choice and not a trap for anyone out of stamina.
+    r.ramp(8, 4, -1, 0, top=4)
+    r.ramp(12, 4, 1, 0, top=4)
+    r.ramp(8, 16, -1, 0, top=4)
+    r.ramp(12, 16, 1, 0, top=4)
+    # The two bridges, clear of the doorway bands they cross beside.
+    for bx in (7, 14):
+        for z in range(8, 13):
+            r.set(bx, 4, z, r.block('minecraft:cobblestone'))
+            r.clear(bx, 5, z, bx, 7, z)
+    for (x, z) in ((4, 4), (16, 4), (4, 16), (16, 16)):
+        r.set(x, 4, z, r.block('minecraft:shroomlight'))
+    # The pillar: floor to y=5, standing alone in the crossing. Nothing touches it, so wall-run
+    # cannot climb it and cling has no lip to catch — the only way on is a leap from a bridge.
+    for y in range(1, 6):
+        r.set(10, y, 10, r.block('minecraft:cobbled_deepslate'))
+    r.chest('proeza', 10, 10, y=6)
+    r.mark('parkour', 8, 6, 10)
+    r.ore_seam(4)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=3)
+    r.deco('decoracion:techo', 10, 9, 4)
+    r.deco('decoracion:pared', 1, 3, 15)
+    return r
+
+
+def build_normal_laberinto():
+    """Low walls in a loose grid. Two blocks, not one — a one-block wall is vaulted and stops being
+    a wall at all. The gaps at knee height are the payoff: slide and crawl are routes the maze
+    rewards knowing, and the enemies chasing you have neither."""
+    r = Room('normal', 'single', 'cuevas:normal:laberinto')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=6, dripstone=4)
+    wall = r.block('minecraft:cobblestone')
+    for gx in (4, 8, 12, 16):
+        for z in range(2, 19):
+            if (gx, z) in r.keep_clear or rng.random() < 0.25:
+                continue
+            # A quarter of the standing walls are undercut: solid at head height, open at the floor.
+            if rng.random() < 0.25:
+                r.set(gx, 2, z, wall)
+            else:
+                r.set(gx, 1, z, wall)
+                r.set(gx, 2, z, wall)
+    for gz in (6, 14):
+        for x in range(2, 19):
+            if (x, gz) in r.keep_clear or rng.random() < 0.35:
+                continue
+            r.set(x, 1, gz, wall)
+            r.set(x, 2, gz, wall)
+    for (x, z) in ((6, 4), (14, 4), (6, 16), (14, 16), (10, 10)):
+        if (x, z) not in r.keep_clear:
+            r.set(x, 3, z, r.block('minecraft:shroomlight'))
+    r.chest('trampa', 18, 18)
+    r.ore_seam(4)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=2)
+    r.deco('decoracion:techo', 10, 9, 10)
+    r.deco('decoracion:suelo', 2, 1, 15)
+    return r
+
+
+def build_normal_crater():
+    """The high ground belongs to the enemies. Every other room hands the party a shelf; this one
+    puts a lit rim around a sunken floor and the shooters on it, so the fight starts with the party
+    looked down at. The rim's lip overhangs, which is what makes climbing out a decision."""
+    r = Room('normal', 'single', 'cuevas:normal:crater')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.shelf(1, 1, 19, 3, top=3, light=False)
+    r.shelf(1, 17, 19, 19, top=3, light=False)
+    r.shelf(1, 4, 3, 16, top=3, light=False)
+    r.shelf(17, 4, 19, 16, top=3, light=False)
+    # The lip: one course out over the bowl at head height, so the rim cannot be clung to.
+    for (x, z) in [(4, z) for z in range(4, 17)] + [(16, z) for z in range(4, 17)] \
+            + [(x, 4) for x in range(5, 16)] + [(x, 16) for x in range(5, 16)]:
+        if (x, z) not in r.keep_clear and not r.near_clear(x, z):
+            r.set(x, 4, z, r.block('minecraft:cobbled_deepslate'))
+    r.ramp(4, 6, -1, 0, top=3)
+    r.ramp(16, 14, 1, 0, top=3)
+    for (x, z) in ((2, 6), (18, 14), (6, 2), (14, 18)):
+        r.set(x, 3, z, r.block('minecraft:shroomlight'))
+    r.chest('puas', 10, 10)
+    r.stalactite(8, 8, 3)
+    r.stalactite(12, 12, 3)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=4)
+    r.deco('decoracion:techo', 6, 9, 12)
+    return r
+
+
+def build_normal_hongos():
+    """A grove. The caps are cover at head height and platforms above it, and they are the one
+    variant justified by how it looks rather than how it fights — ten shades of grey stone is its
+    own kind of repetition."""
+    r = Room('normal', 'single', 'cuevas:normal:hongos')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.ceiling_relief(blobs=5, dripstone=3)
+    cap = r.block('minecraft:brown_mushroom_block', up='true', north='true', south='true',
+                  east='true', west='true')
+    stem = r.block('minecraft:mushroom_stem')
+    for (sx, sz, h) in ((5, 5, 4), (15, 6, 5), (6, 15, 5), (16, 16, 4), (10, 3, 3), (3, 12, 3)):
+        if (sx, sz) in r.keep_clear:
+            continue
+        for y in range(1, h):
+            r.set(sx, y, sz, stem)
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                if r.owned(sx + dx, sz + dz) and not r.is_wall(sx + dx, sz + dz):
+                    r.set(sx + dx, h, sz + dz, cap)
+        r.set(sx, h - 1, sz, r.block('minecraft:shroomlight'))
+    for (x, z) in ((8, 8), (12, 12), (7, 17)):
+        if (x, z) not in r.keep_clear:
+            r.set(x, 1, z, r.block('minecraft:moss_block'))
+            r.set(x, 2, z, r.block('minecraft:red_mushroom'))
+    r.chest('libre', 15, 6, y=6)
+    r.mark('parkour', 13, 5, 6)
+    r.pool(2, 17, 4, 18)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=2)
+    r.deco('decoracion:suelo', 11, 1, 8)
+    r.deco('decoracion:techo', 10, 9, 16)
+    return r
+
+
+def build_normal_l_recodo():
+    """The elbow, cut in two by a walled cistern at its inner corner, so each arm is fought on its
+    own instead of as one long room seen from either end. The island in the water is the only place
+    a sealed chest could stand where nobody stumbles on it by walking past."""
+    r = Room('normal_l', 'l', 'cuevas:normal_l:recodo')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=14, dripstone=8)
+    r.pool(13, 13, 18, 18)
+    for (x, z) in ((12, 12), (19, 12), (12, 19), (19, 19)):
+        for y in range(1, 5):
+            r.set(x, y, z, r.block('minecraft:mossy_cobblestone'))
+    r.set(15, 1, 15, r.block('minecraft:cobblestone'))
+    r.set(16, 1, 15, r.block('minecraft:cobblestone'))
+    r.chest('sellado', 15, 15, y=2)
+    # A free-standing perch in each arm: no wall behind it, and a lip over its edge.
+    for (px, pz) in ((6, 30), (30, 6)):
+        for x in range(px - 1, px + 2):
+            for z in range(pz - 1, pz + 2):
+                for y in range(1, 5):
+                    r.set(x, y, z, r.stone_blend(y, rng))
+        for (dx, dz) in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+            r.set(px + dx, 4, pz + dz, r.block('minecraft:cobbled_deepslate'))
+        r.set(px, 5, pz, r.block('minecraft:shroomlight'))
+    r.stalagmite(9, 9, 3)
+    r.stalactite(30, 30, 3)
+    r.ore_seam(6)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_l'), ranged=4)
+    r.deco('decoracion:techo', 8, 9, 30)
+    r.deco('decoracion:techo', 30, 9, 8)
+    r.deco('decoracion:pared', 1, 3, 26)
+    return r
+
+
+def build_normal_l_andamios():
+    """Somebody worked this corner and left the scaffolding. Two levels of planking, ground access
+    by ramp, the top deck by parkour, and a chain strung between the towers. The climbers are what
+    make it a fight rather than a playground — they are the only thing on the floor that follows."""
+    r = Room('normal_l', 'l', 'cuevas:normal_l:andamios')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    plank = r.block('minecraft:oak_planks')
+    fence = r.block('minecraft:oak_fence')
+    for (x0, z0, x1, z1, level) in ((3, 24, 12, 33, 3), (24, 3, 33, 12, 3),
+                                    (5, 26, 10, 31, 7), (26, 5, 31, 10, 7)):
+        for x in range(x0, x1 + 1):
+            for z in range(z0, z1 + 1):
+                if (x, z) in r.keep_clear or not r.owned(x, z) or r.is_wall(x, z):
+                    continue
+                r.set(x, level, z, plank)
+                r.clear(x, level + 1, z, x, min(H - 2, level + 3), z)
+        for (px, pz) in ((x0, z0), (x1, z1), (x0, z1), (x1, z0)):
+            for y in range(1, level):
+                r.set(px, y, pz, fence)
+    r.ramp(13, 28, -1, 0, top=3)
+    r.ramp(28, 13, 0, -1, top=3)
+    # The zipline, and the deck it serves. Both are parkour routes and neither is the only way in.
+    for x in range(12, 26):
+        r.set(x, 8, 8, r.block('minecraft:chain', axis='x'))
+    r.mark('parkour', 12, 8, 9)
+    r.set(8, 4, 28, r.block('minecraft:lantern', hanging='false'))
+    r.set(28, 4, 8, r.block('minecraft:lantern', hanging='false'))
+    r.set(8, 8, 28, r.block('minecraft:shroomlight'))
+    r.chest('proeza', 28, 8, y=8)
+    r.ore_seam(6)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_l'), ranged=5)
+    r.deco('decoracion:techo', 16, 9, 16)
+    r.deco('decoracion:suelo', 18, 1, 26)
+    return r
+
+
+def build_normal_large_desfiladero():
+    """A gorge down the long axis with a shelf on each side. Every other large room is two chambers
+    or a hall; this one is a corridor, fought the length of it, and the two shelves face each other
+    across a gap wide enough that crossing is a wall-run and not a step."""
+    r = Room('normal_large', 'large', 'cuevas:normal_large:desfiladero')
+    r.shell()
+    rng = r.rng
+    r.rough_walls()
+    r.ceiling_relief(blobs=14, dripstone=8)
+    r.shelf(1, 1, 40, 6, top=4, light=False)
+    r.shelf(1, 14, 40, 19, top=4, light=False)
+    # Notches through the shelves at every north and south doorway. The aprons themselves are held
+    # flat, but the tile just past them is not, so a shelf built wall-to-wall walls its own doors in
+    # — the failure anfiteatro shipped with, and the reason the walk check exists (§39).
+    for bx in (9, 10, 11, 30, 31, 32):
+        for z in (6, 14):
+            r.clear(bx, 1, z, bx, 7, z)
+    r.ramp(4, 7, 0, -1, top=4)
+    r.ramp(36, 13, 0, 1, top=4)
+    for x in (6, 14, 26, 34):
+        r.set(x, 4, 6, r.block('minecraft:shroomlight'))
+        r.set(x, 4, 14, r.block('minecraft:shroomlight'))
+    # A ledge halfway up the north face, out of walking reach and under the shelf's own lip.
+    for x in range(18, 23):
+        r.set(x, 7, 5, r.block('minecraft:cobbled_deepslate'))
+        r.clear(x, 8, 5, x, 10, 5)
+    r.chest('proeza', 20, 5, y=8)
+    r.mark('parkour', 20, 8, 7)
+    r.stalagmite(10, 10, 3)
+    r.stalagmite(31, 11, 3)
+    r.pool(24, 9, 28, 11)
+    r.ore_seam(6)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal_large'), ranged=4)
+    r.deco('decoracion:techo', 20, 9, 10)
+    r.deco('decoracion:pared', 1, 3, 15)
+    r.deco('decoracion:suelo', 34, 1, 10)
+    return r
+
+
 # ------------------------------------------------- the once-per-floor rooms, deepened
 #
 # Two sets live here. The first six are the §66 rooms — start, treasure and shop variants — which
@@ -2423,6 +2776,133 @@ def build_infestadas_nidal():
     return r
 
 
+def build_infestadas_telar():
+    """The queen's chamber, built as her fight instead of dressed as it.
+
+    It REPLACES the derived arena rather than joining it. A boss room earns its power from being the
+    same place every time (§66), so a piso may only have one — and Infestadas' one should be hers.
+
+    Three things the room teaches, all of them rules the floor already runs on: the web curtains
+    break the flanks, which is where FLANK_RAGE lives (§55) and where a party learns not to circle
+    her; the centre is open, because a boss that splits needs legible ground; and the egg shelves
+    are hers, not a perch — they are reachable, so the nests can be answered."""
+    r = Room('boss', 'single', 'infestadas:boss:telar')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    web = r.block('minecraft:cobweb')
+    # Egg shelves in the corners, each with its own way up: her clutch is contestable.
+    for (x0, z0, x1, z1, rx, rz, dx, dz) in ((1, 1, 5, 5, 6, 3, -1, 0),
+                                             (15, 15, 19, 19, 14, 17, 1, 0)):
+        r.shelf(x0, z0, x1, z1, top=3, light=False)
+        r.ramp(rx, rz, dx, dz, top=3)
+    for (x, y, z) in ((3, 4, 3), (17, 4, 17), (4, 1, 16), (16, 1, 4)):
+        r.mark('nido', x, y, z)
+    # The curtains: hung on the flanks and nowhere near the centre, so the ground she splits on
+    # stays clean and the ways around her do not.
+    for (x, z) in ((6, 10), (14, 10), (7, 7), (13, 13), (7, 13), (13, 7)):
+        if (x, z) in r.keep_clear:
+            continue
+        for y in range(2, 6):
+            r.set(x, y, z, web)
+    for (x, z) in ((8, 8), (12, 8), (8, 12), (12, 12)):
+        r.set(x, 11, z, r.block('minecraft:ochre_froglight'))
+    r.set(10, 1, 10, r.block('minecraft:smooth_basalt'))
+    r.enforce_aprons()
+    r.mark('boss', 10, 2, 10)
+    r.mark('trapdoor', 10, 1, 15)
+    r.deco('decoracion:techo', 5, 9, 10)
+    r.deco('decoracion:techo', 15, 9, 10)
+    return r
+
+
+def build_infestadas_nidada():
+    """The elite over a live clutch. Same lesson as nidal at the scale of one fight: the nests keep
+    hatching while it is alive, so the room asks whether to kill the thing in front of you or the
+    thing making more of them."""
+    r = Room('mini_boss', 'single', 'infestadas:mini_boss:nidada')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.01)
+    r.ceiling_relief(blobs=6, dripstone=3)
+    for x in range(7, 14):
+        for z in range(7, 14):
+            if (x, z) not in r.keep_clear:
+                r.set(x, 1, z, r.block('minecraft:moss_block'))
+    for (x, y, z) in ((8, 2, 8), (12, 2, 12), (8, 2, 12), (12, 2, 8)):
+        r.mark('nido', x, y, z)
+    web = r.block('minecraft:cobweb')
+    for (x, z) in ((5, 15), (15, 5), (4, 4)):
+        for y in range(2, 5):
+            r.set(x, y, z, web)
+    r.set(10, 10, 10, r.block('minecraft:ochre_froglight'))
+    r.chest('trampa', 17, 17)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.mark('boss', 10, 2, 10)
+    r.deco('decoracion:techo', 14, 9, 6)
+    return r
+
+
+def build_infestadas_mudas():
+    """A moulting gallery: shed skins on ledges up the walls, and the floor beneath them clear.
+    Reads as a room the spiders use rather than one they wandered into."""
+    r = Room('normal', 'single', 'infestadas:normal:mudas')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    r.ceiling_relief(blobs=7, dripstone=5)
+    for (x0, z0, x1, z1, level) in ((2, 2, 6, 4, 3), (14, 16, 18, 18, 3), (16, 3, 18, 7, 6)):
+        for x in range(x0, x1 + 1):
+            for z in range(z0, z1 + 1):
+                if (x, z) in r.keep_clear or r.is_wall(x, z):
+                    continue
+                for y in range(1, level + 1):
+                    r.set(x, y, z, r.stone_blend(y, rng))
+    r.ramp(7, 3, -1, 0, top=3)
+    r.ramp(13, 17, 1, 0, top=3)
+    web = r.block('minecraft:cobweb')
+    for (x, z) in ((4, 3), (16, 17), (17, 5)):
+        r.set(x, 1, z, r.block('minecraft:dead_bush'))
+        r.set(x + 1, 4, z, web)
+    for (x, y, z) in ((3, 4, 3), (17, 7, 5), (5, 1, 12)):
+        r.mark('nido', x, y, z)
+    r.set(9, 8, 9, r.block('minecraft:ochre_froglight'))
+    r.chest('sellado', 10, 14)
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=3)
+    r.deco('decoracion:suelo', 8, 1, 6)
+    r.deco('decoracion:techo', 12, 9, 12)
+    return r
+
+
+def build_infestadas_sumidero():
+    """Standing water under the nest, and everything that lives here wades it happily. The one
+    room on the floor where the party is slower than what is chasing it."""
+    r = Room('normal', 'single', 'infestadas:normal:sumidero')
+    r.shell()
+    rng = r.rng
+    r.rough_walls(light_chance=0.0)
+    for (x0, z0, x1, z1) in ((2, 2, 7, 7), (13, 13, 18, 18), (2, 13, 7, 18)):
+        r.pool(x0, z0, x1, z1)
+    r.shelf(13, 2, 18, 7, top=4, light=False)
+    r.ramp(12, 4, 1, 0, top=4)
+    for (x, y, z) in ((15, 5, 4), (9, 1, 9), (10, 1, 12)):
+        r.mark('nido', x, y, z)
+    web = r.block('minecraft:cobweb')
+    for (x, z) in ((10, 4), (10, 16)):
+        if (x, z) not in r.keep_clear:
+            for y in range(3, 6):
+                r.set(x, y, z, web)
+    r.set(16, 5, 5, r.block('minecraft:ochre_froglight'))
+    r.ore_seam(3)
+    r.enforce_aprons()
+    r.auto_spawns(wave_bar('normal'), ranged=2)
+    r.deco('decoracion:techo', 10, 9, 10)
+    return r
+
+
 def build_infestadas_capullos():
     """The ceiling presses down and the webbing hangs in curtains, so sightlines break
     vertically as well as horizontally — the room where a climbing tejedora is at its worst."""
@@ -2733,7 +3213,12 @@ VARIANTS = {
                      'pozo': build_normal_pozo,                 # central basin, no high ground
                      'columnas': build_normal_columnas,         # column forest, broken sightlines
                      'derrumbe': build_normal_derrumbe,         # collapsed quarter, rubble slope
-                     'balcon': build_normal_balcon},            # a real balcony to contest
+                     'balcon': build_normal_balcon,             # a real balcony to contest
+                     'lago': build_normal_lago,                 # water as movement denial
+                     'puente': build_normal_puente,             # trench cross, two bridges
+                     'laberinto': build_normal_laberinto,       # 2-high walls, slide gaps
+                     'crater': build_normal_crater,             # the rim is theirs, not yours
+                     'hongos': build_normal_hongos},            # the grove
     'boss':         {'anillo': build_boss},                     # rimmed arena — one variant, by §66
     'mini_boss':    {'columna': build_mini_boss,                # one column, one shelf
                      'estanque': build_mini_boss_estanque,      # the elite stands in water
@@ -2762,9 +3247,12 @@ VARIANTS = {
     'devil_deal':   {'circulo': build_devil_deal},              # gilded circle, cage arcs
     'normal_large': {'garganta': build_normal_large,            # two chambers, arched neck
                      'columnata': build_normal_large_columnata, # one hall, colonnade
-                     'manantial': build_normal_large_manantial},# overhung ledge, spring, basin
+                     'manantial': build_normal_large_manantial, # overhung ledge, spring, basin
+                     'desfiladero': build_normal_large_desfiladero},   # a corridor, not a hall
     'normal_l':     {'codo': build_normal_l,                    # elbow massif, inner perch
-                     'mirador': build_normal_l_mirador},        # outer perch instead
+                     'mirador': build_normal_l_mirador,         # outer perch instead
+                     'recodo': build_normal_l_recodo,           # cistern splits the two arms
+                     'andamios': build_normal_l_andamios},      # two decks and a zipline
     'normal_big':   {'terrazas': build_normal_big,              # three terraces, ring route
                      'anfiteatro': build_normal_big_anfiteatro, # stepped bowl, looked down on
                      'cuatro_pilares': build_normal_big_cuatro_pilares},
@@ -2776,7 +3264,24 @@ VARIANTS = {
 # build_infestadas_nidal for why a piso needs at least one of these to be a place and not a filter.
 INFESTADAS_ONLY = {
     'normal': {'nidal': build_infestadas_nidal,
-               'capullos': build_infestadas_capullos},
+               'capullos': build_infestadas_capullos,
+               'mudas': build_infestadas_mudas,
+               'sumidero': build_infestadas_sumidero},
+    'mini_boss': {'nidada': build_infestadas_nidada},
+}
+
+# Keys whose derived variants Infestadas DROPS in favour of its own.
+#
+# Only the boss, and the reason is §66's axis rather than a preference for authored over derived: a
+# recognized room earns its power from being the same place every time, so a piso may only have one
+# arena — and a floor whose boss is the queen should not fight her in a cave that happens to have
+# webs in it. Everything else stays derived and merely gains: mini_boss and normal are approached
+# rooms, where a wider draw is upside, so nidada and the two new normals ADD to the derived set.
+#
+# boss_big is knowingly left derived: Infestadas' 2x2 arena is a real build and this pass did not
+# make it. It is the next thing this piso owes.
+INFESTADAS_REPLACES = {
+    'boss': {'telar': build_infestadas_telar},
 }
 
 # Rooms in a shared set, drawn by every piso whose `hereda` names it.
@@ -2793,6 +3298,9 @@ def variants_for(piso):
         return {k: dict(v) for k, v in VARIANTS.items()}
     out = {}
     for key, named in VARIANTS.items():
+        if key in INFESTADAS_REPLACES:
+            out[key] = dict(INFESTADAS_REPLACES[key])
+            continue
         out[key] = {name: (lambda b=builder: infest(b())) for name, builder in named.items()}
     for key, named in INFESTADAS_ONLY.items():
         out.setdefault(key, {}).update(

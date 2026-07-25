@@ -892,7 +892,7 @@ public final class PisoCatalog {
                 // Its own set-pieces, both drawn from the floor's own bestiary. The boss is the
                 // slime the floor has been showing you all along, and the mini-boss is the one
                 // enemy on it that has a rule — so both fights are about something already learned.
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST),
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST, Curse.PLOMO),
                 List.of("gran_limo"), List.of("cristalero_mayor"),
                 cuevasEnemies(), cuevasDecor()));
         // Every family, but not at every piso's odds. This used to be two families, on the argument
@@ -912,7 +912,7 @@ public final class PisoCatalog {
                 // and the fallback that now promotes a piso's own elite would give the floor a
                 // second tejedora — correct by construction, and still one of the two fights the
                 // floor already has.
-                EnumSet.of(Curse.LABYRINTH, Curse.LOST),
+                EnumSet.of(Curse.LABYRINTH, Curse.LOST, Curse.PLOMO),
                 List.of("reina_madre"), List.of("cazadora"),
                 Map.of(ShapeFamily.LARGE, 0.7, ShapeFamily.L, 0.6, ShapeFamily.BIG, 0.3),
                 infestadasEnemies(), infestadasDecor()));

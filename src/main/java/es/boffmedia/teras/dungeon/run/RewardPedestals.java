@@ -189,7 +189,7 @@ public final class RewardPedestals {
         DungeonDisplays.discard(level, pedestal.textDisplay);
         // And by tag, because an id lookup answers null for an entity in an unloaded chunk — the
         // same blindness that left shop pedestals standing in later floors.
-        DungeonDisplays.sweep(level, pedestal.pos, 3);
+        DungeonDisplays.sweep(level, pedestal.pos);
         pedestal.itemDisplay = null;
         pedestal.textDisplay = null;
     }

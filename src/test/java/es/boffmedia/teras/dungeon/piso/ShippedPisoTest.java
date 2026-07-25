@@ -47,26 +47,31 @@ class ShippedPisoTest {
      * layout, so this probes for the names the generator writes rather than listing the folder.
      * {@code tools/author_cuevas_rooms.py} is the other half of this pair.
      */
-    private static final List<String> AUTHORED = List.of(
-            // one per key
-            "cupula", "repisa", "anillo", "columna", "alcoba", "pedestal", "rendija", "geoda",
-            "galerias", "santuario", "altar", "vitrina", "circulo", "garganta", "codo", "terrazas",
-            "oculo",
-            // the extra variants
-            "pozo", "columnas", "derrumbe", "balcon", "columnata", "manantial", "mirador",
-            "anfiteatro", "cuatro_pilares", "alacena", "veta", "derrumbado", "burbuja",
-            // Infestadas only
-            "nidal", "capullos");
-
+    /**
+     * Every template shipped under {@code piso/key}, read from the folder itself.
+     *
+     * <p>This used to be a hardcoded list of room names, and it drifted the moment it mattered: the
+     * six §66 variants and every §68 one were invisible to it, so a test whose whole job is "the
+     * folders still hold rooms" was answering about a subset somebody remembered to add. Listing the
+     * directory is the same discovery the runtime does, and it cannot fall behind the content.</p>
+     */
     private static List<String> namesIn(String piso, String key) {
+        URL folder = ShippedPisoTest.class.getClassLoader().getResource(ROOT + piso + "/" + key);
+        if (folder == null || !"file".equals(folder.getProtocol())) {
+            return List.of();
+        }
+        String[] files = new java.io.File(java.net.URLDecoder.decode(
+                folder.getPath(), java.nio.charset.StandardCharsets.UTF_8)).list();
+        if (files == null) {
+            return List.of();
+        }
         List<String> found = new ArrayList<>();
-        for (String name : AUTHORED) {
-            URL url = ShippedPisoTest.class.getClassLoader()
-                    .getResource(ROOT + piso + "/" + key + "/" + name + ".nbt");
-            if (url != null) {
-                found.add(name);
+        for (String file : files) {
+            if (file.endsWith(".nbt")) {
+                found.add(file.substring(0, file.length() - ".nbt".length()));
             }
         }
+        java.util.Collections.sort(found);
         return found;
     }
 
@@ -158,16 +163,36 @@ class ShippedPisoTest {
         RoomPoolIndex index = shippedIndex();
         FloorDef cuevas = piso("cuevas", EnumSet.allOf(ShapeFamily.class));
         FloorDef infestadas = piso("cuevas_infestadas", EnumSet.allOf(ShapeFamily.class));
-        assertEquals(5, index.pool(cuevas, "normal").size());
-        assertEquals(7, index.pool(infestadas, "normal").size());
+        // A lower bound, not a count: `normal` is most of every floor, so it is the one key where
+        // more is always right and a number here would only ever be a chore to update. Ten is what
+        // §69 authored it to; dropping below that is a regression worth failing over.
+        assertTrue(index.pool(cuevas, "normal").size() >= 10,
+                "normal is the most-walked room and lost variants");
         // A secret found twice in one run must not be the same pocket twice.
         assertEquals(5, index.pool(cuevas, "secret").size());
 
         List<String> onlyInfested = index.pool(infestadas, "normal").stream()
                 .map(RoomVariant::name)
                 .filter(n -> index.pool(cuevas, "normal").stream().noneMatch(v -> v.name().equals(n)))
+                .sorted()
                 .toList();
-        assertEquals(List.of("capullos", "nidal"), onlyInfested);
+        assertEquals(List.of("capullos", "mudas", "nidal", "sumidero"), onlyInfested);
+    }
+
+    /**
+     * Infestadas' arena is <b>hers</b>, and it is the only one she has.
+     *
+     * <p>A boss room is a recognized room (§66): its power comes from being the same place every
+     * time, so a piso may hold exactly one. Infestadas therefore <i>replaces</i> the derived cave
+     * arena rather than adding to it — a queen fought in a cave that happens to have webs in it is
+     * the themes idea the piso model deleted, arrived at from the other direction.</p>
+     */
+    @Test
+    void infestadasBossIsItsOwnAndTheOnlyOne() {
+        RoomPoolIndex index = shippedIndex();
+        FloorDef infestadas = piso("cuevas_infestadas", EnumSet.allOf(ShapeFamily.class));
+        assertEquals(List.of("telar"),
+                index.pool(infestadas, "boss").stream().map(RoomVariant::name).toList());
     }
 
     /** A piso narrowed to one family owes fewer rooms — the lever that makes a variant affordable. */

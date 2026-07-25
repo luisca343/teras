@@ -108,6 +108,8 @@ public final class RunEngine {
         final RewardPedestals pedestals = new RewardPedestals();
         /** The treasure room's three-stand choice, its own system since it is not one pedestal. */
         final TreasureChoice treasure = new TreasureChoice();
+        /** Chests, which belong to no room type: any template may carry a `cofre` marker. */
+        final ChestPedestal chests = new ChestPedestal();
         /** The bar over a live boss or mini-boss. */
         final DungeonBossBars bossBars = new DungeonBossBars();
         /** Bought at the shop: reveal the floor's layout / its special rooms on the minimap. */
@@ -205,6 +207,10 @@ public final class RunEngine {
         floor.shop.stock(floor);
         broadcastWallet(floor);
         sendCollector(floor);
+        if (floor.run.curses().contains(es.boffmedia.teras.dungeon.model.Curse.PLOMO)) {
+            ParkourLimits.apply(floor);
+            message(floor, "§8El plomo pesa en este piso. §7Las piernas no responden igual.");
+        }
     }
 
     /**
@@ -250,6 +256,11 @@ public final class RunEngine {
             floor.shop.despawnDisplays(floor);
             floor.pedestals.despawn(floor);
             floor.treasure.despawn(floor);
+            floor.chests.despawn(floor);
+            // Unconditional: giving the moveset back must not depend on the floor still knowing it
+            // took it. A curse that strands a player without parkour outside the dungeon is the one
+            // failure here that follows them into the rest of the server.
+            ParkourLimits.clear(floor);
             floor.market.despawnDisplays(floor);
             floor.bossBars.clear();
             // Characters are floor-scoped like every other fixture: the entities go with the
@@ -781,6 +792,12 @@ public final class RunEngine {
             return;
         }
         if (floor.pedestals.tryClaim(floor, player, pos)) {
+            event.setCanceled(true);
+            return;
+        }
+        // Chests answer in any room, so they are tested after every room-typed fixture and before
+        // the secret wall — a chest set beside a shop counter must not shadow the counter.
+        if (floor.chests.tryClaim(floor, player, pos)) {
             event.setCanceled(true);
             return;
         }
@@ -1690,6 +1707,9 @@ public final class RunEngine {
                             lootTable(loot));
                 }
             }
+            // Chests belong to no room type — the point of them is that a normal room may hold one
+            // (PISOS §69) — so this asks every room, not a list of the ones allowed to pay out.
+            floor.chests.arm(floor, room);
             if (room.type() == RoomType.CURSE) {
                 // No toll here any more: the price is a heart at the spiked doorway, paid by
                 // everyone who walks under it. Inside, nothing is taken that was not offered.

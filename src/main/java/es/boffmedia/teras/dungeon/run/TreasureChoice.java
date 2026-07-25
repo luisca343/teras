@@ -225,7 +225,7 @@ public final class TreasureChoice {
         DungeonDisplays.discard(level, stand.textDisplay);
         // By tag as well, because an id lookup answers null in an unloaded chunk — the blindness that
         // once left shop pedestals standing on later floors.
-        DungeonDisplays.sweep(level, stand.pos, 3);
+        DungeonDisplays.sweep(level, stand.pos);
         stand.itemDisplay = null;
         stand.textDisplay = null;
     }

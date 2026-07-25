@@ -312,7 +312,7 @@ public final class CurseMarket {
         DungeonDisplays.discard(level, stand.detailDisplay);
         // And by tag: an id lookup answers null for an entity in an unloaded chunk, which is how
         // shop pedestals used to survive into the next floor.
-        DungeonDisplays.sweep(level, stand.pos, DISPLAY_SWEEP_RADIUS);
+        DungeonDisplays.sweep(level, stand.pos);
         stand.itemDisplay = null;
         stand.textDisplay = null;
         stand.detailDisplay = null;

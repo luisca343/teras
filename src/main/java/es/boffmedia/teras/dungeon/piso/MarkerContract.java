@@ -81,6 +81,7 @@ public final class MarkerContract {
         runtime("purga");          // CurseMarket — the stand that buys one back
         runtime("nido");           // Nests, when the piso runs the infestation
         runtime("ambiente");       // EnemySpawner, when the piso declares `ambientales`
+        runtime("cofre");          // ChestPedestal — a priced reward, in any room that carries one
         runtime("inicio");         // BuiltDungeon.partySpawn — where the party lands
         runtime("decoracion");     // Decorator — filled from the piso's surface tables
 
@@ -88,6 +89,12 @@ public final class MarkerContract {
         // them. Rooms are always a whole number of 21-block cells — a 1.5-cell room is refused at
         // load and skipped at build — so the bands never move, and a fixed mark means something.
         annotation("door");
+
+        // An intended parkour route, recorded by whoever built it. ParCool ships in the pack, so a
+        // ledge reachable only by wall-run is legitimate content — but nothing can prove a route
+        // exists (the room audit models walking, which is the right floor to hold rooms to), so this
+        // is a note that says "this was meant to be climbed" and stops the next author flattening it.
+        annotation("parkour");
 
         loot(RoomType.TREASURE, LootSource.TESORO);
         loot(RoomType.SECRET, LootSource.SECRETA);
