@@ -49,9 +49,9 @@ public final class RoomKeys {
 
     /**
      * Every key {@code shapes} obliges a piso to author — the thirteen, plus one {@code normal_}
-     * room per large shape, plus {@code boss_quad} when the piso allows 2×2 rooms at all.
+     * room per large shape, plus {@code boss_big} when the piso allows 2×2 rooms at all.
      *
-     * <p>{@code boss_quad} rides the QUAD opt-out rather than standing on its own: the boss room's
+     * <p>{@code boss_big} rides the QUAD opt-out rather than standing on its own: the boss room's
      * footprint is chosen from the shapes the floor can produce, so a piso without QUAD simply never
      * places a 2×2 boss chamber and must not be asked to build one.</p>
      */

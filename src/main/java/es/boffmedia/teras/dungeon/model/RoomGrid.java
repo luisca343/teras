@@ -145,16 +145,19 @@ public final class RoomGrid {
      * Occupied orthogonal neighbors of {@code pos}; secret rooms and post rooms excluded. A crack
      * is not a doorway, and neither is the exit chamber's wall — its one door is appended by hand
      * against the boss, so a room it happens to lean on keeps counting as the dead end it plays
-     * as. During generation neither type exists yet, so the exclusions only shape what the final
+     * as. During generation no post room exists yet, so the exclusion only shapes what the final
      * layout reports.
+     *
+     * <p>Asked of the room ({@link Room#isPostRoom}), not of its type: the Acreedor's satellite is a
+     * DEVIL_DEAL exactly like the one placed on the playfield when a piso ships no sala del sello,
+     * and only the satellite is appended by hand. Enumerating types here excluded the exit and the
+     * Orden and silently un-dead-ended whatever the Acreedor's flank happened to touch.</p>
      */
     public int occupiedNeighborCount(GridPos pos) {
         int count = 0;
         for (GridDir dir : GridDir.values()) {
             Room neighbor = roomAt(pos.step(dir));
-            if (neighbor != null && !neighbor.type().isSecret()
-                    && neighbor.type() != RoomType.EXIT
-                    && neighbor.type() != RoomType.ORDEN) {
+            if (neighbor != null && !neighbor.type().isSecret() && !neighbor.isPostRoom()) {
                 count++;
             }
         }

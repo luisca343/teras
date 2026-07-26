@@ -816,9 +816,11 @@ public final class DungeonCommand {
         }
         int purgedSlots = slots;
         int purgedCells = cells;
+        // The estimate carries the entity pass too: after the blocks, each batch of cells waits for
+        // its chunks' entities to be readable before it is swept (PISOS §71).
         ctx.getSource().sendSuccess(() -> Component.literal("§ePurgando " + purgedSlots
                 + " slot(s), " + purgedCells + " celdas — una por tick, ~"
-                + (purgedCells / 20) + "s."), true);
+                + (purgedCells / 15) + "s."), true);
         return 1;
     }
 

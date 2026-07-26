@@ -5,10 +5,17 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * A validated, immutable floor: what the generator hands to the materializer and the run session.
+ * A validated, finished floor: what the generator hands to the materializer and the run session.
  * Rooms, door edges and metadata are fixed here — nothing downstream re-derives structure from
  * adjacency, and {@code floor + curses + seedString} rebuilds this exact layout, room variants
  * included ({@link #baseSeed()} is what variant selection derives from).
+ *
+ * <p><b>Finished, not defensively immutable.</b> {@link #grid()} hands out the live {@link RoomGrid}
+ * and {@link Room#setType} is public, because room <i>identity</i> is load-bearing downstream: door
+ * edges hold room references, {@code doorsOf} compares them with {@code ==}, and the materializer
+ * keys its marker map by room. Copying the grid on the way out would hand callers rooms that are
+ * equal to nothing they already hold. The contract is by convention — once this object exists, its
+ * grid is read and never written.</p>
  */
 public final class DungeonLayout {
 

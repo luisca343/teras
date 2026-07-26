@@ -44,16 +44,16 @@ class GenerationInvariantsTest {
     }
 
     /**
-     * The 2×2 chamber, on the production path. The boss now claims the farthest dead end outright,
-     * which grows on its own only ~29% of the time — so the guarantee moved to the reroll: a piso
-     * that builds 2×2 rooms sets {@code forceBossQuad}, {@link LayoutValidator#checkBossQuad} rejects
-     * a floor whose farthest boss did not grow, and the generator rerolls onto one where it did. The
-     * result is a boss that is both the deepest room <b>and</b> a 2×2 on nearly every floor; the rare
-     * miss is the {@code forceBossQuad(false)} fallback (a 1×1 boss, still at the farthest).
+     * The 2×2 chamber, on the production path. The boss claims the farthest dead end outright, and a
+     * dead end the carve grew has 2×2 room around it only about 29% of the time — so the carve is
+     * told to end in one: {@code RoomCarver.addGrowableBossDeadEnd} adds a growable dead end past
+     * everything else whenever the floor did not already finish in one, for the price of a single
+     * cell. {@link LayoutValidator#checkBossQuad} stays as the net, and the {@code
+     * forceBossQuad(false)} fallback stays behind that.
      *
-     * <p>Swept with {@code forceBossQuad}, the way every quad piso runs. Without the reroll the rate
-     * would be the placer's own ~29%, which is the point: this pins that production does not ship
-     * that.</p>
+     * <p>Swept with {@code forceBossQuad}, the way every quad piso runs. Before the carve made the
+     * promise this was the reroll's job and cost about 3.4 discarded floors each time; the bar is
+     * kept here because what production must ship is the quad, however it is arrived at.</p>
      */
     @Test
     void theBossChamberGrowsIntoAQuadOnMostFloors() {
@@ -66,8 +66,33 @@ class GenerationInvariantsTest {
                 quads++;
             }
         }
-        assertTrue(quads >= floors * 98 / 100,
+        assertTrue(quads >= floors * 99 / 100,
                 "boss grew on only " + quads + " of " + floors + " floors");
+    }
+
+    /**
+     * The carve settles the boss chamber itself, so the reroll loop has almost nothing left to do.
+     *
+     * <p>This is the measure that says the guarantee is structural rather than statistical: mean
+     * attempts ran at ~3.4 when {@code forceBossQuad} was enforced by rerolling whole floors, and at
+     * ~0.15 once the carve was made to end in a growable dead end. A regression that quietly went
+     * back to rerolling would still pass every other test in this class — it would just cost four
+     * times the work per floor — so the cost is pinned as well as the outcome.</p>
+     */
+    @Test
+    void theQuadGuaranteeCostsAlmostNoRerolls() {
+        GenConfig config = CONFIG.withForceBossQuad(true).withExitRoom(true);
+        int floors = 0;
+        int attempts = 0;
+        for (int stage : new int[] {1, 3, 6, 12}) {
+            for (int i = 0; i < 100; i++) {
+                attempts += DungeonGenerator.generate(config, stage, Set.of(), "reroll-" + i)
+                        .attempt();
+                floors++;
+            }
+        }
+        assertTrue(attempts < floors, "generation spent " + attempts
+                + " rerolls over " + floors + " floors; the carve should be settling the quad");
     }
 
     /**
@@ -144,13 +169,12 @@ class GenerationInvariantsTest {
     }
 
     /**
-     * With the boss forced to 2×2, the reroll makes the quad a near-guarantee. The bar is looser
-     * than the old 99.9% on purpose: the boss now claims the <b>farthest</b> dead end, which grows
-     * on its own only ~29% of the time, so the reroll has to find a floor where <i>that</i> dead end
-     * is growable rather than any. On small early floors it sometimes cannot within the attempt
-     * budget and falls back to a 1×1 boss — still at the farthest, so the invariant that matters
-     * holds; only the chamber shrinks. Pinned so the fallback cannot flake the build and a
-     * regression that quietly stopped forcing the quad still fails it.
+     * The same guarantee across the whole curve, where the small early floors used to be the weak
+     * spot: they have the least room to spare, so a reroll hunting for a growable farthest dead end
+     * was likeliest to run out of attempts there and fall back to a 1×1 boss. Adding the dead end
+     * during the carve costs one cell and does not care how tight the floor is, so floor one now
+     * holds the same bar as floor twelve. Pinned so a regression that stopped forcing the quad — or
+     * stopped being able to place it — fails here.
      */
     @Test
     void forcedBossQuadIsAQuadSaveTheRareFallback() {
@@ -168,7 +192,7 @@ class GenerationInvariantsTest {
                 }
             }
         }
-        assertTrue(quad >= floors * 98 / 100, quad + " of " + floors + " bosses are 2×2");
+        assertTrue(quad >= floors * 99 / 100, quad + " of " + floors + " bosses are 2×2");
     }
 
     /** The margin ring exists on every floor — post-room space is uniform, exit or not. */

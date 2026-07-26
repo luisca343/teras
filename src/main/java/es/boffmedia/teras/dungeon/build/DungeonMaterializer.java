@@ -12,6 +12,7 @@ import es.boffmedia.teras.dungeon.piso.DecorTables;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.player.Player;
@@ -48,8 +49,10 @@ import java.util.function.Consumer;
  * far as anyone can see. The legacy paster skipped secret doors entirely and produced sealed,
  * unreachable rooms.</p>
  *
- * <p>Discards clear one cell box per tick from the recorded footprint. Neither build nor discard
- * state survives a restart in this stage; the instance journal is stage 3 (DUNGEONS.md §11).</p>
+ * <p>Discards clear one cell box per tick from the recorded footprint, then sweep the entities of
+ * those cells behind an {@link EntityLoadGate}: blocks and entities are loaded by two different
+ * mechanisms and only one of them is synchronous (PISOS §71). Neither build nor discard state
+ * survives a restart in this stage; the instance journal is stage 3 (DUNGEONS.md §11).</p>
  */
 @EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonMaterializer {
@@ -58,6 +61,17 @@ public final class DungeonMaterializer {
     private static final Map<Integer, BuiltDungeon> BUILT = new LinkedHashMap<>();
     private static final ArrayDeque<Job> JOBS = new ArrayDeque<>();
     private static int nextId = 1;
+
+    /**
+     * How many cell boxes wait on one {@link EntityLoadGate}. A whole pad is 169 cells and some 350
+     * chunks; sweeping in batches keeps how much of it is held resident at once bounded, at the cost
+     * of one round of read latency per batch.
+     */
+    private static final int SWEEP_BATCH_CELLS = 16;
+    /** New chunks asked for per tick while a gate fills. */
+    private static final int SWEEP_CHUNKS_PER_TICK = 24;
+    /** How long a gate waits for the entity reads once it has asked for everything. */
+    private static final int SWEEP_PATIENCE_TICKS = 100;
 
     private interface Job {
         /** One tick of work; true when the job is finished. */
@@ -184,15 +198,17 @@ public final class DungeonMaterializer {
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onServerStopping(ServerStoppingEvent event) {
         int drained = 0;
+        int kept = 0;
         for (Job job : List.copyOf(JOBS)) {
-            if (!(job instanceof DiscardJob)) {
+            if (!(job instanceof DiscardJob discard)) {
                 continue;
             }
             try {
-                while (!job.step()) {
-                    // one cell per step, bounded by the floor's own footprint
+                if (discard.drainNow()) {
+                    drained++;
+                } else {
+                    kept++;
                 }
-                drained++;
             } catch (Throwable t) {
                 Teras.LOGGER.error("Dungeons: could not finish a discard at shutdown; the run "
                         + "journal will have the boot sweep clear it", t);
@@ -200,6 +216,13 @@ public final class DungeonMaterializer {
         }
         if (drained > 0) {
             Teras.LOGGER.info("Dungeons: cleared {} pending floor(s) before shutdown", drained);
+        }
+        if (kept > 0) {
+            // Not a failure: the blocks are gone either way. Some cell's entities were not in memory
+            // and this event is the last tick there is, so the journal is left for the boot sweep,
+            // which can wait for the reads the way a discard normally does.
+            Teras.LOGGER.info("Dungeons: {} floor(s) had cold cells at shutdown; their journals are "
+                    + "kept so the next boot can finish sweeping them", kept);
         }
         JOBS.clear();
         BUILT.clear();
@@ -250,6 +273,11 @@ public final class DungeonMaterializer {
         private final int roomSize = DungeonsConfig.roomSize();
         private final int roomHeight = DungeonsConfig.roomHeight();
         private int index;
+        /** The pre-paste sweep: null until it starts, empty once every cell has been through it. */
+        private ArrayDeque<BlockPos> preSweep;
+        private final List<BlockPos> batch = new ArrayList<>();
+        private EntityLoadGate gate;
+        private boolean cleared;
 
         BuildJob(int id, ServerLevel level, DungeonLayout layout,
                  es.boffmedia.teras.dungeon.piso.FloorPlan plan, BlockPos origin,
@@ -290,14 +318,79 @@ public final class DungeonMaterializer {
             onFailed.run();
         }
 
+        /**
+         * Nothing may already be standing where the floor goes. A CustomNPCs corpse waiting out a
+         * respawn timer survives the run teardown (it left the kill ledger when it died), and pasting
+         * rooms around it is how playtest 3 got enemies embedded in the ground of the next floor's
+         * treasure rooms; an orphan shop display from a floor whose discard could not see it is the
+         * same thing one floor later.
+         *
+         * <p>Gated, and over the cells this floor is about to occupy: those are the chunks the paste
+         * is going to load anyway, so front-loading them costs the build a handful of ticks and
+         * nothing else, and it is the only pass that can see entities on a cold pad. The whole
+         * footprint stays a best-effort pass — a cell no room of this floor uses is not worth 300
+         * forced chunk loads, and an orphan there is in the void where nobody stands.</p>
+         *
+         * @return true when the footprint is clear and pasting may start
+         */
+        private boolean clearFootprint() {
+            if (preSweep == null) {
+                preSweep = new ArrayDeque<>(usedCells());
+                sweepEntities(level, origin, layout.grid().size() * roomSize, roomHeight);
+            }
+            if (batch.isEmpty()) {
+                for (int i = 0; i < SWEEP_BATCH_CELLS; i++) {
+                    BlockPos cell = preSweep.poll();
+                    if (cell == null) {
+                        break;
+                    }
+                    batch.add(cell);
+                }
+                if (batch.isEmpty()) {
+                    cleared = true;
+                    return true;
+                }
+                gate = gateFor(batch, roomSize);
+            }
+            switch (pollGate(gate, level)) {
+                case WAITING -> {
+                    return false;
+                }
+                case GAVE_UP -> Teras.LOGGER.warn("Dungeons: the entities of {} cell(s) around {} "
+                        + "never loaded before the build; sweeping what is visible",
+                        batch.size(), batch.get(0));
+                case READY -> { }
+            }
+            for (BlockPos cell : batch) {
+                try {
+                    sweepEntities(level, cell, roomSize, roomHeight);
+                } catch (Throwable t) {
+                    // A floor that cannot be swept is still a floor worth building: the paste
+                    // overwrites the blocks either way, and failing the build would send the party
+                    // home over one bad entity.
+                    Teras.LOGGER.error("Dungeons: could not sweep cell {} before the build", cell, t);
+                }
+            }
+            batch.clear();
+            gate = null;
+            return false;
+        }
+
+        /** Absolute origins of every cell this floor's rooms occupy. */
+        private List<BlockPos> usedCells() {
+            List<BlockPos> cells = new ArrayList<>();
+            for (Room room : rooms) {
+                for (GridPos cell : room.cells()) {
+                    cells.add(origin.offset(cell.x() * roomSize, 0, cell.y() * roomSize));
+                }
+            }
+            return cells;
+        }
+
         @Override
         public boolean step() {
-            if (index == 0) {
-                // Nothing may already be standing where the floor goes. A CustomNPCs corpse
-                // waiting out a respawn timer survives the run teardown (it left the kill ledger
-                // when it died), and pasting rooms around it is how playtest 3 got enemies
-                // embedded in the ground of the next floor's treasure rooms.
-                sweepEntities(level, origin, layout.grid().size() * roomSize, roomHeight);
+            if (!cleared && !clearFootprint()) {
+                return false;
             }
             if (index < rooms.size()) {
                 Room room = rooms.get(index);
@@ -355,7 +448,9 @@ public final class DungeonMaterializer {
                     room.anchor().x() * roomSize, 0, room.anchor().y() * roomSize);
             // Before the paste, not after: the template brings its own entities and sweeping
             // afterwards would delete them. Before is also the only moment the volume is still
-            // the *old* floor's, which is what has to go.
+            // the *old* floor's, which is what has to go. The pass that guarantees this is
+            // clearFootprint's gated one, ticks ago; this is the last look, for anything whose
+            // entity section landed in between.
             for (GridPos cell : room.shape().offsets()) {
                 sweepLoadedEntities(level, nominal.offset(cell.x() * roomSize, 0,
                         cell.y() * roomSize), roomSize, roomHeight);
@@ -633,10 +728,26 @@ public final class DungeonMaterializer {
         }
     }
 
+    /**
+     * Clears a floor in two passes: blocks a cell per tick, then entities behind an
+     * {@link EntityLoadGate}.
+     *
+     * <p>The second pass is what makes a discard actually complete. The first one sweeps entities too
+     * — that is the pass that catches a mob while its floor is still under it — but it can only see
+     * what is already in memory, and the pads this job runs on are pads a party has left. The gated
+     * pass runs once the blocks are gone, when the cells' entity sections have had ticks to arrive,
+     * and it is the reason {@link #onComplete} (which deletes the run journal) now waits for it: a
+     * discard that cleared the blocks and missed the displays is not a finished discard, and the
+     * journal is the only thing that can bring anyone back to those cells.</p>
+     */
     private static final class DiscardJob implements Job {
         private final ServerLevel level;
         private final Runnable onComplete;
-        private final ArrayDeque<BlockPos> cellOrigins = new ArrayDeque<>();
+        private final ArrayDeque<BlockPos> toClear = new ArrayDeque<>();
+        /** Cells whose blocks are gone, waiting for their entities to be sweepable. */
+        private final ArrayDeque<BlockPos> toSweep = new ArrayDeque<>();
+        private final List<BlockPos> batch = new ArrayList<>();
+        private EntityLoadGate gate;
         private final int roomSize;
         private final int roomHeight;
 
@@ -646,23 +757,75 @@ public final class DungeonMaterializer {
             this.onComplete = onComplete;
             this.roomSize = roomSize;
             this.roomHeight = roomHeight;
-            this.cellOrigins.addAll(cells);
+            this.toClear.addAll(cells);
         }
 
         @Override
         public boolean step() {
-            BlockPos cell = cellOrigins.poll();
-            if (cell == null) {
+            BlockPos cell = toClear.poll();
+            if (cell != null) {
+                clearCell(cell);
+                toSweep.add(cell);
+                return false;
+            }
+            if (batch.isEmpty() && !nextBatch()) {
                 onComplete.run();
                 return true;
             }
+            // Caught rather than thrown, for the same reason clearCell catches: this job is the only
+            // thing that will ever run onComplete, and onComplete is what deletes the journal and
+            // frees the slot. A job that dies here strands both.
+            EntityLoadGate.State state;
+            try {
+                state = pollGate(gate, level);
+            } catch (Throwable t) {
+                Teras.LOGGER.error("Dungeons: could not load the chunks around {} to sweep them",
+                        batch.get(0), t);
+                state = EntityLoadGate.State.GAVE_UP;
+            }
+            if (state == EntityLoadGate.State.WAITING) {
+                return false;
+            }
+            if (state == EntityLoadGate.State.GAVE_UP) {
+                Teras.LOGGER.warn("Dungeons: the entities of {} cell(s) around {} never loaded; "
+                        + "sweeping what is visible and moving on", batch.size(), batch.get(0));
+            }
+            for (BlockPos swept : batch) {
+                try {
+                    sweepEntities(level, swept, roomSize, roomHeight);
+                } catch (Throwable t) {
+                    Teras.LOGGER.error("Dungeons: could not sweep the entities of cell {}", swept, t);
+                }
+            }
+            batch.clear();
+            gate = null;
+            return false;
+        }
+
+        /** False when there is nothing left to sweep. */
+        private boolean nextBatch() {
+            for (int i = 0; i < SWEEP_BATCH_CELLS; i++) {
+                BlockPos cell = toSweep.poll();
+                if (cell == null) {
+                    break;
+                }
+                batch.add(cell);
+            }
+            if (batch.isEmpty()) {
+                return false;
+            }
+            gate = gateFor(batch, roomSize);
+            return true;
+        }
+
+        private void clearCell(BlockPos cell) {
             // Per cell, so one bad box cannot abandon the rest of the floor. The queue drops a job
             // that throws, and a discard that dies at its third cell out of forty used to leave the
             // other thirty-seven standing — with the pedestals and shop displays inside them.
             try {
                 // Entities before blocks: a lingering mob — or a hidden CustomNPCs corpse waiting to
-                // respawn — must go with the floor it stood in, or it turns up inside the next one.
-                // Loaded, because the pad this is clearing is one the party has already left.
+                // respawn — must go with the floor it stood in rather than fall out of it. Only what
+                // is already in memory; the gated pass is what covers the rest.
                 sweepLoadedEntities(level, cell, roomSize, roomHeight);
                 for (int x = 0; x < roomSize; x++) {
                     for (int y = 0; y < roomHeight; y++) {
@@ -675,7 +838,48 @@ public final class DungeonMaterializer {
                 Teras.LOGGER.error("Dungeons: could not clear cell {}; continuing with the rest of "
                         + "the floor", cell, t);
             }
-            return false;
+        }
+
+        /**
+         * Finishes inside this tick, because the server is stopping and there will be no more ticks.
+         *
+         * <p>The gate cannot help here — the entity reads it waits for are merged by
+         * {@code ServerLevel.tick}, which is never going to run again — so this clears every block
+         * and sweeps every cell whose entities happen to be in memory, which on the pad a party was
+         * standing on is all of them.</p>
+         *
+         * @return true when every cell was cleared <i>and</i> its entities confirmed swept, which is
+         *         the only case where the run journal may be deleted. Otherwise the journal stays and
+         *         the next boot sweeps those cells with ticks to spare — one redundant sweep of air
+         *         beats a display nobody can reach again
+         */
+        boolean drainNow() {
+            BlockPos cell;
+            while ((cell = toClear.poll()) != null) {
+                clearCell(cell);
+                toSweep.add(cell);
+            }
+            boolean certain = true;
+            List<BlockPos> pending = new ArrayList<>(batch);
+            pending.addAll(toSweep);
+            batch.clear();
+            toSweep.clear();
+            for (BlockPos swept : pending) {
+                if (!entitiesLoaded(level, swept, roomSize)) {
+                    certain = false;
+                    continue;
+                }
+                try {
+                    sweepEntities(level, swept, roomSize, roomHeight);
+                } catch (Throwable t) {
+                    Teras.LOGGER.error("Dungeons: could not sweep cell {} at shutdown", swept, t);
+                    certain = false;
+                }
+            }
+            if (certain) {
+                onComplete.run();
+            }
+            return certain;
         }
     }
 
@@ -698,34 +902,62 @@ public final class DungeonMaterializer {
     }
 
     /**
-     * The same sweep, but over chunks it has made sure are loaded first.
+     * The same sweep, over chunks it has asked for first — but only of what is already in memory.
      *
-     * <p><b>This is the fix for shop displays turning up inside a later floor.</b>
-     * {@code getEntities} only ever sees loaded chunks, and every sweep in this class used to run
-     * <i>before</i> the block writes that load them: the discard job swept a cell and then cleared
-     * it, and the build job swept the whole footprint on its first tick. On a pad the party had
-     * already left, those chunks were unloaded, so the sweep found nothing, the blocks were then
-     * cleared around entities that were never removed, and the next floor built on that pad pasted
-     * its rooms around a floating shop pedestal that no longer belonged to anything.</p>
-     *
-     * <p>Nothing said a word, because from the sweep's point of view it succeeded — it discarded
-     * every entity it could see.</p>
-     *
-     * <p>Only used on cell-sized boxes. Touching every chunk of a whole 13×13-cell footprint would
-     * be some 289 forced loads in one tick, which is why the broad pass stays best-effort and the
-     * per-cell passes are the ones made exact.</p>
+     * <p>Asking for a chunk gets its <i>blocks</i> now and its <i>entities</i> later: the entity
+     * sections are read off-thread and merged by a following {@code ServerLevel.tick}, so this still
+     * cannot see the entities of a chunk that was cold when it was called. It is a best-effort pass,
+     * kept because it is the one that catches a mob while its floor is still under it. What makes a
+     * sweep certain is {@link EntityLoadGate}, and every path that must not miss anything goes
+     * through one.</p>
      */
     private static void sweepLoadedEntities(ServerLevel level, BlockPos origin, int span,
                                             int height) {
+        forEachChunk(origin, span, key ->
+                level.getChunk(ChunkPos.getX(key), ChunkPos.getZ(key)));
+        sweepEntities(level, origin, span, height);
+    }
+
+    /** Every chunk a {@code span}×{@code span} box at {@code origin} reaches into. */
+    private static void forEachChunk(BlockPos origin, int span, java.util.function.LongConsumer of) {
         int minChunkX = SectionPos.blockToSectionCoord(origin.getX());
         int maxChunkX = SectionPos.blockToSectionCoord(origin.getX() + span);
         int minChunkZ = SectionPos.blockToSectionCoord(origin.getZ());
         int maxChunkZ = SectionPos.blockToSectionCoord(origin.getZ() + span);
         for (int cx = minChunkX; cx <= maxChunkX; cx++) {
             for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                level.getChunk(cx, cz);
+                of.accept(ChunkPos.asLong(cx, cz));
             }
         }
-        sweepEntities(level, origin, span, height);
+    }
+
+    /** A gate over every chunk the given cell boxes touch, each cell {@code span} blocks square. */
+    private static EntityLoadGate gateFor(List<BlockPos> cells, int span) {
+        java.util.Set<Long> chunks = new java.util.LinkedHashSet<>();
+        for (BlockPos cell : cells) {
+            forEachChunk(cell, span, chunks::add);
+        }
+        long[] keys = new long[chunks.size()];
+        int i = 0;
+        for (long key : chunks) {
+            keys[i++] = key;
+        }
+        return new EntityLoadGate(keys, SWEEP_CHUNKS_PER_TICK, SWEEP_PATIENCE_TICKS);
+    }
+
+    private static EntityLoadGate.State pollGate(EntityLoadGate gate, ServerLevel level) {
+        return gate.poll(key -> level.getChunk(ChunkPos.getX(key), ChunkPos.getZ(key)),
+                level::areEntitiesLoaded);
+    }
+
+    /** Whether a box can be swept right now, without asking for anything or waiting. */
+    private static boolean entitiesLoaded(ServerLevel level, BlockPos origin, int span) {
+        boolean[] loaded = {true};
+        forEachChunk(origin, span, key -> {
+            if (!level.areEntitiesLoaded(key)) {
+                loaded[0] = false;
+            }
+        });
+        return loaded[0];
     }
 }

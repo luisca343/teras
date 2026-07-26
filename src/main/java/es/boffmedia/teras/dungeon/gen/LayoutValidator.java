@@ -57,6 +57,8 @@ final class LayoutValidator {
                                     FloorDepth depth, GenConfig config) {
         int starts = 0;
         int bosses = 0;
+        // Counted, not flagged: placement assigns at most one of each, so "more than one" is not a
+        // state a floor can reach and warning about it only ever said the check existed.
         int shops = 0;
         int treasures = 0;
         boolean superSecret = false;
@@ -83,9 +85,6 @@ final class LayoutValidator {
         }
         if (treasures == 0) {
             errors.add("Missing TREASURE room");
-        }
-        if (shops > 1) {
-            warnings.add("Multiple SHOP rooms: " + shops);
         }
         if (!superSecret) {
             warnings.add("Missing SUPER_SECRET room");

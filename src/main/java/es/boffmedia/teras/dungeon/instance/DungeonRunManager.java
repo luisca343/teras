@@ -140,7 +140,15 @@ public final class DungeonRunManager {
                             es.boffmedia.teras.dungeon.gen.SatelliteOdds.FloorOutcome.fresh(), plan));
         } catch (DungeonGenerationException e) {
             return StartOutcome.fail("Generación fallida: " + e.getMessage());
+        } catch (RuntimeException e) {
+            // A config that drifted under a dungeon def — a shortened curve, a window reaching past
+            // the canonical sequence — arrives here as an IllegalArgumentException, not as the
+            // generator's own exception. Load-time validation is supposed to catch it; a refused
+            // start beats an unhandled throw out of the command.
+            Teras.LOGGER.error("Dungeons: generating stage {} of '{}' threw", stage, dungeonId, e);
+            return StartOutcome.fail("Generación fallida: revisa el log.");
         }
+        logWarnings(layout, dungeonId, stage);
 
         SLOTS.set(slot);
         DungeonRun run = new DungeonRun(nextRunId++, slot, dungeonId, stage, plan, layout);
@@ -223,6 +231,21 @@ public final class DungeonRunManager {
      * transition leaves nothing the boot sweep doesn't know about.
      */
     /**
+     * The validator's soft findings, to the log.
+     *
+     * <p>They used to reach only {@code /teras dungeon generar}, an admin typing a command by hand —
+     * so on the path every real floor takes they were computed, carried into the layout and dropped.
+     * "Final floor without CHALLENGE room" fires on about half of all finales and nobody had ever
+     * seen one.</p>
+     */
+    private static void logWarnings(DungeonLayout layout, String dungeonId, int stage) {
+        for (String warning : layout.warnings()) {
+            Teras.LOGGER.warn("Dungeons: floor {} of '{}' (seed {}): {}",
+                    stage, dungeonId, layout.seedString(), warning);
+        }
+    }
+
+    /**
      * The run-long half of the Acreedor/Orden odds, read off the run (PISOS §63c). Selling hearts
      * is asked of the whole party, not the borrower: he knows a customer when he sees one, and
      * bodies are personal but reputation is not.
@@ -299,7 +322,15 @@ public final class DungeonRunManager {
                     next, run.id(), e.getMessage());
             completeRun(server, run);
             return;
+        } catch (RuntimeException e) {
+            // Same net as start(), and it matters more here: this runs from the trapdoor, inside a
+            // tick, on a live party. An unhandled throw would leave them standing on a floor whose
+            // successor never came.
+            Teras.LOGGER.error("Dungeons: generating stage {} of run {} threw", next, run.id(), e);
+            completeRun(server, run);
+            return;
         }
+        logWarnings(newLayout, run.dungeonId(), next);
 
         int oldBuiltId = run.builtId();
         BuiltDungeon oldBuilt = DungeonMaterializer.get(oldBuiltId);

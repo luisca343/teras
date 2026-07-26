@@ -16,12 +16,30 @@ public final class Room {
 
     private final GridPos anchor;
     private final RoomShape shape;
+    private final boolean postRoom;
     private RoomType type;
 
     public Room(RoomType type, GridPos anchor, RoomShape shape) {
+        this(type, anchor, shape, false);
+    }
+
+    /**
+     * @param postRoom whether this room was appended after validation by {@code PostRooms}. A post
+     *                 room owns its doors by hand, so the cells it happens to lean on must not count
+     *                 it as a neighbour — see {@link RoomGrid#occupiedNeighborCount}. The flag rather
+     *                 than the type: the Acreedor's satellite is a DEVIL_DEAL like the playfield one,
+     *                 and only one of the two is a post room
+     */
+    public Room(RoomType type, GridPos anchor, RoomShape shape, boolean postRoom) {
         this.type = type;
         this.anchor = anchor;
         this.shape = shape;
+        this.postRoom = postRoom;
+    }
+
+    /** Appended after validation, and therefore not a neighbour anything else can count on. */
+    public boolean isPostRoom() {
+        return postRoom;
     }
 
     public RoomType type() {

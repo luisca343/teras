@@ -8,28 +8,24 @@ import net.minecraft.server.level.ServerPlayer;
 
 /**
  * The room behind the barred door. It sits on the minimap from the moment the floor is drawn and
- * cannot be entered until the boss falls — at which point the bars come down and there is one
- * pedestal inside holding one item.
+ * cannot be entered until the boss falls — at which point the bars come down and El Acreedor is
+ * standing at his pedestal.
  *
  * <p>Two prices, which is the whole design: coins, or two of your maximum hearts for the rest of
  * the run. Isaac charges in hearts because hearts are scarce there; here they are scarce because
  * of the health lockdown, so the choice is real — pay the party's money, or make yourself
  * permanently easier to kill on the floors still to come.</p>
+ *
+ * <p><b>Every entry point here goes through him.</b> The room used to answer a right-click on the
+ * pedestal, from before he existed — a shift-click sold hearts and a plain one spent coins, with no
+ * word said and nothing to say it to. Now that he is a character who names his price and can be
+ * refused, a pact taken off a block would be the same trade with the meaning removed, and the
+ * refusal — which is what earns la Orden — would be one the party never made. The pedestal is
+ * furniture: {@link DungeonNpcs} spawns him beside it, his dialogue (or the chat offer standing in
+ * for it) carries the choices, and {@code /teras trato} checks the player is standing at him.</p>
  */
 public final class DevilDeal {
     private DevilDeal() {}
-
-    private static final int RANGE = 2;
-
-    static boolean tryClaim(RunEngine.ActiveFloor floor, ServerPlayer player, Room room,
-                            BlockPos clicked, boolean payWithHearts) {
-        BlockPos pedestal = RunEngine.markerPos(floor, room, "deal");
-        if (!RunEngine.isAtFixture(pedestal, clicked, RANGE)) {
-            return false;
-        }
-        offer(floor, player, room, payWithHearts);
-        return true;
-    }
 
     /** What a loan of this floor's cash price will cost when it comes due. */
     static int loanFace(int stage) {
@@ -96,8 +92,8 @@ public final class DevilDeal {
     }
 
     /**
-     * The trade itself, with no question of <i>where</i> the player was standing — the pedestal
-     * asks that before calling, and El Acreedor asks nothing at all because the player clicked him.
+     * The trade itself. Where the player is standing was settled before this was called: he is the
+     * only way in, and clicking him is the proof.
      */
     static void offer(RunEngine.ActiveFloor floor, ServerPlayer player, Room room,
                       boolean payWithHearts) {
@@ -127,8 +123,8 @@ public final class DevilDeal {
             return;
         }
         if (!floor.run().wallet().trySpend(coins)) {
-            // Says what is missing, never how to click: the same refusal is read at a pedestal, in
-            // El Acreedor's own dialogue and from a chat line, and only one of those is a sneak-click.
+            // Says what is missing, never how to pay: the same refusal is read from his dialogue and
+            // from the chat offer standing in for it.
             deny(floor, player, pedestal, "§cEl trato cuesta §f" + coins
                     + "§c monedas y la bolsa tiene §f" + floor.run().wallet().coins()
                     + "§c. También se paga con §4" + hearts + " corazones§c.");

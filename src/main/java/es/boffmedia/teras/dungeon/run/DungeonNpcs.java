@@ -100,9 +100,10 @@ public final class DungeonNpcs {
         Entity spawned = CnpcBridge.spawnClone(floor.level(),
                 at.getX() + 0.5, at.getY(), at.getZ() + 1.5, TAB, idOf(role));
         if (spawned == null) {
-            // No clone installed yet — the pedestal still works, so the floor is playable.
-            Teras.LOGGER.warn("Dungeons: no '{}' clone in tab {} — the room keeps its pedestal only",
-                    idOf(role), TAB);
+            // Logged as the content hole it is: he is the only way into his room's business, so
+            // without the clone the room opens onto furniture and nothing can be taken from it.
+            Teras.LOGGER.warn("Dungeons: no '{}' clone in tab {} — the room stands empty and nothing "
+                    + "in it can be claimed", idOf(role), TAB);
             return;
         }
         // Tagged like everything else the dungeon places, so the floor's teardown sweep takes him

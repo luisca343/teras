@@ -771,11 +771,9 @@ public final class RunEngine {
             event.setCanceled(true);
             return;
         }
-        if (room != null && room.type() == RoomType.DEVIL_DEAL
-                && DevilDeal.tryClaim(floor, player, room, pos, player.isShiftKeyDown())) {
-            event.setCanceled(true);
-            return;
-        }
+        // No DEVIL_DEAL branch: the pact is struck with El Acreedor and nowhere else. His pedestal
+        // is authored furniture he stands at, and a bargain that could also be taken by clicking the
+        // furniture is a bargain made with nobody.
         if (room != null && room.type() == RoomType.ORDEN
                 && OrdenGift.tryClaim(floor, player, room, pos)) {
             event.setCanceled(true);

@@ -202,21 +202,37 @@ class SpecialRoomPlacerTest {
                 d.curseRoomChance(), d.challengeRoomChance(),
                 chance, chance, chance,
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
-                d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
+                d.labyrinthMultiplier(), d.labyrinthCellCap(), d.lostRoomBonus(),
                 d.celdas(), d.jitter(), d.maxAttempts(), d.exitRoom(),
                 d.postMargin(), d.forceBossQuad());
     }
 
+    /**
+     * Carved with dead ends to spare, because that is the claim being tested. The three side rooms
+     * are the last claimed and the first dropped, and a floor is only obliged to seat them when it
+     * has the room: boss, super-secret, shop, curse, mini-boss and challenge come first, so nine
+     * rooms want a dead end and a floor with six seats three of them by rng. This asked for six and
+     * passed on the luck of one seed — the carve got a shade tighter and it started failing, which
+     * is the test drifting, not the placer.
+     */
     @Test
     void sideRoomsAppearWhenTheirChanceIsCertain() {
         GenConfig config = withSideRoomChances(1.0);
-        SeededRng rng = new SeededRng(11);
-        RoomGrid grid = RoomCarver.carve(config, 30, 6, ALL_SHAPES, rng);
-        SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 4), ALL_SHAPES, rng);
+        for (int seed = 0; seed < 20; seed++) {
+            SeededRng rng = new SeededRng(seed);
+            // Nine rooms want a dead end before the treasure reserves the last, and the start room
+            // can be one of the carve's own, so the ask carries slack rather than sitting on the
+            // exact number.
+            RoomGrid grid = RoomCarver.carve(config, 50, 14, ALL_SHAPES, rng);
+            SpecialRoomPlacer.place(grid, config, FloorDepth.of(config, 4), ALL_SHAPES, rng);
 
-        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SACRIFICE));
-        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.ARCADE));
-        assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.DEVIL_DEAL));
+            assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.SACRIFICE),
+                    "seed " + seed + ": no sacrifice room");
+            assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.ARCADE),
+                    "seed " + seed + ": no arcade");
+            assertTrue(grid.rooms().stream().anyMatch(r -> r.type() == RoomType.DEVIL_DEAL),
+                    "seed " + seed + ": no devil deal");
+        }
     }
 
     /** They are optional, so a floor that rolls none of them must still be a complete floor. */

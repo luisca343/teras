@@ -48,7 +48,7 @@ public record GenConfig(
         double miniBossChance,
         double firstStageMiniBossBoost,
         double labyrinthMultiplier,
-        int labyrinthRoomCap,
+        int labyrinthCellCap,
         int lostRoomBonus,
         java.util.List<Integer> celdas,
         int jitter,
@@ -108,6 +108,13 @@ public record GenConfig(
      *
      * <p>SINGLE is deliberately not scalable: it is what every layout falls back to, and weighting
      * it would only mean something relative to the other three, which those already express.</p>
+     *
+     * <p><b>These are per-roll odds, not frequencies.</b> {@link RoomCarver} offers the shapes
+     * biggest-first, so a 2×2 gets first refusal at every frontier cell and the smaller shapes are
+     * only rolled when it declines — which is why QUAD at {@code 0.15} produces more rooms than
+     * HORIZONTAL and VERTICAL at {@code 0.20} each put together. Halving a weight makes that family
+     * rarer, dependably; it does not halve its share of the floor, and the four numbers cannot be
+     * read against each other as a distribution.</p>
      */
     public GenConfig withShapeWeights(
             java.util.Map<es.boffmedia.teras.dungeon.model.ShapeFamily, Double> weights) {
@@ -122,7 +129,7 @@ public record GenConfig(
                 largeShapeDecay, shapeResetInterval,
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
-                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                labyrinthMultiplier, labyrinthCellCap, lostRoomBonus,
                 celdas, jitter, maxAttempts, exitRoom, postMargin,
                 forceBossQuad);
     }
@@ -141,7 +148,7 @@ public record GenConfig(
                 largeShapeDecay, shapeResetInterval,
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
-                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                labyrinthMultiplier, labyrinthCellCap, lostRoomBonus,
                 curve, Math.max(0, jitterValue), maxAttempts, exitRoom, postMargin, forceBossQuad);
     }
 
@@ -160,7 +167,7 @@ public record GenConfig(
                 largeShapeDecay, shapeResetInterval,
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
-                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                labyrinthMultiplier, labyrinthCellCap, lostRoomBonus,
                 celdas, jitter, maxAttempts, exit, postMargin, forceBossQuad);
     }
 
@@ -178,7 +185,7 @@ public record GenConfig(
                 largeShapeDecay, shapeResetInterval,
                 curseRoomChance, challengeRoomChance, sacrificeRoomChance, arcadeRoomChance,
                 devilDealChance, miniBossChance, firstStageMiniBossBoost,
-                labyrinthMultiplier, labyrinthRoomCap, lostRoomBonus,
+                labyrinthMultiplier, labyrinthCellCap, lostRoomBonus,
                 celdas, jitter, maxAttempts, exitRoom, postMargin, force);
     }
 

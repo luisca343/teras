@@ -35,7 +35,7 @@ class ShapeWeightsTest {
         assertEquals(base.gridSize(), tight.gridSize());
         assertEquals(base.largeShapeDecay(), tight.largeShapeDecay());
         assertEquals(base.labyrinthMultiplier(), tight.labyrinthMultiplier());
-        assertEquals(base.labyrinthRoomCap(), tight.labyrinthRoomCap());
+        assertEquals(base.labyrinthCellCap(), tight.labyrinthCellCap());
         assertEquals(base.lostRoomBonus(), tight.lostRoomBonus());
         assertEquals(base.celdas(), tight.celdas());
         assertEquals(base.maxAttempts(), tight.maxAttempts());

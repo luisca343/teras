@@ -27,12 +27,21 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class DungeonGenerator {
 
     /**
-     * The dead end the boss spends when it grows into a 2×2: its cell stops being a 1×1 room, and
-     * the validator re-checks the minimum <i>after</i> placement. {@link RoomCarver} tops up to
-     * exactly the number it is given, so without this reserve every floor that grew its boss would
-     * fail validation and lean on the reroll loop to find one that could not.
+     * The dead ends <b>placement</b> spends, which the carve has to have grown on top of the minimum:
+     * the validator re-checks that minimum <i>after</i> placement, and {@link RoomCarver} tops up to
+     * exactly the number it is given.
+     *
+     * <p>Two of them. The boss spends one growing into its 2×2 — its cell stops being a 1×1 room.
+     * The SUPER_SECRET spends the other just by existing: {@link RoomGrid#deadEndCells} skips secret
+     * rooms, so the dead end it claimed stops counting the moment it is retyped.</p>
+     *
+     * <p>This said one for a long time and the floors got away with it, because the dead-end top-up
+     * was wasteful enough to leave slack — it spent some eighteen cells reaching a minimum of six,
+     * and the sprawl usually threw off a spare. Once the top-up started spending only what it had to,
+     * the missing reserve surfaced at once: floor one failed validation on dead ends 4919 times
+     * against 38 for everything else.</p>
      */
-    private static final int BOSS_GROWTH_RESERVE = 1;
+    private static final int PLACEMENT_DEAD_END_RESERVE = 2;
 
     private DungeonGenerator() {}
 
@@ -80,8 +89,8 @@ public final class DungeonGenerator {
             int targetCells = targetCells(config, depth, curses, rng);
             int minDeadEnds = minDeadEnds(config, depth, curses);
 
-            RoomGrid grid = RoomCarver.carve(config, targetCells, minDeadEnds + BOSS_GROWTH_RESERVE,
-                    shapes, rng);
+            RoomGrid grid = RoomCarver.carve(config, targetCells,
+                    minDeadEnds + PLACEMENT_DEAD_END_RESERVE, shapes, rng);
             SpecialRoomPlacer.place(grid, config, depth, shapes, rng);
 
             LayoutValidator.Result result = LayoutValidator.validate(grid, config, depth, targetCells, minDeadEnds);
@@ -123,6 +132,11 @@ public final class DungeonGenerator {
      * floor, which is what makes a floor the same size wherever it is played from. The result
      * counts grid cells, so a 2×2 room spends four.
      *
+     * <p>A <b>budget</b>, not a size: {@link RoomCarver}'s fill honours it exactly, and the dead-end
+     * top-up that follows then adds whatever the special rooms still need. That is why the labyrinth
+     * ceiling is {@code labyrinthCellCap} and not a room count — it caps what is spent here, and the
+     * finished floor lands a few cells above it.</p>
+     *
      * <p>The finale is the last entry of the curve rather than a branch on {@link
      * FloorDepth#isFinal()}: a run ending is a property of the window, and a floor being the
      * deepest one is a property of the floor, and the old override confused them into giving every
@@ -131,7 +145,7 @@ public final class DungeonGenerator {
     static int targetCells(GenConfig config, FloorDepth depth, Set<Curse> curses, SeededRng rng) {
         int cells = config.cellsFor(depth.floor()) + rng.between(0, config.jitter());
         if (curses.contains(Curse.LABYRINTH)) {
-            cells = Math.min(config.labyrinthRoomCap(), (int) (cells * config.labyrinthMultiplier()));
+            cells = Math.min(config.labyrinthCellCap(), (int) (cells * config.labyrinthMultiplier()));
         } else if (curses.contains(Curse.LOST)) {
             cells += config.lostRoomBonus();
         }

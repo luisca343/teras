@@ -40,7 +40,7 @@ public final class PostRooms {
         RoomGrid full = new RoomGrid(grid.size() + 2 * margin);
         for (Room room : grid.rooms()) {
             full.place(new Room(room.type(),
-                    room.anchor().offset(margin, margin), room.shape()));
+                    room.anchor().offset(margin, margin), room.shape(), room.isPostRoom()));
         }
         return full;
     }
@@ -77,7 +77,7 @@ public final class PostRooms {
         }
 
         Room exit = new Room(RoomType.EXIT, bestAnchor(grid, boss, entrance, anchors, rng),
-                RoomShape.QUAD);
+                RoomShape.QUAD, true);
         grid.place(exit);
         doors.addAll(sealDoors(grid, boss, exit));
     }
@@ -229,7 +229,7 @@ public final class PostRooms {
 
     private static void placeSatellite(RoomGrid grid, List<DoorEdge> doors, SeededRng rng,
                                        Room exit, List<GridPos> seats, RoomType type) {
-        Room room = new Room(type, rng.pick(seats), RoomShape.SINGLE);
+        Room room = new Room(type, rng.pick(seats), RoomShape.SINGLE, true);
         grid.place(room);
         DoorEdge door = satelliteDoor(grid, exit, room,
                 type == RoomType.ORDEN ? DoorKind.GRACIA : DoorKind.DEVIL);

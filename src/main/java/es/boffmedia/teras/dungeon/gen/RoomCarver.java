@@ -25,11 +25,11 @@ import java.util.Set;
  * produces the corridor-and-loop floors. Large shapes roll with decaying odds; a fill pass tops up
  * to the target cell count, then dead ends are added until the minimum the special rooms need.</p>
  *
- * <p>Of those two, the dead-end top-up is what decides how big a floor ends up. The carve grows
- * only about one dead end per four cells, so reaching a minimum of six from the ~2.8 it grew
- * itself costs some seven cells of extra corridor — which is why a floor cannot be made smaller
- * by lowering {@code targetCells} alone. The fill honours its target exactly; the top-up is the
- * curve.</p>
+ * <p>Of those two, the dead-end top-up is what decides how big a floor ends up: the fill honours
+ * {@code targetCells} exactly, so every cell past it was added chasing the minimum. That is why the
+ * top-up spends its budget carefully ({@link #addDeadEnd}) — when it did not, floor one shipped at
+ * 27.6 cells against a budget of 10 and floors two through eight came out within five cells of each
+ * other, which made the authored {@code celdas} curve almost inert.</p>
  */
 final class RoomCarver {
 
@@ -73,6 +73,7 @@ final class RoomCarver {
             Room created = tryExpand(grid, edge, rng, odds, targetCells - cellsCarved);
             if (created != null) {
                 cellsCarved += created.shape().cellCount();
+                odds.carvedTo(cellsCarved);
                 pending.add(created);
             }
         }
@@ -86,6 +87,7 @@ final class RoomCarver {
                 Room created = tryExpand(grid, edge, rng, odds, targetCells - cellsCarved);
                 if (created != null) {
                     cellsCarved += created.shape().cellCount();
+                    odds.carvedTo(cellsCarved);
                     if (cellsCarved < targetCells) {
                         pending.add(created);
                     }
@@ -101,9 +103,7 @@ final class RoomCarver {
             Room created = tryShapes(grid, rng.pick(spaces), rng, odds, targetCells - cellsCarved);
             if (created != null) {
                 cellsCarved += created.shape().cellCount();
-            }
-            if (cellsCarved % config.shapeResetInterval() == 0) {
-                odds.reset();
+                odds.carvedTo(cellsCarved);
             }
         }
 
@@ -111,6 +111,9 @@ final class RoomCarver {
             if (!addDeadEnd(grid, rng)) {
                 break;
             }
+        }
+        if (config.forceBossQuad()) {
+            addGrowableBossDeadEnd(grid, rng);
         }
 
         return grid;
@@ -220,21 +223,153 @@ final class RoomCarver {
         return spaces;
     }
 
+    /**
+     * One more dead end, spending as few cells as possible to get it.
+     *
+     * <p>Every candidate is an empty cell with exactly one occupied neighbour, so placing there
+     * always makes a dead end — but if that neighbour <i>was itself</i> a dead end it stops being
+     * one, and the floor is a cell bigger for nothing. Roughly half of all candidates hang off a
+     * dead end, which is why picking uniformly used to spend some eighteen cells reaching a minimum
+     * of six: the loop kept paying for exchanges rather than gains.</p>
+     *
+     * <p>So the gaining candidates are preferred and the neutral ones kept only as a fallback — a
+     * floor packed tight enough to offer nothing but exchanges still has to reach its minimum, and
+     * an exchange at least moves the dead end somewhere new.</p>
+     */
     private static boolean addDeadEnd(RoomGrid grid, SeededRng rng) {
         List<GridPos> candidates = new ArrayList<>();
+        List<GridPos> gains = new ArrayList<>();
         for (int y = 0; y < grid.size(); y++) {
             for (int x = 0; x < grid.size(); x++) {
                 GridPos pos = new GridPos(x, y);
-                if (grid.isEmpty(pos) && grid.occupiedNeighborCount(pos) == 1) {
-                    candidates.add(pos);
+                if (!grid.isEmpty(pos) || grid.occupiedNeighborCount(pos) != 1) {
+                    continue;
+                }
+                candidates.add(pos);
+                if (!attachesToDeadEnd(grid, pos)) {
+                    gains.add(pos);
                 }
             }
         }
         if (candidates.isEmpty()) {
             return false;
         }
-        grid.place(new Room(RoomType.NORMAL, rng.pick(candidates), RoomShape.SINGLE));
+        grid.place(new Room(RoomType.NORMAL, rng.pick(gains.isEmpty() ? candidates : gains),
+                RoomShape.SINGLE));
         return true;
+    }
+
+    /** Whether the one room touching {@code pos} is a 1×1 dead end that building there would end. */
+    private static boolean attachesToDeadEnd(RoomGrid grid, GridPos pos) {
+        for (GridDir dir : GridDir.values()) {
+            Room neighbor = grid.roomAt(pos.step(dir));
+            if (neighbor != null) {
+                return neighbor.isSingle() && grid.occupiedNeighborCount(neighbor.anchor()) == 1;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Guarantees the floor's <b>farthest</b> dead end can grow into the 2×2 boss chamber, by adding
+     * one that can when the floor did not already end in one.
+     *
+     * <p>The boss claims the farthest dead end outright ({@code SpecialRoomPlacer.claimBoss}) and a
+     * piso that ships {@code boss_big} then requires it to be a 2×2 — but a dead end grown by the
+     * carve has 2×2 room around it only about 29% of the time, so the reroll loop was throwing away
+     * roughly three and a half complete floors for every one it kept. That is a whole floor
+     * re-carved to re-roll one local property.</p>
+     *
+     * <p>Adding the room here instead costs a single cell and settles it before validation. The cell
+     * must be a dead end in its own right (empty, exactly one occupied neighbour), must have a free
+     * 2×2 around it with exactly one contact from outside — the same test {@code
+     * SpecialRoomPlacer.isGrowable} applies later, so what is promised here is what is checked
+     * there — and must sit <b>strictly</b> farther from the start than every existing dead end, so
+     * the farthest-first sort cannot hand the boss to anything else.</p>
+     *
+     * <p>It can never cost the floor its minimum: the new room is a dead end, and the only dead end
+     * it can end is the neighbour it attached to, so the count moves by +1 or 0 and never down.
+     * When no candidate qualifies nothing is placed and the reroll still covers it.</p>
+     */
+    private static void addGrowableBossDeadEnd(RoomGrid grid, SeededRng rng) {
+        List<GridPos> deadEnds = grid.deadEndCells();
+        java.util.Map<GridPos, Integer> distances = grid.distancesFromCenter();
+        int farthest = 0;
+        for (GridPos pos : deadEnds) {
+            farthest = Math.max(farthest, distances.getOrDefault(pos, 0));
+        }
+        List<GridPos> deepest = new ArrayList<>();
+        for (GridPos pos : deadEnds) {
+            if (distances.getOrDefault(pos, 0) == farthest) {
+                deepest.add(pos);
+            }
+        }
+        // A tie at the farthest distance is not good enough: the sort breaks ties by grid order, so
+        // the boss could still land on the one that cannot grow. Only a lone growable farthest is.
+        if (deepest.size() == 1
+                && hasGrowableQuad(grid, deepest.get(0), grid.roomAt(deepest.get(0)))) {
+            return;
+        }
+        List<GridPos> candidates = new ArrayList<>();
+        for (int y = 0; y < grid.size(); y++) {
+            for (int x = 0; x < grid.size(); x++) {
+                GridPos pos = new GridPos(x, y);
+                if (!grid.isEmpty(pos) || grid.occupiedNeighborCount(pos) != 1) {
+                    continue;
+                }
+                if (distanceOf(grid, distances, pos) <= farthest) {
+                    continue;
+                }
+                if (hasGrowableQuad(grid, pos, null)) {
+                    candidates.add(pos);
+                }
+            }
+        }
+        if (!candidates.isEmpty()) {
+            grid.place(new Room(RoomType.NORMAL, rng.pick(candidates), RoomShape.SINGLE));
+        }
+    }
+
+    /** How deep an empty cell would sit: one step past the single room it touches. */
+    private static int distanceOf(RoomGrid grid, java.util.Map<GridPos, Integer> distances,
+                                  GridPos pos) {
+        for (GridDir dir : GridDir.values()) {
+            GridPos neighbor = pos.step(dir);
+            if (grid.roomAt(neighbor) != null) {
+                Integer distance = distances.get(neighbor);
+                return distance == null ? -1 : distance + 1;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether a 1×1 room at {@code cell} could grow into a 2×2 — every cell of some quad in bounds
+     * and free (bar {@code room} itself, when the cell already holds one), and exactly one occupied
+     * cell touching that quad from outside.
+     *
+     * <p>The same test {@code SpecialRoomPlacer.isGrowable} runs later, deliberately: what the carve
+     * promises has to be what placement checks, or the guarantee is a guess.</p>
+     */
+    private static boolean hasGrowableQuad(RoomGrid grid, GridPos cell, Room room) {
+        for (GridPos anchor : List.of(cell, cell.offset(-1, 0), cell.offset(0, -1),
+                cell.offset(-1, -1))) {
+            List<GridPos> quad = new ArrayList<>(RoomShape.QUAD.cellCount());
+            boolean free = true;
+            for (GridPos offset : RoomShape.QUAD.offsets()) {
+                GridPos quadCell = anchor.offset(offset.x(), offset.y());
+                quad.add(quadCell);
+                Room occupant = grid.roomAt(quadCell);
+                if (!grid.inBounds(quadCell) || (occupant != null && occupant != room)) {
+                    free = false;
+                    break;
+                }
+            }
+            if (free && grid.externalNeighborCount(quad) == 1) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<GridPos> perimeter(Room room) {
@@ -266,6 +401,7 @@ final class RoomCarver {
         private final GenConfig config;
         private final java.util.Set<RoomShape> allowed;
         private double factor = 1.0;
+        private int lastReset = 1;
 
         ShapeOdds(GenConfig config, java.util.Set<RoomShape> allowed) {
             this.config = config;
@@ -291,8 +427,22 @@ final class RoomCarver {
             factor *= config.largeShapeDecay();
         }
 
-        void reset() {
-            factor = 1.0;
+        /**
+         * Told the running cell count; clears the decay once {@code shapeResetInterval} cells have
+         * been carved since it last did.
+         *
+         * <p>The counter is the point. This used to be {@code cellsCarved % interval == 0}, tested
+         * in the fill pass alone — a two- or three-cell shape steps straight over the multiple, and
+         * most floors never reach that pass at all, so the reset all but never fired. The decay
+         * therefore ran unbroken across the whole carve: after five large rooms it stands at 3% of
+         * the configured odds, which is why large rooms clustered near the start of a floor and were
+         * effectively absent from the rest of it.</p>
+         */
+        void carvedTo(int cells) {
+            if (cells - lastReset >= config.shapeResetInterval()) {
+                lastReset = cells;
+                factor = 1.0;
+            }
         }
     }
 }

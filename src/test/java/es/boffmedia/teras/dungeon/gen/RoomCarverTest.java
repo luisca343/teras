@@ -26,7 +26,7 @@ class RoomCarverTest {
                 d.curseRoomChance(), d.challengeRoomChance(),
                 d.sacrificeRoomChance(), d.arcadeRoomChance(), d.devilDealChance(),
                 d.miniBossChance(), d.firstStageMiniBossBoost(),
-                d.labyrinthMultiplier(), d.labyrinthRoomCap(), d.lostRoomBonus(),
+                d.labyrinthMultiplier(), d.labyrinthCellCap(), d.lostRoomBonus(),
                 d.celdas(), d.jitter(), d.maxAttempts(), d.exitRoom(),
                 d.postMargin(), d.forceBossQuad());
     }
@@ -60,6 +60,73 @@ class RoomCarverTest {
             assertTrue(grid.deadEndCells().size() >= 6,
                     "seed " + seed + " has " + grid.deadEndCells().size() + " dead ends");
         }
+    }
+
+    /**
+     * The top-up buys dead ends, not cells. Building onto a cell whose one neighbour is itself a
+     * dead end trades one for another and leaves the floor a cell bigger for nothing, and picking
+     * uniformly meant about half of all additions were that trade — floor one came out at 27.6 cells
+     * against a budget of 10, which is what made the authored {@code celdas} curve nearly inert.
+     *
+     * <p>Held as a ratio rather than an absolute so it survives retuning: reaching the minimum must
+     * not cost more than the floor was budgeted in the first place.</p>
+     */
+    @Test
+    void theDeadEndTopUpDoesNotDoubleTheFloor() {
+        GenConfig config = GenConfig.defaults();
+        int carved = 0;
+        int seeds = 200;
+        for (long seed = 0; seed < seeds; seed++) {
+            carved += RoomCarver.carve(config, 10, 6, ALL_SHAPES, new SeededRng(seed))
+                    .occupiedCellCount();
+        }
+        double average = carved / (double) seeds;
+        assertTrue(average < 20, "a 10-cell floor with six dead ends averages " + average
+                + " cells; the top-up is paying for exchanges again");
+    }
+
+    /**
+     * A piso that forces the 2×2 boss gets a carve that ends in a dead end able to hold it, so the
+     * reroll loop does not have to go looking for one. Both halves matter: the deepest dead end must
+     * be alone at its distance (ties are broken by grid order, so a tie could still hand the boss the
+     * one that cannot grow) and it must have the 2×2 around it that
+     * {@code SpecialRoomPlacer.isGrowable} will ask for.
+     */
+    @Test
+    void forcingTheQuadMakesTheCarveEndInAGrowableDeadEnd() {
+        GenConfig config = GenConfig.defaults().withForceBossQuad(true);
+        int good = 0;
+        int seeds = 200;
+        for (long seed = 0; seed < seeds; seed++) {
+            RoomGrid grid = RoomCarver.carve(config, 10, 7, ALL_SHAPES, new SeededRng(seed));
+            java.util.Map<es.boffmedia.teras.dungeon.model.GridPos, Integer> distances =
+                    grid.distancesFromCenter();
+            java.util.List<es.boffmedia.teras.dungeon.model.GridPos> deepest =
+                    new java.util.ArrayList<>();
+            int farthest = 0;
+            for (es.boffmedia.teras.dungeon.model.GridPos cell : grid.deadEndCells()) {
+                farthest = Math.max(farthest, distances.getOrDefault(cell, 0));
+            }
+            for (es.boffmedia.teras.dungeon.model.GridPos cell : grid.deadEndCells()) {
+                if (distances.getOrDefault(cell, 0) == farthest) {
+                    deepest.add(cell);
+                }
+            }
+            if (deepest.size() != 1) {
+                continue;
+            }
+            // What SpecialRoomPlacer does with it: the farthest dead end becomes the boss, and the
+            // boss is then grown. Asked of the placer's own code so the promise and the check cannot
+            // drift apart.
+            es.boffmedia.teras.dungeon.model.Room boss = grid.roomAt(deepest.get(0));
+            boss.setType(es.boffmedia.teras.dungeon.model.RoomType.BOSS);
+            SpecialRoomPlacer.growBossRoom(grid, new SeededRng(seed));
+            if (grid.roomAt(deepest.get(0)).shape() == RoomShape.QUAD) {
+                good++;
+            }
+        }
+        assertTrue(good >= seeds * 95 / 100,
+                "only " + good + " of " + seeds + " carves ended in a growable lone dead end");
     }
 
     /** L_BOTTOM_RIGHT was disabled in the legacy carver; it must occur again. */
