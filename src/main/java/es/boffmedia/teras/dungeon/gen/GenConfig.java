@@ -32,6 +32,7 @@ package es.boffmedia.teras.dungeon.gen;
  * — the boss already grows on ~92–95% of floors — and never bites a piso that does not build 2×2
  * rooms.</p>
  */
+
 public record GenConfig(
         int gridSize,
         double chanceQuad,
@@ -56,6 +57,31 @@ public record GenConfig(
         boolean exitRoom,
         int postMargin,
         boolean forceBossQuad) {
+
+    private static final int DEFAULT_GRID_SIZE = 13;
+    private static final double DEFAULT_CHANCE_QUAD = 0.15;
+    private static final double DEFAULT_CHANCE_HORIZONTAL = 0.20;
+    private static final double DEFAULT_CHANCE_VERTICAL = 0.20;
+    private static final double DEFAULT_CHANCE_L_SHAPE = 0.10;
+    private static final double DEFAULT_LARGE_SHAPE_DECAY = 0.5;
+    private static final int DEFAULT_SHAPE_RESET_INTERVAL = 10;
+    private static final double DEFAULT_CURSE_ROOM_CHANCE = 0.5;
+    private static final double DEFAULT_CHALLENGE_ROOM_CHANCE = 0.5;
+    private static final double DEFAULT_SACRIFICE_ROOM_CHANCE = 0.35;
+    private static final double DEFAULT_ARCADE_ROOM_CHANCE = 0.35;
+    private static final double DEFAULT_DEVIL_DEAL_CHANCE = 0.30;
+    private static final double DEFAULT_MINI_BOSS_CHANCE = 0.25;
+    private static final double DEFAULT_FIRST_STAGE_MINI_BOSS_BOOST = 0.75;
+    private static final double DEFAULT_LABYRINTH_MULTIPLIER = 1.8;
+    private static final int DEFAULT_LABYRINTH_CELL_CAP = 45;
+    private static final int DEFAULT_LOST_ROOM_BONUS = 4;
+    private static final java.util.List<Integer> DEFAULT_CELDAS =
+            java.util.List.of(10, 13, 17, 20, 22, 22, 24, 26, 28, 30, 34, 40);
+    private static final int DEFAULT_JITTER = 2;
+    private static final int DEFAULT_MAX_ATTEMPTS = 20;
+    private static final boolean DEFAULT_EXIT_ROOM = false;
+    private static final int DEFAULT_POST_MARGIN = 2;
+    private static final boolean DEFAULT_FORCE_BOSS_QUAD = false;
 
     public GenConfig {
         if (gridSize < 5) {
@@ -196,25 +222,16 @@ public record GenConfig(
         return value == null ? 1.0 : Math.max(0.0, value);
     }
 
-    /**
-     * Floors one to six are the Isaac formula's own values, so the floors that have content today
-     * are untouched. Seven to twelve are authored, and they are the reason the curve is a table:
-     * the formula's {@code min(20, …)} saturated at floor five, which made every floor past it the
-     * same size and left no way to say that the tenth is deeper than the seventh.
-     */
-    private static final java.util.List<Integer> DEFAULT_CELDAS =
-            java.util.List.of(10, 13, 17, 20, 22, 22, 24, 26, 28, 30, 34, 40);
-
     public static GenConfig defaults() {
         return new GenConfig(
-                13,
-                0.15, 0.20, 0.20, 0.10,
-                0.5, 10,
-                0.5, 0.5,
-                0.35, 0.35, 0.30,
-                0.25, 0.75,
-                1.8, 45, 4,
-                DEFAULT_CELDAS, 2,
-                20, false, 2, false);
+                DEFAULT_GRID_SIZE,
+                DEFAULT_CHANCE_QUAD, DEFAULT_CHANCE_HORIZONTAL, DEFAULT_CHANCE_VERTICAL, DEFAULT_CHANCE_L_SHAPE,
+                DEFAULT_LARGE_SHAPE_DECAY, DEFAULT_SHAPE_RESET_INTERVAL,
+                DEFAULT_CURSE_ROOM_CHANCE, DEFAULT_CHALLENGE_ROOM_CHANCE,
+                DEFAULT_SACRIFICE_ROOM_CHANCE, DEFAULT_ARCADE_ROOM_CHANCE, DEFAULT_DEVIL_DEAL_CHANCE,
+                DEFAULT_MINI_BOSS_CHANCE, DEFAULT_FIRST_STAGE_MINI_BOSS_BOOST,
+                DEFAULT_LABYRINTH_MULTIPLIER, DEFAULT_LABYRINTH_CELL_CAP, DEFAULT_LOST_ROOM_BONUS,
+                DEFAULT_CELDAS, DEFAULT_JITTER,
+                DEFAULT_MAX_ATTEMPTS, DEFAULT_EXIT_ROOM, DEFAULT_POST_MARGIN, DEFAULT_FORCE_BOSS_QUAD);
     }
 }
