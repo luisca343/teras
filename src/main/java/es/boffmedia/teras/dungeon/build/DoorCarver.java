@@ -41,6 +41,43 @@ public final class DoorCarver {
     }
 
     /**
+     * Writes one wall layer of a doorway, and optionally one course of it.
+     *
+     * <p>A gate is written into the sealing room's <b>own</b> wall column rather than through both
+     * layers. Filling the whole tunnel is why sealing used to read as the hole getting plugged: with
+     * one layer you are standing in a doorway with a gate in front of you, the frame around it is
+     * still visible, and from the corridor outside you can see that the room next door is shut
+     * rather than that the wall grew back.</p>
+     *
+     * @param minSide whether the room doing the sealing is the edge's {@code from} — the min-cell
+     *                side, which owns wall layer 0. The neighbour owns layer 1
+     * @param row     the single course to write, or 0 for all of them. This is what lets a gate fall
+     *                top course first instead of appearing whole
+     */
+    public static void fillDoorwayPlane(ServerLevel level, BlockPos origin, DoorEdge door,
+                                        BlockState state, int roomSize, int doorWidth,
+                                        int doorHeight, boolean minSide, int row) {
+        GridPos cell = door.cell();
+        int inset = (roomSize - doorWidth) / 2;
+        int baseX = origin.getX() + cell.x() * roomSize;
+        int baseZ = origin.getZ() + cell.y() * roomSize;
+        int depth = minSide ? 0 : 1;
+        for (int w = 0; w < doorWidth; w++) {
+            for (int h = 1; h <= doorHeight; h++) {
+                if (row != 0 && h != row) {
+                    continue;
+                }
+                BlockPos pos = door.dir() == GridDir.EAST
+                        ? new BlockPos(baseX + roomSize - 1 + depth,
+                                origin.getY() + h, baseZ + inset + w)
+                        : new BlockPos(baseX + inset + w,
+                                origin.getY() + h, baseZ + roomSize - 1 + depth);
+                level.setBlock(pos, state, 2);
+            }
+        }
+    }
+
+    /**
      * Writes only the top row of a doorway — the lintel course.
      *
      * <p>For the curse door's spikes: the opening has to stay walkable, so they hang from the
@@ -66,54 +103,6 @@ public final class DoorCarver {
     }
 
     /**
-     * Carves one wide opening centered on the seam of a full two-cell face — the grand ceremonial
-     * door between a 2×2 boss and its 2×2 sala del sello.
-     *
-     * <p>The two {@link DoorEdge}s of an aligned attachment share a direction and lie on adjacent
-     * cells; their common boundary is the "exact middle" the door is centered on, which is what
-     * makes the opening symmetric across both rooms rather than two 3-wide holes with a pillar
-     * between them. Carved through both wall layers, {@code width} across and {@code height} tall.</p>
-     */
-    public static void carveGrandDoor(ServerLevel level, BlockPos origin,
-                                      java.util.List<DoorEdge> faceEdges, BlockState state,
-                                      int roomSize, int width, int height) {
-        if (faceEdges.isEmpty()) {
-            return;
-        }
-        GridDir dir = faceEdges.get(0).dir();
-        int minX = Integer.MAX_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        for (DoorEdge edge : faceEdges) {
-            minX = Math.min(minX, edge.cell().x());
-            minZ = Math.min(minZ, edge.cell().y());
-        }
-        int half = width / 2;
-        if (dir == GridDir.EAST) {
-            int baseX = origin.getX() + minX * roomSize;
-            int seamZ = origin.getZ() + (minZ + 1) * roomSize;
-            for (int depth = 0; depth < 2; depth++) {
-                for (int h = 1; h <= height; h++) {
-                    for (int w = -half; w < width - half; w++) {
-                        level.setBlock(new BlockPos(baseX + roomSize - 1 + depth,
-                                origin.getY() + h, seamZ + w), state, 2);
-                    }
-                }
-            }
-        } else {
-            int baseZ = origin.getZ() + minZ * roomSize;
-            int seamX = origin.getX() + (minX + 1) * roomSize;
-            for (int depth = 0; depth < 2; depth++) {
-                for (int h = 1; h <= height; h++) {
-                    for (int w = -half; w < width - half; w++) {
-                        level.setBlock(new BlockPos(seamX + w, origin.getY() + h,
-                                baseZ + roomSize - 1 + depth), state, 2);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
      * Clears a shallow approach corridor into the boss room in front of a just-opened seal door, so
      * no authored arena prop can stand between the party and the way down (the "guarantee access"
      * pass). Mirrors the opening's geometry — {@code width} centered on the middle of the shared
@@ -123,6 +112,10 @@ public final class DoorCarver {
      * <p>Serves both reveals: a grand door passes its two face edges and centers on their seam; a
      * fallback single edge centers on its one cell. Boss rooms are at least a cell deep, so a
      * three-block reach never punches through the far wall.</p>
+     *
+     * <p>The opening itself is no longer carved here — {@code GateFall.reveal} opens it a column at
+     * a time over {@code DoorDressing.Opening.grand}, which is now the single derivation of where
+     * the grand door is. This clears in front of it and nothing else.</p>
      */
     public static void clearSealApproach(ServerLevel level, BlockPos origin,
                                          java.util.List<DoorEdge> faceEdges,
@@ -191,8 +184,22 @@ public final class DoorCarver {
     }
 
     /**
-     * Sets every walkable doorway of {@code room} (OPEN and BOSS edges — never the secret cracks)
-     * to {@code state}: air to open, the seal block while combat runs.
+     * Whether {@code room} is the min-cell side of {@code door} — the side that owns wall layer 0.
+     *
+     * <p>Identity, not type: a multi-cell room is one object referenced from every cell it occupies,
+     * so this is exact even where two rooms of the same type meet.</p>
+     */
+    public static boolean ownsNearPlane(DoorEdge door, Room room) {
+        return door.from() == room;
+    }
+
+    /**
+     * Opens every walkable doorway of {@code room} (OPEN, BOSS and CURSE edges — never the secret
+     * cracks), clearing both wall layers.
+     *
+     * <p>Both, deliberately, where a gate only ever fills one: opening has to undo whatever is
+     * there, and being generous about it costs nothing. A gate left behind in the far layer would
+     * be a doorway that looks open from one room and shut from the other.</p>
      */
     public static void setRoomDoors(ServerLevel level, BuiltDungeon built, Room room, BlockState state) {
         for (DoorEdge door : built.layout().doorsOf(room)) {

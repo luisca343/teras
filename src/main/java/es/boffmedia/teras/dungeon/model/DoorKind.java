@@ -15,9 +15,13 @@ public enum DoorKind {
     /** Unmarked breakable wall into a SUPER_SECRET room — no hint anywhere. */
     HIDDEN,
     /**
-     * Barred doorway into a DEVIL_DEAL room. Unlike a sealed combat door this one is placed shut
-     * and stays that way until the floor's boss falls, which is what makes the room a promise on
-     * the minimap rather than a surprise.
+     * The gate into a DEVIL_DEAL room. Unlike a sealed combat door this one is placed shut and stays
+     * that way until the floor's boss falls, which is what makes the room a promise on the minimap
+     * rather than a surprise.
+     *
+     * <p>Solid, and carrying its own mark, rather than the bars a fight puts up. It was the same
+     * iron bars until §73, which made "opens when the floor's boss falls" and "opens when I win this
+     * fight" the same object — and a promise you can already see through the bars is half spent.</p>
      */
     DEVIL,
     /**
@@ -34,10 +38,11 @@ public enum DoorKind {
      */
     SELLO,
     /**
-     * Barred doorway into the ORDEN room, the Acreedor's counter-pole. Placed shut like
-     * {@link #DEVIL} and carved open on the boss's death — but only when the party earned her
-     * (PISOS §63c). Its own kind rather than a reused DEVIL so the two satellite doors can read
-     * differently from inside the sala del sello, and so the reveal can tell them apart.
+     * The gate into the ORDEN room, the Acreedor's counter-pole. Placed shut like {@link #DEVIL} and
+     * opened on the boss's death — but only when the party earned her (PISOS §63c). Its own kind
+     * rather than a reused DEVIL so the two satellite doors can read differently from inside the
+     * sala del sello, and so the reveal can tell them apart; since §73 they carry different marks,
+     * which is that difference made visible instead of only known to the code.
      */
     GRACIA;
 

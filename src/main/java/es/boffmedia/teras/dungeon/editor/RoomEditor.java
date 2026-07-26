@@ -639,6 +639,21 @@ public final class RoomEditor {
                         origin.getZ() + cell.y() * size + zone.maxZ() + 1);
             }
         }
+        // Where the door frames land. Legal to build in, and overwritten anyway when the floor is
+        // materialized — a different statement from the reserved volumes above, so a different
+        // colour: flame is "you may not", crit is "you will be".
+        for (GridPos cell : session.shape.offsets()) {
+            for (DoorwayZone.Zone zone : DoorwayZone.frameZonesOf(cell, session.shape, size,
+                    DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight())) {
+                outline(player, ParticleTypes.CRIT,
+                        origin.getX() + cell.x() * size + zone.minX(),
+                        origin.getY() + zone.minY(),
+                        origin.getZ() + cell.y() * size + zone.minZ(),
+                        origin.getX() + cell.x() * size + zone.maxX() + 1,
+                        origin.getY() + zone.maxY() + 1,
+                        origin.getZ() + cell.y() * size + zone.maxZ() + 1);
+            }
+        }
         // The ceiling limit. Without it the vertical bound is invisible — the box simply stops
         // accepting blocks at some height with nothing on screen to say where, which reads as the
         // editor being broken rather than as a limit.

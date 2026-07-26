@@ -112,6 +112,8 @@ public final class RunEngine {
         final ChestPedestal chests = new ChestPedestal();
         /** The bar over a live boss or mini-boss. */
         final DungeonBossBars bossBars = new DungeonBossBars();
+        /** Gates still falling, a course at a time. */
+        final GateFall gates = new GateFall();
         /** Bought at the shop: reveal the floor's layout / its special rooms on the minimap. */
         boolean mapRevealed;
         boolean compassRevealed;
@@ -502,6 +504,7 @@ public final class RunEngine {
             try {
                 if (scan) {
                     scanPlayers(floor);
+                    floor.gates.tick(floor, tick);
                     // On the existing scan rather than a tick of its own: the bar follows a health
                     // value that changes on somebody else's schedule, and a player who walks in
                     // halfway has to be added to it.
@@ -584,7 +587,7 @@ public final class RunEngine {
     }
 
     /**
-     * The fork closes. Claiming at one satellite re-bars the other's doorway for the rest of the
+     * The fork closes. Claiming at one satellite re-gates the other's doorway for the rest of the
      * floor — the two doors face each other across the sala del sello and only one may be walked
      * through, which is what makes the pair a choice instead of a windfall (PISOS §63e).
      *
@@ -597,14 +600,27 @@ public final class RunEngine {
         }
         floor.forkResolved = true;
         DoorKind sealed = taken == DoorKind.GRACIA ? DoorKind.DEVIL : DoorKind.GRACIA;
+        // The gate it was built with, not the combat reja: this door is closing for good, and the
+        // mark on it is the point — you walk back past the offer you did not take.
+        var style = DungeonsConfig.doorStyle(sealed == DoorKind.DEVIL
+                ? es.boffmedia.teras.dungeon.model.RoomType.DEVIL_DEAL
+                : es.boffmedia.teras.dungeon.model.RoomType.ORDEN);
         boolean any = false;
         for (DoorEdge door : floor.built.layout().doors()) {
             if (door.kind() != sealed) {
                 continue;
             }
-            DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
-                    sealState(), floor.built.roomSize(),
-                    DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+            if (style != null && style.hasGate()) {
+                es.boffmedia.teras.dungeon.build.DoorDressing.gate(floor.level,
+                        es.boffmedia.teras.dungeon.build.DoorDressing.Opening.of(
+                                floor.built.origin(), door, floor.built.roomSize(),
+                                DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight()),
+                        style);
+            } else {
+                DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
+                        sealState(), floor.built.roomSize(),
+                        DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+            }
             any = true;
         }
         if (any) {
@@ -735,6 +751,9 @@ public final class RunEngine {
     public static void onServerStopping(ServerStoppingEvent event) {
         FLOORS.clear();
         RESPAWN_AT_START.clear();
+        // The door palette is parsed once per block id and cached for the life of the server. An
+        // integrated server loading a second world would otherwise serve the first one's config.
+        es.boffmedia.teras.dungeon.build.DoorDressing.clearCache();
     }
 
     /**
@@ -1424,7 +1443,7 @@ public final class RunEngine {
     }
 
     /**
-     * Moves anyone still standing in a doorway of {@code room} into it before the bars go in — the
+     * Moves anyone still standing in a doorway of {@code room} into it before the gate falls — the
      * player who triggered the seal is clear by construction, but a second party member might not
      * be.
      */
@@ -1626,10 +1645,14 @@ public final class RunEngine {
         }
     }
 
+    /**
+     * The gate a sealed room drops. Through the door parser, so {@code bloqueSello} accepts state
+     * properties like every other block in a door — and so an id that does not resolve leaves bars
+     * rather than throwing on a null block, which is what the old lookup did to a typo.
+     */
     private static BlockState sealState() {
-        return BuiltInRegistries.BLOCK
-                .get(ResourceLocation.parse(DungeonsConfig.sealBlock()))
-                .defaultBlockState();
+        return es.boffmedia.teras.dungeon.build.DoorDressing.parse(DungeonsConfig.sealBlock(),
+                Blocks.IRON_BARS.defaultBlockState());
     }
 
     /**
@@ -1728,7 +1751,7 @@ public final class RunEngine {
         @Override
         public void sealRoom(Room room) {
             clearDoorways(floor, room);
-            DoorCarver.setRoomDoors(floor.level, floor.built, room, sealState());
+            floor.gates.drop(floor, room, sealState(), tick);
             var piso = floor.run.plan().piso();
             // One call for every mechanic there will ever be. Routing through the registry rather
             // than naming a class is the point: a second mechanic is a registration, not an edit
@@ -1741,6 +1764,7 @@ public final class RunEngine {
 
         @Override
         public void openRoom(Room room) {
+            floor.gates.cancel(room);
             DoorCarver.setRoomDoors(floor.level, floor.built, room, Blocks.AIR.defaultBlockState());
         }
 
@@ -1882,6 +1906,11 @@ public final class RunEngine {
          */
         /** How far the seal reveal clears into the boss room in front of the opening. */
         private static final int SEAL_APPROACH_DEPTH = 3;
+        /**
+         * How long the grand door takes to open, centre column outward. About a second: long enough
+         * that the party watches it happen, short enough that nobody starts walking into rock.
+         */
+        private static final int SEAL_REVEAL_TICKS = 20;
 
 
         @Override
@@ -1987,19 +2016,32 @@ public final class RunEngine {
                     sello.add(door);
                 }
             }
+            if (sello.isEmpty()) {
+                return;
+            }
             int width;
             int height;
+            // Framed and carved outward from the centre rather than stamped open. This is the one
+            // door in a floor that is a reward, and a 7x5 hole appearing whole read as damage to
+            // the wall; the arch goes up first and then the rock inside it gives way.
+            var style = es.boffmedia.teras.dungeon.build.DoorDressing.styleOf(
+                    RoomType.EXIT, floor.run.plan().piso() == null
+                            ? null : floor.run.plan().piso().puertas());
             if (sello.size() >= 2) {
                 width = DungeonsConfig.sealDoorWidth();
                 height = DungeonsConfig.sealDoorHeight();
-                DoorCarver.carveGrandDoor(floor.level, floor.built.origin(), sello,
-                        Blocks.AIR.defaultBlockState(), floor.built.roomSize(), width, height);
+                floor.gates.reveal(floor, es.boffmedia.teras.dungeon.build.DoorDressing.Opening
+                                .grand(floor.built.origin(), sello, floor.built.roomSize(),
+                                        width, height),
+                        style, SEAL_REVEAL_TICKS, tick);
             } else {
                 width = DungeonsConfig.doorWidth();
                 height = DungeonsConfig.doorHeight();
                 for (DoorEdge door : sello) {
-                    DoorCarver.fillDoorway(floor.level, floor.built.origin(), door,
-                            Blocks.AIR.defaultBlockState(), floor.built.roomSize(), width, height);
+                    floor.gates.reveal(floor, es.boffmedia.teras.dungeon.build.DoorDressing.Opening
+                                    .of(floor.built.origin(), door, floor.built.roomSize(),
+                                            width, height),
+                            style, SEAL_REVEAL_TICKS, tick);
                 }
             }
             // Guarantee access: a shallow clear into the boss room in front of the opening, so an
@@ -2083,8 +2125,10 @@ public final class RunEngine {
                 grace |= door.kind() == DoorKind.GRACIA;
             }
             if (devil) {
-                // He arrives with the door, never behind it: a character standing in a barred room
-                // is one the party watches through the bars for the length of a boss fight.
+                // He arrives with the door, never behind it. That mattered more when the door was
+                // bars and he would have been on show through them all fight; it is still how it
+                // works now the gate is solid, because a room that opens onto an empty chamber and
+                // then populates it is a room the party watched spawn.
                 Room room = DungeonNpcs.acreedorRoom(floor);
                 if (room != null) {
                     DungeonNpcs.spawnFor(floor, room, DungeonNpcs.Role.ACREEDOR);
@@ -2100,7 +2144,7 @@ public final class RunEngine {
                 message(floor, devil && grace
                         // Both walls open at once, and only one may be walked through.
                         ? "§5A un lado el trato, §6al otro la gracia §7— sólo una puerta se cruza."
-                        : devil ? "§5Los barrotes del trato ceden — algo espera al otro lado."
+                        : devil ? "§5La marca del pacto se apaga — algo espera al otro lado."
                                 : "§6La Orden abre — algo limpio espera al otro lado.");
                 playAt(floor, floor.built.partySpawn(floor.built.layout().start()),
                         DungeonSound.DEVIL_OPENED, 1.0f);

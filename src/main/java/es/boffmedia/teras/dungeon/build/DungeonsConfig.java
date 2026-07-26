@@ -1,6 +1,8 @@
 package es.boffmedia.teras.dungeon.build;
 
 import es.boffmedia.teras.Teras;
+import es.boffmedia.teras.dungeon.model.DoorStyle;
+import es.boffmedia.teras.dungeon.model.RoomType;
 import es.boffmedia.teras.util.YamlConfig;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -69,6 +71,20 @@ public final class DungeonsConfig {
     private static String crackBlock;
     private static String spikeBlock;
     private static int curseDoorTollHearts;
+    private static boolean doorRelief;
+    private static int sealCloseTicks;
+    /**
+     * The frame an ordinary doorway wears when its piso declares none of its own. A piso's
+     * {@code puertas} block overrides it — that is the per-floor half of the door language.
+     */
+    private static es.boffmedia.teras.dungeon.model.DoorStyle doorStyle;
+    /**
+     * The dungeon-wide half: what a door into a special room looks like, on every floor. Treasure
+     * has to read as treasure in Cuevas and in whatever piso is authored next, or the frame is
+     * decoration rather than a sign.
+     */
+    private static final Map<es.boffmedia.teras.dungeon.model.RoomType,
+            es.boffmedia.teras.dungeon.model.DoorStyle> DOOR_STYLES = new LinkedHashMap<>();
     private static int marketSlots;
     private static int marketReward;
     private static int purgePrice;
@@ -258,6 +274,21 @@ public final class DungeonsConfig {
             crackBlock = yaml.string("bloqueGrieta", crackBlock);
             spikeBlock = yaml.string("bloquePinchos", spikeBlock);
             curseDoorTollHearts = yaml.integer("peajePuertaCorazones", curseDoorTollHearts);
+
+            YamlConfig doors = yaml.section("puertas");
+            doorRelief = doors.bool("relieve", doorRelief);
+            sealCloseTicks = Math.max(1, doors.integer("ticksCierre", sealCloseTicks));
+            doorStyle = doorStyle(doors.section("normal"), doorStyle);
+            YamlConfig specials = doors.section("especiales");
+            for (RoomType type : RoomType.values()) {
+                DoorStyle current = DOOR_STYLES.get(type);
+                if (current == null) {
+                    continue;
+                }
+                DOOR_STYLES.put(type,
+                        doorStyle(specials.section(type.name().toLowerCase(java.util.Locale.ROOT)),
+                                current));
+            }
             marketSlots = yaml.integer("ofertasMaldicion", marketSlots);
             marketReward = yaml.integer("pagoAfliccion", marketReward);
             purgePrice = yaml.integer("precioPurga", purgePrice);
@@ -388,7 +419,10 @@ public final class DungeonsConfig {
         // shared line, so a floor can legitimately sit behind a dozen other builds and discards.
         // Too tight a timeout here would fail healthy runs on a busy server.
         buildTimeoutSeconds = 300;
-        sealBlock = "minecraft:iron_bars";
+        // The gate a sealed room drops. Its own block rather than iron bars: panes connect to their
+        // neighbours and nine of them read as a cage, where the reja tiles into one lattice — and
+        // you have to be able to see and shoot through the room you are locked in.
+        sealBlock = "teras:reja";
         // The seal glyph's rune inlay, dull while the boss lives and lit when the seal re-pins.
         // The lit rune gets an invisible light block stamped over it, so any block works here.
         sealRuneBlock = "minecraft:polished_basalt";
@@ -450,6 +484,12 @@ public final class DungeonsConfig {
         bossLootTable = "teras:dungeon/boss";
         crackBlock = "teras:muro_agrietado";
         spikeBlock = "minecraft:pointed_dripstone";
+        doorRelief = true;
+        // Six ticks, top course first. Long enough to read as a gate falling and short enough that
+        // nobody walks out under it: the opening is sealed from the top down, so the last course to
+        // land is the one at head height.
+        sealCloseTicks = 6;
+        resetDoorStyles();
         // One heart to cross, floored so it can never kill. Real under the health lockdown,
         // where the only healing left is a potion somebody paid for.
         curseDoorTollHearts = 1;
@@ -499,6 +539,77 @@ public final class DungeonsConfig {
         soundVolume = 0.8f;
         sounds.clear();
         sounds.putAll(DEFAULT_SOUNDS);
+    }
+
+    /**
+     * The door language, in three families: the piso's own rock for an ordinary passage, copper for
+     * the rooms about money, blackstone for the danger you walk into on purpose — and one of a kind
+     * for each of the three promises.
+     *
+     * <p>Three families is few enough to learn in one floor, which is the whole point of the frame:
+     * a player who has seen one treasure door knows the next one from across a room, on a piso that
+     * did not exist when they learned it. That is why this table is dungeon-wide and the ordinary
+     * frame is not — see {@code puertas} on a piso.</p>
+     *
+     * <p>All copper is <b>waxed</b>. Unwaxed would oxidise green over a server's lifetime, and a
+     * sign that changes colour on its own stops being a sign.</p>
+     */
+    private static void resetDoorStyles() {
+        // The fallback ordinary frame — Cuevas' andesite, since a piso that declares no puertas is
+        // most likely the one being authored against Cuevas as a starting point.
+        doorStyle = DoorStyle.frame("minecraft:polished_andesite", "minecraft:chiseled_tuff",
+                "minecraft:shroomlight", "minecraft:andesite");
+        DOOR_STYLES.clear();
+
+        // Copper — the rooms about money.
+        DOOR_STYLES.put(RoomType.TREASURE, DoorStyle.frame(
+                "minecraft:waxed_cut_copper", "minecraft:gold_block",
+                "minecraft:waxed_copper_bulb[lit=true,powered=false]",
+                "minecraft:waxed_cut_copper"));
+        // Wood, and the only frame in the dungeon that is not rock: a shop has to read as somebody
+        // built it, from across the room, before you are close enough to see a single ware.
+        DOOR_STYLES.put(RoomType.SHOP, DoorStyle.frame(
+                "minecraft:stripped_dark_oak_wood", "minecraft:waxed_cut_copper",
+                "minecraft:lantern", "minecraft:waxed_cut_copper"));
+        DOOR_STYLES.put(RoomType.ARCADE, DoorStyle.frame(
+                "minecraft:waxed_exposed_cut_copper", "minecraft:amethyst_block",
+                "minecraft:verdant_froglight", "minecraft:waxed_exposed_cut_copper"));
+
+        // Blackstone — the danger you walk into on purpose.
+        DOOR_STYLES.put(RoomType.CHALLENGE, DoorStyle.frame(
+                "minecraft:polished_blackstone_bricks", "minecraft:chiseled_polished_blackstone",
+                "minecraft:soul_lantern", "minecraft:polished_blackstone"));
+        // Unlit, both of them. A room that charges blood should not be the brightest thing in sight.
+        DOOR_STYLES.put(RoomType.SACRIFICE, DoorStyle.frame(
+                "minecraft:red_nether_bricks", "minecraft:nether_wart_block",
+                "", "minecraft:red_nether_bricks"));
+        // The spikes stay: they are the warning, and the frame only frames them.
+        DOOR_STYLES.put(RoomType.CURSE, DoorStyle.frame(
+                "minecraft:blackstone", "minecraft:dripstone_block",
+                "", "minecraft:blackstone"));
+        DOOR_STYLES.put(RoomType.MINI_BOSS, DoorStyle.frame(
+                "minecraft:polished_blackstone_bricks", "minecraft:polished_blackstone",
+                "minecraft:soul_lantern", "minecraft:polished_blackstone"));
+        DOOR_STYLES.put(RoomType.BOSS, DoorStyle.tall(
+                "minecraft:polished_blackstone_bricks", "minecraft:crying_obsidian",
+                "minecraft:soul_lantern", "minecraft:polished_blackstone"));
+
+        // The three promises. One of a kind each, and never reused anywhere else in the dungeon —
+        // which is what lets a player tell "this opens when I win this fight" from "this opens when
+        // the floor's boss falls" without being told either.
+        DOOR_STYLES.put(RoomType.DEVIL_DEAL, DoorStyle.gate(
+                "minecraft:polished_blackstone", "minecraft:crying_obsidian",
+                "", "minecraft:polished_blackstone",
+                "minecraft:polished_blackstone", "teras:marca_pacto"));
+        DOOR_STYLES.put(RoomType.ORDEN, DoorStyle.gate(
+                "minecraft:smooth_quartz", "minecraft:gold_block",
+                "", "minecraft:smooth_quartz",
+                "minecraft:smooth_quartz", "teras:marca_orden"));
+        // The sala del sello's own frame, written at the reveal rather than at the build: the wall
+        // has to be solid until the boss dies. Its accent is the seal's lit rune.
+        DOOR_STYLES.put(RoomType.EXIT, DoorStyle.tall(
+                "minecraft:polished_basalt", "minecraft:amethyst_block",
+                "minecraft:amethyst_block", "minecraft:polished_basalt"));
     }
 
     private static String renderTemplate() {
@@ -554,7 +665,7 @@ public final class DungeonsConfig {
                 graciaAbandonoSegundos: 180
                 timeoutConstruccionSegundos: 300
                 # Run loop: what seals doors in combat, and the wall a secret room hides behind.
-                bloqueSello: minecraft:iron_bars
+                bloqueSello: teras:reja
                 bloqueGrieta: teras:muro_agrietado
                 # La sala del sello. The rune inlay of the seal glyph swaps dull -> lit when the
                 # boss falls (an invisible light block is stamped over each lit rune, so any block
@@ -573,6 +684,104 @@ public final class DungeonsConfig {
                 # trade an affliction for coins, and the purge pedestal buys one back.
                 bloquePinchos: minecraft:pointed_dripstone
                 peajePuertaCorazones: 1
+                # Doors. The opening itself is anchoPuerta x altoPuerta and is NOT touched here —
+                # widening it would move the reserved apron in every room ever authored. What this
+                # section dresses is the wall around it: a ring in the wall plane (free, the audit
+                # exempts the wall) and, with relieve, two jambs and a lintel standing one block
+                # proud of it in the two columns beside the opening, which are outside the walkable
+                # band. A door costs no floor space and still reads as a door.
+                #
+                # A doorway wears the frame of the MORE SPECIAL of the two rooms it joins, on both
+                # faces — so it is a sign from the corridor and a place-marker from inside. Secret
+                # and super-secret are never dressed: a frame on a secret gives it away.
+                #
+                # 'normal' is the fallback for a piso that declares no 'puertas' of its own; the
+                # per-piso block in pisos/<id>.json is what makes an ordinary door look like ITS
+                # floor. 'especiales' is dungeon-wide on purpose: treasure has to read as treasure
+                # on a piso that did not exist when the player learned what it looks like.
+                #
+                #   marco   frame: the ring's sides and top, the jambs, the lintel beam
+                #   acento  the keystone and the ring's corners
+                #   luz     lamp on each jamb top; "" for an unlit door
+                #   umbral  the threshold course under the opening
+                #   porton  panel of a gate held shut all floor (trato, Orden); "" for none
+                #   marca   that gate's centre block
+                #   alta    a taller frame with a stepped lintel — the boss, and the sello
+                #
+                # ticksCierre is how long a sealing gate takes to fall, top course first.
+                puertas:
+                  relieve: true
+                  ticksCierre: 6
+                  normal:
+                    marco: minecraft:polished_andesite
+                    acento: minecraft:chiseled_tuff
+                    luz: minecraft:shroomlight
+                    umbral: minecraft:andesite
+                  especiales:
+                    # Copper: the rooms about money.
+                    treasure:
+                      marco: minecraft:waxed_cut_copper
+                      acento: minecraft:gold_block
+                      luz: minecraft:waxed_copper_bulb[lit=true,powered=false]
+                      umbral: minecraft:waxed_cut_copper
+                    shop:
+                      marco: minecraft:stripped_dark_oak_wood
+                      acento: minecraft:waxed_cut_copper
+                      luz: minecraft:lantern
+                      umbral: minecraft:waxed_cut_copper
+                    arcade:
+                      marco: minecraft:waxed_exposed_cut_copper
+                      acento: minecraft:amethyst_block
+                      luz: minecraft:verdant_froglight
+                      umbral: minecraft:waxed_exposed_cut_copper
+                    # Blackstone: the danger you walk into on purpose.
+                    challenge:
+                      marco: minecraft:polished_blackstone_bricks
+                      acento: minecraft:chiseled_polished_blackstone
+                      luz: minecraft:soul_lantern
+                      umbral: minecraft:polished_blackstone
+                    sacrifice:
+                      marco: minecraft:red_nether_bricks
+                      acento: minecraft:nether_wart_block
+                      luz: ""
+                      umbral: minecraft:red_nether_bricks
+                    curse:
+                      marco: minecraft:blackstone
+                      acento: minecraft:dripstone_block
+                      luz: ""
+                      umbral: minecraft:blackstone
+                    mini_boss:
+                      marco: minecraft:polished_blackstone_bricks
+                      acento: minecraft:polished_blackstone
+                      luz: minecraft:soul_lantern
+                      umbral: minecraft:polished_blackstone
+                    boss:
+                      marco: minecraft:polished_blackstone_bricks
+                      acento: minecraft:crying_obsidian
+                      luz: minecraft:soul_lantern
+                      umbral: minecraft:polished_blackstone
+                      alta: true
+                    # The three promises, one of a kind each.
+                    devil_deal:
+                      marco: minecraft:polished_blackstone
+                      acento: minecraft:crying_obsidian
+                      luz: ""
+                      umbral: minecraft:polished_blackstone
+                      porton: minecraft:polished_blackstone
+                      marca: teras:marca_pacto
+                    orden:
+                      marco: minecraft:smooth_quartz
+                      acento: minecraft:gold_block
+                      luz: ""
+                      umbral: minecraft:smooth_quartz
+                      porton: minecraft:smooth_quartz
+                      marca: teras:marca_orden
+                    exit:
+                      marco: minecraft:polished_basalt
+                      acento: minecraft:amethyst_block
+                      luz: minecraft:amethyst_block
+                      umbral: minecraft:polished_basalt
+                      alta: true
                 ofertasMaldicion: 3
                 pagoAfliccion: 40
                 precioPurga: 30
@@ -899,6 +1108,22 @@ public final class DungeonsConfig {
      * absent. Never merges: a half-overridden command list would take the moveset away and give back
      * something else, which is worse than either doing nothing or doing all of it.
      */
+    /**
+     * One door style, key by key over {@code fallback}. Per-key rather than all-or-nothing so a
+     * server can repaint a single lamp without restating a frame it never meant to change — and so
+     * a style gaining a part later does not blank it out of every config already on disk.
+     */
+    private static DoorStyle doorStyle(YamlConfig section, DoorStyle fallback) {
+        return new DoorStyle(
+                section.string("marco", fallback.marco()),
+                section.string("acento", fallback.acento()),
+                section.string("luz", fallback.luz()),
+                section.string("umbral", fallback.umbral()),
+                section.string("porton", fallback.porton()),
+                section.string("marca", fallback.marca()),
+                section.bool("alta", fallback.alta()));
+    }
+
     private static void readCommands(YamlConfig section, String key, List<String> target) {
         List<Object> raw = section.list(key);
         if (raw.isEmpty()) {
@@ -983,6 +1208,26 @@ public final class DungeonsConfig {
 
     public static int curseDoorTollHearts() {
         return curseDoorTollHearts;
+    }
+
+    /** Whether door frames stand proud of the wall, or are inlaid flat into it. */
+    public static boolean doorRelief() {
+        return doorRelief;
+    }
+
+    /** How long a sealing gate takes to fall, top course first. */
+    public static int sealCloseTicks() {
+        return sealCloseTicks;
+    }
+
+    /** The ordinary frame, for a piso that declares no {@code puertas} of its own. */
+    public static DoorStyle doorStyle() {
+        return doorStyle;
+    }
+
+    /** The dungeon-wide frame for a door into {@code type}, or null when it wears its piso's. */
+    public static DoorStyle doorStyle(RoomType type) {
+        return DOOR_STYLES.get(type);
     }
 
     public static int marketSlots() {

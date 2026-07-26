@@ -91,6 +91,44 @@ public final class DoorwayZone {
         return zones;
     }
 
+    /**
+     * The columns a door <b>frame</b> lands in — the two beside each exterior opening, one block
+     * deep, where {@code DoorDressing} stands its jambs.
+     *
+     * <p>Not reserved: nothing here is load-bearing and a room may build in them. They are drawn in
+     * the editor anyway, because the frame is written after the paste and therefore silently wins,
+     * and a lantern that vanishes between the pad and the floor is the exact failure this file
+     * exists to prevent. Reserved means "you may not"; this means "you will be overwritten".</p>
+     *
+     * <p>The two column offsets are {@code inset-1} and {@code inset+doorWidth} — one either side of
+     * the opening — which is the same pair the dressing derives from the same three numbers.</p>
+     */
+    public static List<Zone> frameZonesOf(GridPos cell, RoomShape shape, int roomSize,
+                                          int doorWidth, int doorHeight) {
+        int inset = (roomSize - doorWidth) / 2;
+        int low = inset - 1;
+        int high = inset + doorWidth;
+        int top = doorHeight + 2;
+        List<Zone> zones = new ArrayList<>(8);
+        if (!owns(shape, cell, 0, -1)) {
+            zones.add(new Zone(low, 0, 1, low, top, 1));
+            zones.add(new Zone(high, 0, 1, high, top, 1));
+        }
+        if (!owns(shape, cell, 0, 1)) {
+            zones.add(new Zone(low, 0, roomSize - 2, low, top, roomSize - 2));
+            zones.add(new Zone(high, 0, roomSize - 2, high, top, roomSize - 2));
+        }
+        if (!owns(shape, cell, -1, 0)) {
+            zones.add(new Zone(1, 0, low, 1, top, low));
+            zones.add(new Zone(1, 0, high, 1, top, high));
+        }
+        if (!owns(shape, cell, 1, 0)) {
+            zones.add(new Zone(roomSize - 2, 0, low, roomSize - 2, top, low));
+            zones.add(new Zone(roomSize - 2, 0, high, roomSize - 2, top, high));
+        }
+        return zones;
+    }
+
     private static boolean owns(RoomShape shape, GridPos cell, int dx, int dz) {
         return shape.offsets().contains(new GridPos(cell.x() + dx, cell.y() + dz));
     }

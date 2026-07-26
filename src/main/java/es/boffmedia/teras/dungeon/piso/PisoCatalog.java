@@ -398,7 +398,7 @@ public final class PisoCatalog {
         FloorDef seeded = new FloorDef(newId, newId, "", source.formas(), source.luz(),
                 source.musica(), source.ambiente(), MechanicDef.NONE, source.maldiciones(),
                 List.of(), List.of(), source.hereda(), source.pesoFormas(), Map.of(),
-                EnemyTable.EMPTY, DecorTables.EMPTY);
+                EnemyTable.EMPTY, DecorTables.EMPTY, source.puertas());
         try {
             Files.createDirectories(file.getParent());
             Files.writeString(file, GSON.toJson(render(seeded)));
@@ -488,6 +488,14 @@ public final class PisoCatalog {
                         + "decoracion:* markers build as nothing. '/teras dungeon piso resync {}'",
                         piso.id(), piso.id());
             }
+            // Not an error: the fallback frame is a real frame, so the floor still builds doors.
+            // It builds them out of somebody else's rock, though, which is the kind of wrong that
+            // looks deliberate — Infestadas' andesite doorways would read as an authoring choice.
+            if (piso.puertas() == null && factory.puertas() != null) {
+                Teras.LOGGER.warn("Dungeons: piso '{}' has no 'puertas' block, so its ordinary "
+                        + "doorways wear the fallback frame from config.yml instead of its own. "
+                        + "'/teras dungeon piso resync {}'", piso.id(), piso.id());
+            }
         }
     }
 
@@ -530,7 +538,8 @@ public final class PisoCatalog {
                     pesoFormas(json.get("pesosFormas")),
                     pesos(json.get("pesos")),
                     enemyTable(json.get("enemigos")),
-                    decorTables(json.get("decoracion")));
+                    decorTables(json.get("decoracion")),
+                    doorStyle(json.get("puertas")));
         } catch (Exception e) {
             Teras.LOGGER.error("Dungeons: could not read piso '{}': {}", id, e.toString());
             return null;
@@ -696,6 +705,23 @@ public final class PisoCatalog {
             bySurface.put(surface.trim().toLowerCase(Locale.ROOT), refs);
         }
         return new DecorTables(bySurface);
+    }
+
+    /**
+     * Reads {@code puertas}: the frame this piso's ordinary doorways wear. Absent returns null,
+     * which is not the same as an empty style — null falls back to the shipped {@code puertas.normal}
+     * in config.yml, where an empty one would build every door out of nothing.
+     */
+    private static es.boffmedia.teras.dungeon.model.DoorStyle doorStyle(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            return null;
+        }
+        JsonObject json = element.getAsJsonObject();
+        return es.boffmedia.teras.dungeon.model.DoorStyle.frame(
+                string(json, "marco", ""),
+                string(json, "acento", ""),
+                string(json, "luz", ""),
+                string(json, "umbral", ""));
     }
 
     /**
@@ -894,7 +920,7 @@ public final class PisoCatalog {
                 // enemy on it that has a rule — so both fights are about something already learned.
                 EnumSet.of(Curse.LABYRINTH, Curse.LOST, Curse.PLOMO),
                 List.of("gran_limo"), List.of("cristalero_mayor"),
-                cuevasEnemies(), cuevasDecor()));
+                cuevasEnemies(), cuevasDecor(), cuevasDoors()));
         // Every family, but not at every piso's odds. This used to be two families, on the argument
         // that "tight and choked is the identity" and that it excused six rooms of authoring. The
         // second half stopped being true when infest() started deriving Infestadas from Cuevas —
@@ -915,7 +941,7 @@ public final class PisoCatalog {
                 EnumSet.of(Curse.LABYRINTH, Curse.LOST, Curse.PLOMO),
                 List.of("reina_madre"), List.of("cazadora"),
                 Map.of(ShapeFamily.LARGE, 0.7, ShapeFamily.L, 0.6, ShapeFamily.BIG, 0.3),
-                infestadasEnemies(), infestadasDecor()));
+                infestadasEnemies(), infestadasDecor(), infestadasDoors()));
 
         declared = pisos;
         // A snapshot taken before loadPisos overwrites pisos/declared with the disk versions, so it
@@ -966,7 +992,7 @@ public final class PisoCatalog {
                 current != null && !current.pesoFormas().isEmpty()
                         ? current.pesoFormas() : def.pesoFormas(),
                 current != null ? current.pesos() : def.pesos(),
-                def.enemigos(), def.decoracion());
+                def.enemigos(), def.decoracion(), def.puertas());
         Path file = FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons")
                 .resolve("pisos").resolve(pisoId + ".json");
         try {
@@ -1089,6 +1115,27 @@ public final class PisoCatalog {
                         DecorTables.DecorRef.block("minecraft:coal_ore", 1))));
     }
 
+    /**
+     * Cuevas' ordinary doorway: its own worked stone, and a shroomlight over each jamb.
+     *
+     * <p>Lit, unlike Infestadas', and the light is the reason the two are separate palettes at all.
+     * Cuevas is a {@code luz: 7} floor you are meant to be able to read, so a warm mark over every
+     * opening is wayfinding. Infestadas is {@code luz: 4} and the dark <i>is</i> the floor — a lamp
+     * on every door there would undo the one thing that makes it different.</p>
+     */
+    private static es.boffmedia.teras.dungeon.model.DoorStyle cuevasDoors() {
+        return es.boffmedia.teras.dungeon.model.DoorStyle.frame(
+                "minecraft:polished_andesite", "minecraft:chiseled_tuff",
+                "minecraft:shroomlight", "minecraft:andesite");
+    }
+
+    /** The same frame in the deepslate the floor is cut from, and unlit — see {@link #cuevasDoors}. */
+    private static es.boffmedia.teras.dungeon.model.DoorStyle infestadasDoors() {
+        return es.boffmedia.teras.dungeon.model.DoorStyle.frame(
+                "minecraft:polished_deepslate", "minecraft:chiseled_deepslate",
+                "", "minecraft:cobbled_deepslate");
+    }
+
     /** The same surfaces, dressed: webbing above, sculk below, a damper palette throughout. */
     private static DecorTables infestadasDecor() {
         return new DecorTables(Map.of(
@@ -1148,6 +1195,14 @@ public final class PisoCatalog {
         json.add("pesos", pesos);
         json.add("enemigos", renderEnemies(piso.enemigos()));
         json.add("decoracion", renderDecor(piso.decoracion()));
+        if (piso.puertas() != null) {
+            JsonObject puertas = new JsonObject();
+            puertas.addProperty("marco", piso.puertas().marco());
+            puertas.addProperty("acento", piso.puertas().acento());
+            puertas.addProperty("luz", piso.puertas().luz());
+            puertas.addProperty("umbral", piso.puertas().umbral());
+            json.add("puertas", puertas);
+        }
         return json;
     }
 

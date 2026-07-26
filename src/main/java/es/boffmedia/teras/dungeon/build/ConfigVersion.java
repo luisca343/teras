@@ -138,9 +138,24 @@ public final class ConfigVersion {
      *       on an upgrade) but it does mean the curse is invisible until the key is added by hand.
      *       Shipped pisos accept it; a {@code pisos/*.json} on disk keeps whatever
      *       {@code maldiciones} list it already had.</p></li>
+     *   <li>doors stop being holes (PISOS §70). A doorway is now framed — a ring in the wall plane
+     *       and, with {@code puertas.relieve}, two jambs and a lintel standing one block proud of it
+     *       — and wears the frame of the more special of the two rooms it joins. The opening itself
+     *       did not move, so nothing authored needs re-authoring.
+     *
+     *       <p>An existing {@code config.yml} misses the whole {@code puertas:} block, which is
+     *       defaulted when absent and therefore only costs the operator the ability to tune it. The
+     *       one key that genuinely changes behaviour is {@code bloqueSello}: it ships as
+     *       {@code teras:reja} now, and a file on disk keeps {@code minecraft:iron_bars}, so an
+     *       upgraded server seals its rooms with the old bars until the key is changed by hand.</p>
+     *
+     *       <p>A piso gains an optional {@code puertas} block of its own — the frame an ordinary
+     *       door wears on <i>that</i> floor. Absent, it falls back to {@code puertas.normal} in
+     *       config.yml, which is Cuevas' andesite: correct for Cuevas, wrong for Infestadas, and
+     *       worth a {@code piso resync} for anything else.</p></li>
      * </ol>
      */
-    public static final int CURRENT = 14;
+    public static final int CURRENT = 15;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

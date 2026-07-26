@@ -71,6 +71,27 @@ public final class BlockInit {
                     .requiresCorrectToolForDrops()));
 
     /**
+     * The gate a sealed room drops in front of you. Its own block rather than iron bars because a
+     * gate has to be seen through — you should be able to read the room you are locked in, and
+     * shoot out of it — while still reading as one lattice across a 3×3 doorway, which panes cannot
+     * do: they connect to their neighbours and end up a cage. {@code noOcclusion} is what lets
+     * light and sightlines through a block that still has full collision.
+     */
+    public static final DeferredBlock<Block> REJA = registerWithItem("reja",
+            () -> new Block(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .sound(SoundType.METAL)
+                    .strength(50.0F, 1200.0F)
+                    .requiresCorrectToolForDrops()
+                    .noOcclusion()));
+
+    /** The mark at the centre of the Acreedor's gate. Lit, faintly, so the pact is visible in the dark. */
+    public static final DeferredBlock<Block> MARCA_PACTO = marca("marca_pacto", MapColor.COLOR_BLACK);
+
+    /** The Orden's counter-mark, on her gate. See {@link #MARCA_PACTO}. */
+    public static final DeferredBlock<Block> MARCA_ORDEN = marca("marca_orden", MapColor.QUARTZ);
+
+    /**
      * Combat webbing. No block item: it is placed by enemies and cleared by a left-click, never
      * held — and a web in someone's inventory would be a dungeon mechanic leaving the dungeon.
      *
@@ -95,6 +116,15 @@ public final class BlockInit {
 
     /** One block plus one {@link ObjetoColocable} per {@link ComidasTeras#COMIDAS} entry. */
     public static final List<DeferredBlock<BloqueTeras>> COMIDAS = registerComidas();
+
+    private static DeferredBlock<Block> marca(String name, MapColor color) {
+        return registerWithItem(name, () -> new Block(BlockBehaviour.Properties.of()
+                .mapColor(color)
+                .sound(SoundType.DEEPSLATE)
+                .strength(50.0F, 1200.0F)
+                .requiresCorrectToolForDrops()
+                .lightLevel(state -> 3)));
+    }
 
     private static DeferredBlock<CarpetBlock> twister(String name, MapColor color) {
         return registerWithItem(name, () -> new CarpetBlock(BlockBehaviour.Properties.of()

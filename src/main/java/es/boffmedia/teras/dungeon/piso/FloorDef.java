@@ -52,6 +52,11 @@ import java.util.Set;
  *                    {@link RoomPoolIndex}
  * @param enemigos    what fights here, relative — the tramo supplies the depth
  * @param decoracion  what its {@code decoracion:*} markers become, per surface
+ * @param puertas     the frame an <b>ordinary</b> doorway wears on this floor, or null for the
+ *                    shipped fallback. Only the ordinary one: a door into a special room wears the
+ *                    dungeon-wide frame for that room on every piso, because a sign that changes
+ *                    per floor is not a sign. This is the half that makes a corridor look like
+ *                    <i>this</i> place — andesite in Cuevas, deepslate in Infestadas
  */
 public record FloorDef(String id,
                        String nombre,
@@ -68,7 +73,8 @@ public record FloorDef(String id,
                        Map<ShapeFamily, Double> pesoFormas,
                        Map<String, Map<String, Double>> pesos,
                        EnemyTable enemigos,
-                       DecorTables decoracion) {
+                       DecorTables decoracion,
+                       es.boffmedia.teras.dungeon.model.DoorStyle puertas) {
 
     /** The weight a variant draws at when {@code pesos} says nothing about it. */
     public static final double DEFAULT_WEIGHT = 1.0;
@@ -83,16 +89,49 @@ public record FloorDef(String id,
                     List<String> jefes, List<String> minijefes) {
         this(id, nombre, subtitulo, formas, luz, musica, ambiente, MechanicDef.of(mecanica),
                 maldiciones, jefes, minijefes, null, Map.of(), Map.of(),
-                EnemyTable.EMPTY, DecorTables.EMPTY);
+                EnemyTable.EMPTY, DecorTables.EMPTY, null);
+    }
+
+    /**
+     * The same three shapes without {@code puertas}, which is what a piso defined before the door
+     * language existed looks like. Null there is not "no frame" — it is "the shipped fallback".
+     */
+    public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
+                    String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
+                    List<String> jefes, List<String> minijefes,
+                    EnemyTable enemigos, DecorTables decoracion) {
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
+                minijefes, enemigos, decoracion, null);
+    }
+
+    public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
+                    String musica, String ambiente, MechanicDef mecanica, Set<Curse> maldiciones,
+                    List<String> jefes, List<String> minijefes,
+                    Map<ShapeFamily, Double> pesoFormas,
+                    EnemyTable enemigos, DecorTables decoracion) {
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
+                minijefes, pesoFormas, enemigos, decoracion, null);
+    }
+
+    public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
+                    String musica, String ambiente, MechanicDef mecanica, Set<Curse> maldiciones,
+                    List<String> jefes, List<String> minijefes, List<String> hereda,
+                    Map<ShapeFamily, Double> pesoFormas,
+                    Map<String, Map<String, Double>> pesos,
+                    EnemyTable enemigos, DecorTables decoracion) {
+        this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
+                minijefes, hereda, pesoFormas, pesos, enemigos, decoracion, null);
     }
 
     /** A piso with tables but no sharing or weight tuning of its own — how the defaults are built. */
     public FloorDef(String id, String nombre, String subtitulo, Set<ShapeFamily> formas, int luz,
                     String musica, String ambiente, String mecanica, Set<Curse> maldiciones,
                     List<String> jefes, List<String> minijefes,
-                    EnemyTable enemigos, DecorTables decoracion) {
+                    EnemyTable enemigos, DecorTables decoracion,
+                    es.boffmedia.teras.dungeon.model.DoorStyle puertas) {
         this(id, nombre, subtitulo, formas, luz, musica, ambiente, MechanicDef.of(mecanica),
-                maldiciones, jefes, minijefes, null, Map.of(), Map.of(), enemigos, decoracion);
+                maldiciones, jefes, minijefes, null, Map.of(), Map.of(), enemigos, decoracion,
+                puertas);
     }
 
     /** A piso with tables and shape weights of its own. */
@@ -100,9 +139,10 @@ public record FloorDef(String id,
                     String musica, String ambiente, MechanicDef mecanica, Set<Curse> maldiciones,
                     List<String> jefes, List<String> minijefes,
                     Map<ShapeFamily, Double> pesoFormas,
-                    EnemyTable enemigos, DecorTables decoracion) {
+                    EnemyTable enemigos, DecorTables decoracion,
+                    es.boffmedia.teras.dungeon.model.DoorStyle puertas) {
         this(id, nombre, subtitulo, formas, luz, musica, ambiente, mecanica, maldiciones, jefes,
-                minijefes, null, pesoFormas, Map.of(), enemigos, decoracion);
+                minijefes, null, pesoFormas, Map.of(), enemigos, decoracion, puertas);
     }
 
     public FloorDef {

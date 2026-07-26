@@ -120,6 +120,43 @@ class DoorwayZoneTest {
         }
     }
 
+    /**
+     * The frame columns are beside the opening, never in it.
+     *
+     * <p>This is the whole reason a frame costs nothing: it stands in the two columns either side of
+     * the band, which are outside every reserved volume, so a jamb can never narrow the passage a
+     * player or a three-block enemy walks through.</p>
+     */
+    @Test
+    void frameColumnsFlankTheOpeningWithoutNarrowingIt() {
+        var zones = DoorwayZone.frameZonesOf(ORIGIN, RoomShape.SINGLE, SIZE, WIDTH, HEIGHT);
+        assertEquals(8, zones.size(), "two columns on each of four exterior sides");
+        for (var zone : zones) {
+            for (int x = zone.minX(); x <= zone.maxX(); x++) {
+                for (int z = zone.minZ(); z <= zone.maxZ(); z++) {
+                    for (int y = zone.minY(); y <= zone.maxY(); y++) {
+                        assertFalse(DoorwayZone.contains(ORIGIN, RoomShape.SINGLE, x, y, z,
+                                        SIZE, WIDTH, HEIGHT),
+                                "frame column at " + x + "," + y + "," + z + " is inside a "
+                                        + "reserved doorway volume");
+                    }
+                }
+            }
+        }
+    }
+
+    /** A side with no doorway gets no frame either — an interior neck is never dressed. */
+    @Test
+    void interiorBoundariesGetNoFrame() {
+        var zones = DoorwayZone.frameZonesOf(new GridPos(0, 0), RoomShape.HORIZONTAL,
+                SIZE, WIDTH, HEIGHT);
+        assertEquals(6, zones.size(), "three exterior sides, two columns each");
+        for (var zone : zones) {
+            assertFalse(zone.minX() == SIZE - 2 && zone.maxX() == SIZE - 2,
+                    "the east side faces the room's own second cell");
+        }
+    }
+
     /** An L's missing quadrant is outside the room, so the side facing it is a real exterior wall. */
     @Test
     void anLReservesTheSidesFacingItsGap() {

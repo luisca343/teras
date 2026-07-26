@@ -680,51 +680,54 @@ public final class DungeonMaterializer {
         }
 
         private void carveDoors() {
+            int width = DungeonsConfig.doorWidth();
+            int height = DungeonsConfig.doorHeight();
+            es.boffmedia.teras.dungeon.model.DoorStyle pisoStyle =
+                    plan == null || plan.piso() == null ? null : plan.piso().puertas();
             for (DoorEdge door : layout.doors()) {
                 switch (door.kind()) {
                     case OPEN, BOSS -> DoorCarver.fillDoorway(level, origin, door,
-                            Blocks.AIR.defaultBlockState(), roomSize,
-                            DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                            Blocks.AIR.defaultBlockState(), roomSize, width, height);
                     case SECRET_CRACK -> DoorCarver.fillDoorway(level, origin, door,
-                            crackState(), roomSize,
-                            DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
-                    // Barred rather than walled: both satellite doors of the sala del sello stand
-                    // visible from inside it, and the boss falling is what opens them. The Orden's
-                    // is only ever built on a floor that earned her, so a barred GRACIA door is
-                    // always a door that will open.
-                    case DEVIL, GRACIA -> DoorCarver.fillDoorway(level, origin, door,
-                            sealState(), roomSize,
-                            DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                            crackState(), roomSize, width, height);
+                    // Walled and marked, rather than barred. Both satellite doors of the sala del
+                    // sello stand visible from inside it and the boss falling is what opens them —
+                    // but a promise you can already see through the bars is a promise half spent,
+                    // so each is a solid gate carrying its own mark. The Orden's is only ever built
+                    // on a floor that earned her, so a marked GRACIA gate is always one that opens.
+                    case DEVIL, GRACIA -> { }
                     // Open, then fanged. The curse room charges blood to enter, and a price you
                     // cannot see before you pay it is an ambush; the spikes are the warning, which
                     // is the whole reason this is a door kind and not a rule hidden in the run loop.
                     case CURSE -> {
                         DoorCarver.fillDoorway(level, origin, door,
-                                Blocks.AIR.defaultBlockState(), roomSize,
-                                DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                                Blocks.AIR.defaultBlockState(), roomSize, width, height);
                         DoorCarver.fillDoorwayRow(level, origin, door, DoorCarver.spikeState(),
-                                roomSize, DungeonsConfig.doorWidth(), DungeonsConfig.doorHeight());
+                                roomSize, width, height);
                     }
                     // Both stay untouched wall: the super-secret must not exist as far as anyone
                     // can see, and the sala del sello is revealed by the boss's death — the seal
                     // re-pins and the run engine carves the rock open, like a secret giving way.
                     case HIDDEN, SELLO -> { }
                 }
+                // After the carve, always: the frame is drawn around whatever the opening ended up
+                // being, and the gate is written into it. Doing it here rather than per-case is what
+                // keeps the two halves — what a door IS and what a door LOOKS LIKE — from drifting.
+                var style = DoorDressing.styleOf(door, pisoStyle);
+                if (style != null) {
+                    var opening = DoorDressing.Opening.of(origin, door, roomSize, width, height);
+                    DoorDressing.dress(level, opening, style);
+                    if (style.hasGate()) {
+                        DoorDressing.gate(level, opening, style);
+                    }
+                }
             }
         }
 
         /** The dedicated cracked wall, falling back to vanilla if the config names an unknown block. */
         private static BlockState crackState() {
-            var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
-                    .get(net.minecraft.resources.ResourceLocation.parse(DungeonsConfig.crackBlock()));
-            return block == null || block == Blocks.AIR
-                    ? Blocks.CRACKED_STONE_BRICKS.defaultBlockState() : block.defaultBlockState();
-        }
-
-        private static BlockState sealState() {
-            var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
-                    .get(net.minecraft.resources.ResourceLocation.parse(DungeonsConfig.sealBlock()));
-            return block == null ? Blocks.IRON_BARS.defaultBlockState() : block.defaultBlockState();
+            return DoorDressing.parse(DungeonsConfig.crackBlock(),
+                    Blocks.CRACKED_STONE_BRICKS.defaultBlockState());
         }
     }
 

@@ -7,9 +7,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * The room behind the barred door. It sits on the minimap from the moment the floor is drawn and
- * cannot be entered until the boss falls — at which point the bars come down and El Acreedor is
- * standing at his pedestal.
+ * The room behind the marked gate. It sits on the minimap from the moment the floor is drawn and
+ * cannot be entered until the boss falls — at which point the gate opens and El Acreedor is standing
+ * at his pedestal.
  *
  * <p>Two prices, which is the whole design: coins, or two of your maximum hearts for the rest of
  * the run. Isaac charges in hearts because hearts are scarce there; here they are scarce because
