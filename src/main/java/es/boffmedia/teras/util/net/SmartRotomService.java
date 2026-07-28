@@ -107,25 +107,29 @@ public final class SmartRotomService {
         if (result == null) {
             return;
         }
-        List<RaceParticipantBody> participants = new ArrayList<>();
-        for (var placement : result.placements()) {
-            participants.add(new RaceParticipantBody(
-                    placement.playerId().toString(), placement.playerName(), placement.position(),
-                    placement.timeMs(), placement.bestLapMs(), placement.dnf()));
-        }
-        RaceReportBody body = new RaceReportBody(TerasConfig.getId(), result.trackName(),
-                result.modeId(), result.laps(), System.currentTimeMillis(), participants);
-        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/karts/carrera", GSON.toJson(body));
+        HttpText.postJson(TerasConfig.getApiUrl() + "/smartrotom/karts/carrera",
+                raceBody(TerasConfig.getId(), result, System.currentTimeMillis()));
     }
 
-    /** The race report body, split out so the wire contract can be asserted without a runtime. */
+    /**
+     * The race report body, split out so the wire contract can be asserted without a runtime.
+     * Contract: {@code docs/KARTS_CARRERA_CONTRACT.md}.
+     *
+     * <p>{@code tiempoMs} and {@code mejorVueltaMs} carry {@code -1} for a racer who never finished
+     * or never completed a lap. That sentinel travels rather than being normalized away: a
+     * leaderboard has to be able to tell "did not finish" from "finished instantly", and zero cannot
+     * say that. {@code vueltasCompletadas} travels for the same reason — an elimination winner wins
+     * by being the last one left, not by covering the distance, so their time is not comparable to a
+     * full-distance run.</p>
+     */
     static String raceBody(String server, es.boffmedia.teras.karts.engine.RaceResult result,
                            long timestamp) {
         List<RaceParticipantBody> participants = new ArrayList<>();
         for (var placement : result.placements()) {
             participants.add(new RaceParticipantBody(
                     placement.playerId().toString(), placement.playerName(), placement.position(),
-                    placement.timeMs(), placement.bestLapMs(), placement.dnf()));
+                    placement.timeMs(), placement.bestLapMs(), placement.lapsCompleted(),
+                    placement.dnf()));
         }
         return GSON.toJson(new RaceReportBody(server, result.trackName(), result.modeId(),
                 result.laps(), timestamp, participants));
@@ -497,11 +501,15 @@ public final class SmartRotomService {
     /** {@code /set-balance} body — note: no {@code server} field (excluded route). */
     private record SetBalanceBody(String uuid, long balance, String concept) {}
 
+    // Field names are the wire contract (docs/KARTS_CARRERA_CONTRACT.md) and are pinned by
+    // RaceReportBodyTest: the backend's DTO is written to match these, so renaming one here fails a
+    // test rather than silently dropping a column on the far side.
     private record RaceReportBody(String server, String circuito, String modo, int vueltas,
-                                  long fecha, List<RaceParticipantBody> resultados) {}
+                                  long fecha, List<RaceParticipantBody> participantes) {}
 
     private record RaceParticipantBody(String uuid, String nombre, int posicion,
-                                       long tiempoMs, long mejorVueltaMs, boolean dnf) {}
+                                       long tiempoMs, long mejorVueltaMs, int vueltasCompletadas,
+                                       boolean dnf) {}
 
     private record DungeonRunBody(String server, String semilla, int etapaInicial, int etapaFinal,
                                   int pisosSuperados, boolean completada, long duracionMs,
