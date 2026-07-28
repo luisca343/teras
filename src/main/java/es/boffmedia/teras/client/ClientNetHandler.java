@@ -101,6 +101,11 @@ public final class ClientNetHandler {
         context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientDungeonWallet.accept(payload));
     }
 
+    /** Sparkles a shiny this player has just spotted; see {@link es.boffmedia.teras.net.ShinySparklePayload}. */
+    public static void onShinySparkle(es.boffmedia.teras.net.ShinySparklePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.shiny.ShinySparkles.accept(payload));
+    }
+
     /** Refreshes the stat panel on the left; see {@link es.boffmedia.teras.net.CombatStatsPayload}. */
     public static void onCombatStats(es.boffmedia.teras.net.CombatStatsPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientCombatStats.accept(payload.values()));

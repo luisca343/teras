@@ -121,6 +121,11 @@ public final class YamlConfig {
         return number == null ? fallback : number.intValue();
     }
 
+    public double doubleValue(String key, double fallback) {
+        Number number = number(key);
+        return number == null ? fallback : number.doubleValue();
+    }
+
     public long longValue(String key, long fallback) {
         Number number = number(key);
         return number == null ? fallback : number.longValue();

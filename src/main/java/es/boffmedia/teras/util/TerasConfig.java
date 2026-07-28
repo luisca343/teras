@@ -157,6 +157,71 @@ public final class TerasConfig {
         return sql;
     }
 
+    // ---- Shiny tracker (see shiny/ShinySpotter). Server-side; the client only receives cues. ----
+
+    /**
+     * The Legends Arceus shiny cue: a star burst and a chime when a wild shiny comes into view.
+     *
+     * <p>The decision is the <b>server's</b>, which is why these live here and not in a client
+     * option. A client can already see every shiny inside its render distance; what it must not be
+     * able to do is decide for itself that it has "spotted" one through a hill. Range, line of sight
+     * and the repeat interval are therefore all enforced server-side, and the client is told only
+     * which entity to sparkle.</p>
+     *
+     * @param enabled            master switch
+     * @param range              how far a shiny is noticed, in blocks. Also bounds the entity search
+     * @param repeatSeconds      how long before the same shiny may sparkle at the same player again.
+     *                           <b>0, the default, means once ever</b> — one cue per Pokémon per
+     *                           player, which is what a chime that repeats every few seconds turned
+     *                           out to be worth in practice
+     * @param requireLineOfSight refuse to sparkle through terrain. The 1.16.5 tracker had this and
+     *                           left it hardcoded off, so it announced shinies inside hillsides
+     * @param viewConeDegrees    how wide a cone in front of the player counts as "in view", full
+     *                           width. 0 disables it, making the check a plain sphere. With one cue
+     *                           per Pokémon this is what decides whether the single shot is spent
+     *                           on something the player is looking at
+     * @param particles          stars per burst
+     * @param volume             chime volume, 0 to silence it and keep the particles
+     */
+    public record ShinySettings(boolean enabled, double range, int repeatSeconds,
+                                boolean requireLineOfSight, double viewConeDegrees,
+                                int particles, float volume) {
+
+        public static ShinySettings defaults() {
+            // 120 degrees is a little wider than the default FOV, so a shiny at the edge of the
+            // screen still counts and one squarely behind the player does not.
+            return new ShinySettings(true, 20.0D, 0, true, 120.0D, 5, 1.0F);
+        }
+
+        /** Ticks between repeats, as the ledger counts them. */
+        public int repeatTicks() {
+            return repeatSeconds * 20;
+        }
+
+        /**
+         * These settings with anything nonsensical corrected. A negative range would search nothing
+         * and a negative particle count would throw in the loop that draws them, so both are clamped
+         * rather than trusted — an admin typo should cost the feature, not the tick.
+         */
+        public ShinySettings sanitized() {
+            return new ShinySettings(
+                    enabled,
+                    Math.max(0.0D, Math.min(range, 128.0D)),
+                    Math.max(0, repeatSeconds),
+                    requireLineOfSight,
+                    Math.max(0.0D, Math.min(viewConeDegrees, 360.0D)),
+                    Math.max(0, Math.min(particles, 64)),
+                    Math.max(0F, Math.min(volume, 2F)));
+        }
+    }
+
+    private static ShinySettings shiny = ShinySettings.defaults();
+
+    /** Sanitized on load, so callers never have to re-check the bounds. */
+    public static ShinySettings shiny() {
+        return shiny;
+    }
+
     /**
      * Loaded before the world does, so everything downstream (the HTTP API at
      * {@code ServerStartedEvent}, the join-time sync to clients) already has it.
@@ -252,6 +317,9 @@ public final class TerasConfig {
             if (yaml.has("sql")) {
                 sql = readSql(yaml.section("sql"));
             }
+            if (yaml.has("shiny")) {
+                shiny = readShiny(yaml.section("shiny"));
+            }
 
             // The server/world id must be stable across restarts. If an existing file has none,
             // mint one and append it — appending rather than rewriting so the admin's comments and
@@ -306,6 +374,7 @@ public final class TerasConfig {
         httpPort = DEFAULT_HTTP_PORT;
         httpToken = "";
         sql = SqlSettings.sqliteDefault();
+        shiny = ShinySettings.defaults();
     }
 
     private static SqlSettings readSql(YamlConfig o) {
@@ -316,6 +385,18 @@ public final class TerasConfig {
                 o.string("username", defaults.username()),
                 o.string("password", defaults.password()),
                 o.string("tablePrefix", defaults.tablePrefix()));
+    }
+
+    private static ShinySettings readShiny(YamlConfig o) {
+        ShinySettings defaults = ShinySettings.defaults();
+        return new ShinySettings(
+                o.bool("enabled", defaults.enabled()),
+                o.doubleValue("range", defaults.range()),
+                o.integer("repeatSeconds", defaults.repeatSeconds()),
+                o.bool("requireLineOfSight", defaults.requireLineOfSight()),
+                o.doubleValue("viewConeDegrees", defaults.viewConeDegrees()),
+                o.integer("particles", defaults.particles()),
+                (float) o.doubleValue("volume", defaults.volume())).sanitized();
     }
 
     /**
@@ -437,9 +518,42 @@ public final class TerasConfig {
 
                   # Namespaces our tables away from anything else sharing that database.
                   tablePrefix: "%s"
+
+                # ---------------------------------------------------------------------------
+                # Shiny tracker — the Legends Arceus cue for a wild shiny coming into view:
+                # a burst of stars and a chime, repeating while it stays in sight.
+                # See docs/SHINY.md. Needs Pixelmon or Cobblemon; silent without either.
+                # ---------------------------------------------------------------------------
+
+                shiny:
+                  enabled: %s
+
+                  # How far a shiny is noticed, in blocks.
+                  range: %s
+
+                  # Seconds before the same shiny may sparkle at the same player again.
+                  # 0 (the default) = ONCE EVER, one cue per Pokemon per player. Raise it only if
+                  # you want a shiny that stays in view to keep reminding you it is there.
+                  repeatSeconds: %s
+
+                  # Refuse to announce a shiny that is behind terrain. Turning this off will
+                  # sparkle at Pokemon inside hillsides.
+                  requireLineOfSight: %s
+
+                  # How wide a cone in front of the player counts as "in view", in degrees, full
+                  # width. Because the cue fires once per Pokemon, this is what stops that one shot
+                  # being spent on something behind them that they never see. 0 = no cone, notice
+                  # shinies in any direction.
+                  viewConeDegrees: %s
+
+                  # Stars per burst, and the chime's volume (0 keeps the stars, drops the sound).
+                  particles: %s
+                  volume: %s
                 """.formatted(id, home, apiUrl, apiToken, requireHttps, httpEnabled, httpBind,
                 httpPort, httpToken, sql.use(), sql.dsn(), sql.username(), sql.password(),
-                sql.tablePrefix());
+                sql.tablePrefix(), shiny.enabled(), shiny.range(), shiny.repeatSeconds(),
+                shiny.requireLineOfSight(), shiny.viewConeDegrees(), shiny.particles(),
+                shiny.volume());
     }
 
     private static boolean has(JsonObject o, String key) {

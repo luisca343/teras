@@ -74,6 +74,8 @@ public final class TerasNet {
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onDungeonWallet(payload, context));
         registrar.playToClient(CombatStatsPayload.TYPE, CombatStatsPayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onCombatStats(payload, context));
+        registrar.playToClient(ShinySparklePayload.TYPE, ShinySparklePayload.STREAM_CODEC,
+                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onShinySparkle(payload, context));
     }
 
     // ---- Server-side send helpers ----

@@ -47,6 +47,7 @@ public class Teras {
         ItemInit.ITEMS.register(modBus);
         ItemInit.CREATIVE_TABS.register(modBus);
         ComponentInit.COMPONENTS.register(modBus);
+        es.boffmedia.teras.init.SoundInit.SOUNDS.register(modBus);
         es.boffmedia.teras.init.EntityInit.ENTITY_TYPES.register(modBus);
         es.boffmedia.teras.dungeon.gear.LootInit.LOOT_FUNCTIONS.register(modBus);
 
