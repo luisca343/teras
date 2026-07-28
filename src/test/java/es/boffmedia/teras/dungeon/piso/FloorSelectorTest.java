@@ -325,4 +325,57 @@ class FloorSelectorTest {
                 catalog(clones), 1, "s", Map.of());
         assertEquals(List.of("minijefe"), plan.minijefes());
     }
+
+    // --- where an ascensor stands ---------------------------------------------------------------
+
+    private static boolean boundaryAt(DungeonDef dungeon, int stage) {
+        FloorPlan plan = FloorSelector.select(dungeon, bothPisos(), stage, "seed", Map.of());
+        assertNotNull(plan, "no floor at stage " + stage);
+        return plan.tramoBoundary();
+    }
+
+    /**
+     * The lift stands on the floor that closes a tramo, and only there. La Cripta is three tramos
+     * of two, so it closes at 2, 4 and 6 — never mid-tramo.
+     */
+    @Test
+    void onlyTheLastFloorOfATramoClosesIt() {
+        DungeonDef cripta = cripta();
+        assertEquals(List.of(false, true, false, true, false, true),
+                List.of(boundaryAt(cripta, 1), boundaryAt(cripta, 2), boundaryAt(cripta, 3),
+                        boundaryAt(cripta, 4), boundaryAt(cripta, 5), boundaryAt(cripta, 6)));
+    }
+
+    /**
+     * Stage 6 is the case the first version of this rule got wrong. It also required "and another
+     * tramo follows", which is right about the <i>unlock</i> and wrong about the <i>fixture</i>:
+     * the last tramo's lift is the monument to finishing the dungeon, and it starts working by
+     * itself the day a tramo is added behind it.
+     */
+    @Test
+    void theLastTramoStillCloses() {
+        assertTrue(boundaryAt(cripta(), 6));
+    }
+
+    /**
+     * The shipped dungeon's real shape — one tramo of two floors — and the whole reason the guard
+     * above was dropped. Under it, no dungeon in the game had a single ascensor anywhere.
+     */
+    @Test
+    void theShippedOneTramoDungeonClosesOnItsLastFloor() {
+        DungeonDef small = new DungeonDef("corta", "Corta", 1,
+                List.of(tier(2, 1.0, new WeightedRef("cuevas", 1))));
+        assertEquals(List.of(false, true),
+                List.of(boundaryAt(small, 1), boundaryAt(small, 2)));
+    }
+
+    /** A tramo one floor deep closes on its only floor. */
+    @Test
+    void aOneFloorTramoClosesImmediately() {
+        DungeonDef stacked = new DungeonDef("apilada", "Apilada", 1, List.of(
+                tier(1, 1.0, new WeightedRef("cuevas", 1)),
+                tier(1, 1.4, new WeightedRef("cuevas", 1))));
+        assertEquals(List.of(true, true),
+                List.of(boundaryAt(stacked, 1), boundaryAt(stacked, 2)));
+    }
 }

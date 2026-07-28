@@ -35,6 +35,36 @@ public final class DungeonHealth {
     public static final ResourceLocation DEVIL_DEAL_MODIFIER =
             ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "devil_deal");
 
+    /**
+     * What the attribute is never allowed to fall below.
+     *
+     * <p>Maximum health at or below zero is not a weaker player, it is a broken entity: vanilla
+     * kills it on the spot and the clamp in {@link #heal} starts dividing by nothing. A player who
+     * has run out of containers is taken out of the expedition by
+     * {@code RunEngine.benchIfOut} instead, and this only guarantees the body they leave behind is
+     * still a legal one.</p>
+     */
+    private static final double MIN_MAX_HEALTH = 1.0;
+
+    /**
+     * Heart containers {@code player} has left in this run: their body's own, minus everything the
+     * run has taken.
+     *
+     * <p>Reads the attribute's <b>base</b> value rather than {@code getMaxHealth}, which already has
+     * the run's own modifier on it — asking the modified total how much the modifier should be is
+     * how a number walks itself to zero over three floor transitions.</p>
+     */
+    public static int containersLeft(ServerPlayer player, DungeonRun run) {
+        AttributeInstance attribute = player.getAttribute(Attributes.MAX_HEALTH);
+        if (attribute == null) {
+            return 0;
+        }
+        int owned = (int) (attribute.getBaseValue() / Afflictions.HALF_HEARTS_PER_CONTAINER);
+        int taken = Afflictions.totalHpDebt(run, player.getUUID())
+                / Afflictions.HALF_HEARTS_PER_CONTAINER;
+        return owned - taken;
+    }
+
     @SubscribeEvent
     public static void onHeal(LivingHealEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && isInRun(player)) {
@@ -108,7 +138,8 @@ public final class DungeonHealth {
         if (halfHearts <= 0) {
             return;
         }
-        attribute.addPermanentModifier(new AttributeModifier(DEVIL_DEAL_MODIFIER, -halfHearts,
+        double taken = Math.min(halfHearts, attribute.getBaseValue() - MIN_MAX_HEALTH);
+        attribute.addPermanentModifier(new AttributeModifier(DEVIL_DEAL_MODIFIER, -taken,
                 AttributeModifier.Operation.ADD_VALUE));
         if (player.getHealth() > player.getMaxHealth()) {
             player.setHealth(player.getMaxHealth());

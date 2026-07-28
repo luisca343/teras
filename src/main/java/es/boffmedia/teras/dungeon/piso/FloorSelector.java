@@ -60,7 +60,26 @@ public final class FloorSelector {
         return new FloorPlan(stage, dungeon.id(), position.tierIndex(), position.indexInTier(),
                 piso, position.tier().dificultad(), curses,
                 pool(piso.jefes(), position.tier().jefes()),
-                miniPool(piso, position.tier()));
+                miniPool(piso, position.tier()),
+                closesTramo(dungeon, position));
+    }
+
+    /**
+     * Whether this floor is the last of its tramo — where an ascensor stands, and nowhere else.
+     *
+     * <p><b>Deliberately not also "and another tramo follows".</b> That guard was written first, on
+     * the reasoning that a lift back to a depth with nothing past it promises a floor that does not
+     * exist. It is sound about the <i>unlock</i> and wrong about the <i>fixture</i>, and it made the
+     * whole feature invisible: La Cripta ships as one tramo of two floors on purpose, so under that
+     * rule no dungeon in the game had a single ascensor anywhere.
+     *
+     * <p>The split that resolves it: <b>the fixture marks the end of a tramo, the unlock is what
+     * knows whether there is anywhere to go.</b> The last tramo's lift is the monument to finishing
+     * the dungeon, and the day a tramo is added behind it, it starts working with no change here or
+     * to any template.</p>
+     */
+    private static boolean closesTramo(DungeonDef dungeon, DungeonDef.Position position) {
+        return position.indexInTier() + 1 >= Math.max(1, position.tier().largo());
     }
 
     /**

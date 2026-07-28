@@ -17,6 +17,32 @@ public final class PlayerRunState {
     private int hpDebt;
     private boolean phoenix;
     private int deaths;
+    private int containersLost;
+
+    /**
+     * Heart containers this run has taken from the player by killing them.
+     *
+     * <p>Separate from {@link #hpDebt} even though both end up as the same attribute modifier: a
+     * devil deal's hearts are <b>sold</b> and la Orden's restitución gives them back, while these
+     * were <b>lost</b> and she does not undo a death. Folding them into one counter would make
+     * restitución quietly refund the party's mistakes as well as its bargains.</p>
+     */
+    public int containersLost() {
+        return containersLost;
+    }
+
+    public void loseContainers(int containers) {
+        if (containers > 0) {
+            containersLost += containers;
+        }
+    }
+
+    /** Gives lost containers back, for whatever eventually pays for them. Never called by a death. */
+    public void restoreContainers(int containers) {
+        if (containers > 0) {
+            containersLost = Math.max(0, containersLost - containers);
+        }
+    }
 
     /** Half-hearts of maximum health sold to devil deals, held so respawns can re-apply them. */
     public int hpDebt() {

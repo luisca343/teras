@@ -44,6 +44,30 @@ public record DungeonDef(String id, String nombre, int primerPiso, List<TierDef>
     }
 
     /**
+     * The stage a tramo opens at, 1-based, or 0 when this dungeon has no such tramo.
+     *
+     * <p>The inverse of {@link #locate}, and the arithmetic the ascensor boards on: an unlock is
+     * held as a tramo index because that is what a run <i>earns</i>, and a run has to be started at
+     * a stage. Doing it here keeps the two ends of that conversion in one place, beside the length
+     * they are both derived from.</p>
+     */
+    public int firstStageOf(int tramoIndex) {
+        if (tramoIndex < 0 || tramoIndex >= tramos.size()) {
+            return 0;
+        }
+        int stage = 1;
+        for (int i = 0; i < tramoIndex; i++) {
+            stage += Math.max(1, tramos.get(i).largo());
+        }
+        return stage;
+    }
+
+    /** Whether a tramo exists at this index — i.e. whether an unlock of it means anything. */
+    public boolean hasTramo(int tramoIndex) {
+        return tramoIndex >= 0 && tramoIndex < tramos.size();
+    }
+
+    /**
      * The canonical floor a stage of this dungeon lands on. The one place run position becomes
      * floor identity — everything generation-side takes the result, never the stage.
      */

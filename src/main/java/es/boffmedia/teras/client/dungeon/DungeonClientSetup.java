@@ -23,6 +23,9 @@ public final class DungeonClientSetup {
         event.registerAboveAll(
                 ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_map"),
                 (LayeredDraw.Layer) DungeonMapOverlay::render);
+        event.registerAboveAll(
+                ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, "dungeon_stats"),
+                (LayeredDraw.Layer) CombatStatsOverlay::render);
     }
 
     @SubscribeEvent

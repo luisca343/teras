@@ -16,6 +16,7 @@ import es.boffmedia.teras.dungeon.piso.PisoCatalog;
 import es.boffmedia.teras.dungeon.model.DungeonLayout;
 import es.boffmedia.teras.dungeon.run.DungeonTitles;
 import es.boffmedia.teras.dungeon.run.RunEngine;
+import es.boffmedia.teras.dungeon.run.RunPartyHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -31,7 +32,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
-import java.util.BitSet;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,13 +54,25 @@ public final class DungeonRunManager {
     private DungeonRunManager() {}
 
     private static final Map<Integer, DungeonRun> RUNS = new LinkedHashMap<>();
-    private static final BitSet SLOTS = new BitSet();
+    /** Player to run id, so {@link #runOf} is a lookup rather than a scan over every party. */
+    private static final RunIndex MEMBERSHIP = new RunIndex();
+    private static final SlotTable SLOTS = new SlotTable();
     /** How often the watchdog looks; a second is far below either timeout and costs nothing. */
     private static final int WATCH_INTERVAL_TICKS = 20;
     private static RunWatchdog watchdog = new RunWatchdog(180 * 20, 60 * 20);
-    private static Map<UUID, DungeonRun.ReturnPoint> pendingReturns = new LinkedHashMap<>();
+    private static Map<UUID, RunJournal.TimestampedReturn> pendingReturns = new LinkedHashMap<>();
     /** Members who walked out on a run, so the report can tell them from those who saw it through. */
     private static final Set<UUID> abandoned = new java.util.HashSet<>();
+    /**
+     * Players whose ascensor score is still owed, written on a later tick rather than at login.
+     *
+     * <p>A scoreboard write during {@code PlayerLoggedInEvent} runs inside
+     * {@code PlayerList.placeNewPlayer}, where anything that throws kicks the player with "Invalid
+     * player data" on every attempt. {@link #onLoginSeedScores} is what makes CustomNPCs' listener
+     * not throw, and the value write is still kept out of the join for belt and braces. Deferring
+     * costs nothing: nothing reads this until the player talks to el Guardián.</p>
+     */
+    private static final Set<UUID> pendingScores = new java.util.LinkedHashSet<>();
     private static int nextRunId = 1;
 
     public record StartOutcome(DungeonRun run, String error) {
@@ -73,10 +85,24 @@ public final class DungeonRunManager {
         return List.copyOf(RUNS.values());
     }
 
+    /**
+     * The run {@code player} belongs to, or null.
+     *
+     * <p><b>Indexed, because this is one of the hottest lookups in the mod.</b> It used to stream every
+     * active run's party map, which was affordable when it answered a command and stopped being
+     * affordable once the rebuilt combat loop started asking per hit, per right-click and — through
+     * {@code DungeonHealth.isInRun} — per player per second. Twenty parties of four is eighty entries
+     * scanned, hundreds of times a second, to answer a question a hash lookup answers.</p>
+     *
+     * <p>{@link #MEMBERSHIP} is maintained through {@link RunIndex} at the only four
+     * places membership can change, all of them in this class: a run starting, a member leaving, a run
+     * ending, and a stuck build being failed. {@code party()} is handed out mutable and nothing outside
+     * this class mutates it — which is a rule the index now depends on rather than merely a fact, so it
+     * is stated here.</p>
+     */
     public static DungeonRun runOf(UUID player) {
-        return RUNS.values().stream()
-                .filter(r -> r.party().containsKey(player))
-                .findFirst().orElse(null);
+        Integer runId = MEMBERSHIP.runIdOf(player);
+        return runId == null ? null : RUNS.get(runId);
     }
 
     /**
@@ -100,8 +126,9 @@ public final class DungeonRunManager {
         if (level == null) {
             return StartOutcome.fail("La dimensión " + DungeonsConfig.dimension() + " no existe.");
         }
-        int slot = SLOTS.nextClearBit(0);
-        if (slot >= DungeonsConfig.maxSlots()) {
+        // Checked before the floor is generated, claimed after it: a full lattice must refuse the
+        // command without having done a generator's worth of work first.
+        if (SLOTS.nextFree(DungeonsConfig.maxSlots()) < 0) {
             return StartOutcome.fail("No hay huecos de instancia libres.");
         }
 
@@ -150,13 +177,17 @@ public final class DungeonRunManager {
         }
         logWarnings(layout, dungeonId, stage);
 
-        SLOTS.set(slot);
+        int slot = SLOTS.allocate(DungeonsConfig.maxSlots());
+        if (slot < 0) {
+            return StartOutcome.fail("No hay huecos de instancia libres.");
+        }
         DungeonRun run = new DungeonRun(nextRunId++, slot, dungeonId, stage, plan, layout);
         for (ServerPlayer member : members) {
             run.party().put(member.getUUID(), returnPointOf(member));
             run.names().put(member.getUUID(), member.getName().getString());
         }
         RUNS.put(run.id(), run);
+        MEMBERSHIP.index(run.party().keySet(), run.id());
 
         BlockPos origin = padOrigin(slot, 0);
         RunJournal.write(run.id(), DungeonsConfig.dimension(),
@@ -195,7 +226,8 @@ public final class DungeonRunManager {
         combined.addAll(plan.curses());
         combined.addAll(forced);
         return new FloorPlan(plan.stage(), plan.dungeonId(), plan.tierIndex(), plan.indexInTier(),
-                plan.piso(), plan.dificultad(), combined, plan.jefes(), plan.minijefes());
+                plan.piso(), plan.dificultad(), combined, plan.jefes(), plan.minijefes(),
+                plan.tramoBoundary());
     }
 
     /**
@@ -208,6 +240,7 @@ public final class DungeonRunManager {
             return false;
         }
         DungeonRun.ReturnPoint point = run.party().remove(player.getUUID());
+        MEMBERSHIP.remove(player.getUUID());
         abandoned.add(player.getUUID());
         if (point != null) {
             teleport(player, point);
@@ -216,7 +249,7 @@ public final class DungeonRunManager {
                 es.boffmedia.teras.net.DungeonMapPayload.hidden());
         net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                 es.boffmedia.teras.net.DungeonWalletPayload.hidden());
-        message(player.getServer(), run,
+        RunPartyHelper.message(player.getServer(), run,
                 "§7" + player.getName().getString() + " ha abandonado la mazmorra.");
         if (run.party().isEmpty() && run.state() == DungeonRun.State.ACTIVE) {
             end(player.getServer(), run.id());
@@ -346,7 +379,7 @@ public final class DungeonRunManager {
         }
         RunJournal.write(run.id(), DungeonsConfig.dimension(),
                 DungeonsConfig.roomSize(), DungeonsConfig.roomHeight(), journalCells, run.party());
-        message(server, run, "§7Descendiendo al piso " + next + "…");
+        RunPartyHelper.message(server, run, "§7Descendiendo al piso " + next + "…");
 
         FloorPlan floorPlan = plan;
         DungeonMaterializer.enqueueBuild(level, newLayout, floorPlan, newOrigin, built -> {
@@ -376,9 +409,43 @@ public final class DungeonRunManager {
                         run.claimPisoOrdinal(floorPlan.piso().id())));
     }
 
+    /**
+     * The party rides el ascensor out, wherever they had got to.
+     *
+     * <p><b>A completion, not an abandonment</b>, which is the whole design: coins become ₽ exactly
+     * as they do at the bottom of a dungeon, so leaving early is banking rather than forfeiting and
+     * the choice at the lift is a real one. Abandoning still exists and still pays nothing — that is
+     * {@code leave}, and it is what walking out of the run does.</p>
+     */
+    public static void extract(MinecraftServer server, DungeonRun run) {
+        if (run == null || run.state() != DungeonRun.State.ACTIVE || RUNS.get(run.id()) != run) {
+            return;
+        }
+        // stage() is the floor they are STANDING on, and taking the lift is precisely the case where
+        // they have not cleared it — see completeRun.
+        completeRun(server, run, run.stage() - 1);
+    }
+
     private static void completeRun(MinecraftServer server, DungeonRun run) {
-        message(server, run, "§6¡Mazmorra completada! Etapa " + run.stage()
-                + " superada con semilla " + run.layout().seedString() + ".");
+        completeRun(server, run, run.stage());
+    }
+
+    /**
+     * Ends the run and pays it out, reporting {@code stagesBeaten} as the depth reached.
+     *
+     * <h2>Why the depth is a parameter</h2>
+     *
+     * <p>The two ways in disagree about what {@code run.stage()} means. Coming from
+     * {@link #advanceStage}, the descent has been refused for running out of dungeon, so the stage
+     * they are on is the stage they beat. Coming from {@link #extract}, they are standing on a floor
+     * the lift is carrying them out of — <b>the one floor they did not clear</b>. Reading
+     * {@code stage()} in both places claimed one etapa more than the party had earned.</p>
+     */
+    private static void completeRun(MinecraftServer server, DungeonRun run, int stagesBeaten) {
+        String seed = " con semilla " + run.layout().seedString() + ".";
+        RunPartyHelper.message(server, run, stagesBeaten <= 0
+                ? "§6Salís de la mazmorra. §7Ninguna etapa superada" + seed
+                : "§6¡Mazmorra completada! Etapa " + stagesBeaten + " superada" + seed);
         payOutCoins(server, run);
         report(run, true);
         end(server, run.id());
@@ -396,13 +463,7 @@ public final class DungeonRunManager {
         if (coins <= 0 || rate <= 0) {
             return;
         }
-        List<ServerPlayer> present = new java.util.ArrayList<>();
-        for (UUID member : run.party().keySet()) {
-            ServerPlayer player = server.getPlayerList().getPlayer(member);
-            if (player != null) {
-                present.add(player);
-            }
-        }
+        List<ServerPlayer> present = RunPartyHelper.onlineMembers(server, run);
         if (present.isEmpty()) {
             return;
         }
@@ -430,6 +491,7 @@ public final class DungeonRunManager {
             return false;
         }
         RUNS.remove(runId);
+        MEMBERSHIP.unindex(runId);
         watchdog.forget(runId);
         // Not completed: completeRun already reported before handing over, and markReported keeps
         // this from posting the same run a second time.
@@ -457,12 +519,12 @@ public final class DungeonRunManager {
             // build in — but the journal stays for a boot that has the dimension back.
             Teras.LOGGER.error("Dungeons: dimension {} is missing; run {}'s floor is left to the "
                     + "boot sweep", DungeonsConfig.dimension(), run.id());
-            SLOTS.clear(run.slot());
+            SLOTS.free(run.slot());
             return;
         }
         Runnable done = () -> {
             RunJournal.delete(run.id());
-            SLOTS.clear(run.slot());
+            SLOTS.free(run.slot());
         };
         if (DungeonMaterializer.enqueueDiscard(run.builtId(), level, done)) {
             return;
@@ -487,22 +549,23 @@ public final class DungeonRunManager {
         if (RUNS.remove(run.id()) == null) {
             return;
         }
+        MEMBERSHIP.unindex(run.id());
         Teras.LOGGER.error("Dungeons: run {} failed ({}) — clearing slot {}", run.id(), why,
                 run.slot());
         watchdog.forget(run.id());
         RunEngine.unregister(run.id());
-        message(server, run, "§cLa mazmorra ha fallado; volvéis a casa.");
+        RunPartyHelper.message(server, run, "§cLa mazmorra ha fallado; volvéis a casa.");
         sendPartyHome(server, run);
         ServerLevel level = dungeonLevel(server);
         if (level == null) {
-            SLOTS.clear(run.slot());
+            SLOTS.free(run.slot());
             return;
         }
         int grid = es.boffmedia.teras.dungeon.build.DungeonsConfig.genConfig().gridSize();
         DungeonMaterializer.enqueuePadClear(level, padOrigin(run.slot(), 0), grid, () -> { });
         DungeonMaterializer.enqueuePadClear(level, padOrigin(run.slot(), 1), grid, () -> {
             RunJournal.delete(run.id());
-            SLOTS.clear(run.slot());
+            SLOTS.free(run.slot());
         });
     }
 
@@ -515,16 +578,80 @@ public final class DungeonRunManager {
      * listening for an event catches kicks, client crashes and timeouts too, and cannot be bypassed
      * by a future way of leaving that fires no event.</p>
      */
+    /** False until the first server tick has created whatever objectives the world was missing. */
+    private static boolean objectivesEnsured;
+
+    /**
+     * Creates the dungeon's scoreboard objectives, once, on the <b>first server tick</b>.
+     *
+     * <p>The first tick is after every mod has started and before any player can join, so nobody
+     * is connected to receive a packet about an objective appearing and CustomNPCs is fully up.
+     * {@code ServerStartedEvent} would be earlier than CustomNPCs' own start.</p>
+     */
+    private static void ensureObjectivesOnce(MinecraftServer server) {
+        if (objectivesEnsured) {
+            return;
+        }
+        objectivesEnsured = true;
+        es.boffmedia.teras.dungeon.run.DungeonNpcs.ensureObjectives(server);
+        es.boffmedia.teras.dungeon.run.DungeonObjectives.ensure(
+                server, List.of(ElevatorAccess.OBJECTIVE));
+    }
+
+    /** Every objective a Teras dialogue may condition on, seeded together at login. */
+    private static List<String> conditionedObjectives() {
+        List<String> all = new java.util.ArrayList<>(
+                es.boffmedia.teras.dungeon.run.DungeonNpcs.objectives());
+        all.add(ElevatorAccess.OBJECTIVE);
+        return all;
+    }
+
+    /**
+     * Gives this player's conditioned scores a display name and a number format — see
+     * {@code DungeonObjectives.seed}.
+     *
+     * <p><b>After CustomNPCs' login handler</b>, deliberately. That handler is what tells the client
+     * these objectives exist, and a score written before it arrives is a score for an objective the
+     * client does not have yet, which it can only log and drop. Seeding is no longer what keeps
+     * CustomNPCs from throwing on the null — {@code CnpcScoreSyncMixin} fixes that at the call — so
+     * there is nothing left that wants it early.</p>
+     */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.LOWEST)
+    public static void onLoginSeedScores(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            es.boffmedia.teras.dungeon.run.DungeonObjectives.seed(player, conditionedObjectives());
+        }
+    }
+
+    /** Writes the ascensor scores owed since the last logins, off the join and on a plain tick. */
+    private static void drainPendingScores(MinecraftServer server) {
+        if (pendingScores.isEmpty()) {
+            return;
+        }
+        for (UUID id : List.copyOf(pendingScores)) {
+            ServerPlayer player = server.getPlayerList().getPlayer(id);
+            if (player == null) {
+                // Gone again before the tick came round; there is nothing owed to nobody.
+                pendingScores.remove(id);
+                continue;
+            }
+            ElevatorAccess.publish(player);
+            pendingScores.remove(id);
+        }
+    }
+
     @SubscribeEvent
     public static void onServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
         MinecraftServer server = event.getServer();
+        ensureObjectivesOnce(server);
+        drainPendingScores(server);
         if (RUNS.isEmpty() || server.getTickCount() % WATCH_INTERVAL_TICKS != 0) {
             return;
         }
         long tick = server.getTickCount();
         for (DungeonRun run : List.copyOf(RUNS.values())) {
             boolean building = run.state() != DungeonRun.State.ACTIVE;
-            switch (watchdog.check(run.id(), building, anyOnline(server, run), tick)) {
+            switch (watchdog.check(run.id(), building, RunPartyHelper.anyOnline(server, run), tick)) {
                 case END_DESERTED -> {
                     Teras.LOGGER.info("Dungeons: run {} has had nobody online for {}s — ending it",
                             run.id(), DungeonsConfig.desertionGraceSeconds());
@@ -534,15 +661,6 @@ public final class DungeonRunManager {
                 case HEALTHY -> { }
             }
         }
-    }
-
-    private static boolean anyOnline(MinecraftServer server, DungeonRun run) {
-        for (UUID member : run.party().keySet()) {
-            if (server.getPlayerList().getPlayer(member) != null) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -589,10 +707,16 @@ public final class DungeonRunManager {
         watchdog = new RunWatchdog(DungeonsConfig.desertionGraceSeconds() * 20L,
                 DungeonsConfig.buildTimeoutSeconds() * 20L);
         pendingReturns = RunJournal.loadReturns();
+        purgeStaleReturns();
+        ElevatorAccess.load();
+        // The objectives are NOT created here — see ensureObjectivesOnce.
+        objectivesEnsured = false;
         List<RunJournal.SweptRun> stale = RunJournal.readAll();
         for (RunJournal.SweptRun swept : stale) {
             nextRunId = Math.max(nextRunId, swept.id() + 1);
-            pendingReturns.putAll(swept.party());
+            for (Map.Entry<UUID, DungeonRun.ReturnPoint> member : swept.party().entrySet()) {
+                pendingReturns.put(member.getKey(), timestamped(member.getValue()));
+            }
             ServerLevel level = levelByName(event.getServer(), swept.dimension());
             if (level == null) {
                 Teras.LOGGER.warn("Dungeons: cannot sweep run {} — dimension {} missing; journal kept",
@@ -619,11 +743,20 @@ public final class DungeonRunManager {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        DungeonRun.ReturnPoint pending = pendingReturns.remove(player.getUUID());
+        // Queued, NOT written here: see pendingScores. Everyone gets one, not only dungeon
+        // players — a missing objective reads to CustomNPCs as unavailable rather than as zero, so
+        // a player who has never entered would find el Guardián with no descent options at all.
+        pendingScores.add(player.getUUID());
+        RunJournal.TimestampedReturn pending = pendingReturns.remove(player.getUUID());
         if (pending != null) {
             RunJournal.saveReturns(pendingReturns);
-            teleport(player, pending);
+            teleport(player, pending.point());
             return;
+        }
+        // Cheaper than a timer and it fires often enough: a server with players logging in is the
+        // only one whose returns file is growing.
+        if (purgeStaleReturns()) {
+            RunJournal.saveReturns(pendingReturns);
         }
         boolean inDungeonDim = player.serverLevel().dimension().location().toString()
                 .equals(DungeonsConfig.dimension());
@@ -633,6 +766,13 @@ public final class DungeonRunManager {
             // Cleared here too: a crash mid-run leaves a devil deal's max-health modifier saved on
             // the player, and this is the path a stranded one comes back through.
             RunEngine.clearRunEffects(player);
+            // Same case, one system later: a player benched out of the expedition is a spectator,
+            // and a crash takes RunEngine's record of that with it. Only spectators are touched, so
+            // an operator who flew in to look at a stranded dungeon keeps their own mode.
+            if (player.gameMode.getGameModeForPlayer()
+                    == net.minecraft.world.level.GameType.SPECTATOR) {
+                player.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
+            }
             player.teleportTo(overworld, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5,
                     player.getYRot(), player.getXRot());
             RunEngine.land(player);
@@ -668,11 +808,42 @@ public final class DungeonRunManager {
             }
         }
         RUNS.clear();
+        MEMBERSHIP.clear();
         SLOTS.clear();
         watchdog.clear();
     }
 
     // --- helpers -------------------------------------------------------------------------------
+
+    private static RunJournal.TimestampedReturn timestamped(DungeonRun.ReturnPoint point) {
+        return new RunJournal.TimestampedReturn(point, System.currentTimeMillis());
+    }
+
+    /**
+     * Drops return points nobody has come back for.
+     *
+     * <p>An entry is only ever consumed by its owner logging in, so a player who leaves and never
+     * returns leaves one behind for good — cheap on its own, unbounded over a server's lifetime.
+     * Expiring one costs that player a teleport home they were never going to collect; they still
+     * land wherever they logged out, and the stranded-in-the-void path below still catches them.</p>
+     *
+     * @return whether anything was purged, so the caller knows to rewrite the file
+     */
+    private static boolean purgeStaleReturns() {
+        long days = DungeonsConfig.returnExpiryDays();
+        if (days <= 0 || pendingReturns.isEmpty()) {
+            return false;
+        }
+        long cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L;
+        int before = pendingReturns.size();
+        pendingReturns.values().removeIf(entry -> entry.savedAtMs() < cutoff);
+        int purged = before - pendingReturns.size();
+        if (purged > 0) {
+            Teras.LOGGER.info("Dungeons: purged {} stale return points (older than {} days)",
+                    purged, days);
+        }
+        return purged > 0;
+    }
 
     /** A slot holds two build pads so stage advances can build before tearing down. */
     static BlockPos padOrigin(int slot, int pad) {
@@ -698,15 +869,6 @@ public final class DungeonRunManager {
             }
         }
         return cells;
-    }
-
-    private static void message(MinecraftServer server, DungeonRun run, String text) {
-        for (java.util.UUID member : run.party().keySet()) {
-            ServerPlayer player = server.getPlayerList().getPlayer(member);
-            if (player != null) {
-                player.sendSystemMessage(Component.literal(text));
-            }
-        }
     }
 
     private static ServerLevel dungeonLevel(MinecraftServer server) {
@@ -767,42 +929,39 @@ public final class DungeonRunManager {
             return;
         }
         BlockPos start = built.partySpawn(built.layout().start());
-        for (UUID member : run.party().keySet()) {
-            ServerPlayer player = server.getPlayerList().getPlayer(member);
-            if (player != null) {
-                player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
-                        player.getYRot(), player.getXRot());
-                announceFloor(player, run);
-                // Clears the descent: gravity back on, and no fall distance carried into the
-                // landing (arriving mid-drop from the floor above was fatal).
-                RunEngine.land(player);
-                // Always adventure, whatever they came in as — the floor is not the party's to
-                // mine through or brick over. On every floor, not just the first: idempotent, and
-                // it covers a member who talked an op into a mode change mid-run.
-                player.setGameMode(net.minecraft.world.level.GameType.ADVENTURE);
-                // Blessings are a floor's purchase, not a run's: carrying them down would stack
-                // three shops' worth of buffs onto the stages that are supposed to be hardest.
-                es.boffmedia.teras.dungeon.run.DungeonShop.clearBlessings(player);
-                // The hearts a devil deal took, and any Pulso débil accepted at a curse room, are
-                // a run-long debt: they follow the party down.
-                es.boffmedia.teras.dungeon.run.Afflictions.apply(run, player);
-                // Seed and stage to chat only. This used to also send a title, which fired after
-                // announceFloor and overwrote "Cuevas I" with "Piso 1 / semilla" — the floor's own
-                // name is the title, the seed is a chat aside.
-                player.sendSystemMessage(Component.literal(
-                        "§7Mazmorra lista — etapa " + run.stage()
-                                + ", semilla " + run.layout().seedString()));
-            }
+        for (ServerPlayer player : RunPartyHelper.onlineMembers(server, run)) {
+            player.teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5,
+                    player.getYRot(), player.getXRot());
+            announceFloor(player, run);
+            // Clears the descent: gravity back on, and no fall distance carried into the
+            // landing (arriving mid-drop from the floor above was fatal).
+            RunEngine.land(player);
+            // Always adventure, whatever they came in as — the floor is not the party's to
+            // mine through or brick over. On every floor, not just the first: idempotent, and
+            // it covers a member who talked an op into a mode change mid-run.
+            player.setGameMode(net.minecraft.world.level.GameType.ADVENTURE);
+            // Blessings are a floor's purchase, not a run's: carrying them down would stack
+            // three shops' worth of buffs onto the stages that are supposed to be hardest.
+            es.boffmedia.teras.dungeon.run.DungeonShop.clearBlessings(player);
+            // The hearts a devil deal took, and any Pulso débil accepted at a curse room, are
+            // a run-long debt: they follow the party down.
+            es.boffmedia.teras.dungeon.run.Afflictions.apply(run, player);
+            // Seed and stage to chat only. This used to also send a title, which fired after
+            // announceFloor and overwrote "Cuevas I" with "Piso 1 / semilla" — the floor's own
+            // name is the title, the seed is a chat aside.
+            player.sendSystemMessage(Component.literal(
+                    "§7Mazmorra lista — etapa " + run.stage()
+                            + ", semilla " + run.layout().seedString()));
         }
     }
 
     private static void sendPartyHome(MinecraftServer server, DungeonRun run) {
         for (Map.Entry<UUID, DungeonRun.ReturnPoint> member : run.party().entrySet()) {
-            ServerPlayer player = server.getPlayerList().getPlayer(member.getKey());
+            ServerPlayer player = RunPartyHelper.playerOf(server, member.getKey());
             if (player != null) {
                 teleport(player, member.getValue());
             } else {
-                pendingReturns.put(member.getKey(), member.getValue());
+                pendingReturns.put(member.getKey(), timestamped(member.getValue()));
                 RunJournal.saveReturns(pendingReturns);
             }
         }

@@ -403,18 +403,23 @@ public final class DungeonNpcs {
         }
     }
 
+    /**
+     * Creates the eleven at server start. Called once, from {@code DungeonRunManager}.
+     *
+     * <p>They used to be created lazily by {@link #score}, which never fired only because a
+     * long-lived world already had all eleven. See {@link DungeonObjectives}.</p>
+     */
+    public static void ensureObjectives(MinecraftServer server) {
+        DungeonObjectives.ensure(server, OBJECTIVES);
+    }
+
+    /** The eleven, for the login seeding in {@link DungeonObjectives#seed}. */
+    public static List<String> objectives() {
+        return OBJECTIVES;
+    }
+
     private static void score(ServerPlayer player, String name, int value) {
-        MinecraftServer server = player.getServer();
-        if (server == null) {
-            return;
-        }
-        Scoreboard board = server.getScoreboard();
-        Objective objective = board.getObjective(name);
-        if (objective == null) {
-            objective = board.addObjective(name, ObjectiveCriteria.DUMMY, Component.literal(name),
-                    ObjectiveCriteria.RenderType.INTEGER, false, null);
-        }
-        board.getOrCreatePlayerScore(player, objective).set(value);
+        DungeonObjectives.set(player, name, value);
     }
 
     /** The room a floor's Acreedor stands in, or null when he did not visit. */

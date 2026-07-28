@@ -153,9 +153,44 @@ public final class ConfigVersion {
      *       door wears on <i>that</i> floor. Absent, it falls back to {@code puertas.normal} in
      *       config.yml, which is Cuevas' andesite: correct for Cuevas, wrong for Infestadas, and
      *       worth a {@code piso resync} for anything else.</p></li>
+     *   <li>{@code config.yml} starts being stamped at all. It was the one dungeon config that never
+     *       wrote a version, so every default added to its template since a server's first boot had
+     *       been invisible on it — silently, which is the exact failure this class exists to announce,
+     *       and it had happened four times before anyone noticed the fifth. Nothing migrates: the
+     *       template is still only written when the file is <b>absent</b>, so an existing
+     *       {@code config.yml} reports as unstamped (the missing key reads as 0, which is older than
+     *       current) and the warning tells the operator to copy the blocks it is missing or delete the
+     *       file to regenerate it. A stamp reports staleness; it has never repaired content.</li>
+     *   <li>the rebuilt combat loop (ROGUELIKE §4). An existing {@code config.yml} has no
+     *       {@code combate:} block, so it takes the shipped default, which is <b>true</b> — the one
+     *       place in this list where an absent key does not mean "keep the old behaviour". That is
+     *       deliberate: the flag first shipped false out of caution and cost two playtests reporting
+     *       "nothing is set up", because a shut gate and an unbuilt feature look identical from inside
+     *       the game. What changes on an old world is therefore the whole of combat, on the first boot
+     *       after the update: Teras computes damage for players and enemies both, the esquiva answers
+     *       {@code V}, and light attacks chain into a stagger. Right-click is untouched. Set
+     *       {@code combate.activado: false} to hand fights back to Minecraft. Diagnose in game with
+     *       {@code /teras dungeon combate}, which reports each gate rather than failing silently.
+     *
+     *       <p>Gear gains first-party stat lines in the same pass ({@code critico},
+     *       {@code penetracion}, {@code alcance}, {@code enfriamiento}, {@code aplomo}, {@code suerte},
+     *       {@code codicia}, {@code escudo}, {@code contundencia}). An existing {@code gear.json} names
+     *       none of them, so every piece on disk keeps exactly the stat line it had — which does mean a
+     *       server that has customised its catalogue has no crit anywhere until it adds some.</p></li>
+     *   <li><b>18</b> — {@code contenedoresPorMuerte: 2}. The dungeon gains a loss condition: a
+     *       death costs two heart containers, a player out of containers is out of the expedition,
+     *       and a party with nobody left loses the run — the bag and the ₽ conversion, never the
+     *       gear. An existing file has no key, so it inherits the shipped 2 like any other default;
+     *       set it to 0 to keep the old behaviour, in which a run could only take longer, never be
+     *       lost. Stated because this changes what players are agreeing to when they enter, which
+     *       no other config default in this file does.
+     *
+     *       <p>{@code codicia} is removed from the stat catalogue in the same pass — the purse is
+     *       shared, so a personal pickup dial was a stat about somebody else's money. A
+     *       {@code gear.json} naming it now warns at boot and the line is ignored.</p></li>
      * </ol>
      */
-    public static final int CURRENT = 15;
+    public static final int CURRENT = 18;
 
     /** The key every config writes it under. */
     public static final String KEY = "version";

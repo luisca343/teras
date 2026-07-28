@@ -7,9 +7,12 @@
   "mixins": [
     "BattleLogMixin",
     "CnpcDialogMixin",
+    "CnpcScoreListenerMixin",
+    "CnpcScoreSyncMixin",
     "CnpcDialogPortraitMixin",
     "ParticipantSelectionAccessor",
     "PokemonStorageMixin",
+    "ServerScoreboardMixin",
     "TeamSelectionMixin"
   ],
   "injectors": {

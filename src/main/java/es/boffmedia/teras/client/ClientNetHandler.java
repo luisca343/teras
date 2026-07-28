@@ -100,4 +100,9 @@ public final class ClientNetHandler {
     public static void onDungeonWallet(es.boffmedia.teras.net.DungeonWalletPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientDungeonWallet.accept(payload));
     }
+
+    /** Refreshes the stat panel on the left; see {@link es.boffmedia.teras.net.CombatStatsPayload}. */
+    public static void onCombatStats(es.boffmedia.teras.net.CombatStatsPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> es.boffmedia.teras.client.dungeon.ClientCombatStats.accept(payload.values()));
+    }
 }

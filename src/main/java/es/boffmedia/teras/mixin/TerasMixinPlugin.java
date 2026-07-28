@@ -12,7 +12,8 @@ import java.util.Set;
 /**
  * Skips a mixin whose target mod is not installed — a missing target class is a hard load error,
  * and every mixin here patches an optional dependency. The owner is read off the target's package:
- * {@code com.pixelmonmod.*} needs Pixelmon, {@code noppes.*} needs CustomNPCs. {@link LoadingModList}
+ * {@code com.pixelmonmod.*} needs Pixelmon, {@code noppes.*} needs CustomNPCs, {@code net.minecraft.*}
+ * needs nothing and always applies. {@link LoadingModList}
  * (not {@code ModList}) is used because mixins apply before {@code ModList} is populated.
  *
  * <p>Also registers {@link es.boffmedia.teras.integration.CreativeCoreCompat}, which keeps
@@ -40,6 +41,9 @@ public class TerasMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (targetClassName.startsWith("net.minecraft.")) {
+            return true;
+        }
         return targetClassName.startsWith("noppes.") ? customNpcsPresent : pixelmonPresent;
     }
 

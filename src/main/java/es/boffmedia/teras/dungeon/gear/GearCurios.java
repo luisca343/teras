@@ -124,6 +124,11 @@ public final class GearCurios {
             }
             for (int i = 0; i < def.stats().size(); i++) {
                 GearDef.Stat stat = def.stats().get(i);
+                // As GearStamp: a first-party stat has no attribute, and the combat sheet reads it
+                // from the curio stack instead.
+                if (!stat.stat().vanilla()) {
+                    continue;
+                }
                 // One id per line, as GearStamp does: a repeated id silently replaces the earlier
                 // modifier instead of adding to it.
                 modifiers.put(GearVanilla.attribute(stat.stat()), new AttributeModifier(

@@ -109,6 +109,10 @@ public class CnpcDialogMixin {
             if (!tokens.isEmpty()) {
                 CnpcBridge.fillDialog(rendered, tokens);
             }
+            // Outside the token check on purpose: el Guardián is not a Teras character and is
+            // talked to OUTSIDE a run, where dialogTokens is empty by definition. Gating the
+            // descents is exactly the case the tokens branch cannot reach.
+            CnpcBridge.gateDescents(rendered, player);
         }
         return rendered;
     }

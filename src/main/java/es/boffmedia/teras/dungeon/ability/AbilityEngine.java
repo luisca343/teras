@@ -263,7 +263,10 @@ public final class AbilityEngine {
             if (bystander == victim || bystander.isSpectator() || !bystander.isAlive()) {
                 continue;
             }
-            bystander.hurt(attacker.damageSources().mobAttack(attacker), splash);
+            // indirectMagic, not mobAttack: the splash is a fraction the ability authored, and
+            // mobAttack is the one type CombatEngine reads as a swing — which would have thrown this
+            // number away and replaced it with the attacker's full daño.
+            bystander.hurt(attacker.damageSources().indirectMagic(attacker, attacker), splash);
         }
         level.sendParticles(ParticleTypes.SWEEP_ATTACK, victim.getX(), victim.getY(0.5),
                 victim.getZ(), 2, radius / 3, 0.1, radius / 3, 0);

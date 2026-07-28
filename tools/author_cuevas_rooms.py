@@ -3153,7 +3153,9 @@ def build_exit():
                 r.set(x, H - 2, z, tiles)
 
     # The trophy gallery — the far (north) wall, a framed band the party faces last. Presentation
-    # only; the first-clear ceremony is the title stack.
+    # only; the first-clear ceremony is the title stack. Whole: the ascensor is stamped over the
+    # middle of this band on the floors that get one, and on every other floor the band is all
+    # there is to see.
     for x in range(4, 38):
         r.set(x, 4, 1, frame if x % 3 == 0 else slab)
     # The results backdrop framing the entrance (south) wall, flanking where the grand door opens.
@@ -3167,6 +3169,30 @@ def build_exit():
         r.set(x, 0, z, slab)
     r.set(9, 0, 28, frame)
     r.mark('premio', 9, 1, 28)
+
+    # El ascensor: the shaft head, centred on the back (north) wall, behind the Poneglyph.
+    #
+    # It is placed for the sightline rather than for the walk, because <b>nothing ever uses it
+    # inside a run</b> — it wakes when the boss falls and banks the tramo when the party drops
+    # through the trampilla, and it is never touched. What it has to do is be understood, so it is
+    # put where the eye already lands: come through the grand door and you read the room in depth —
+    # the pit at 0, the seal-stone at 5, and a copper cage at 10 against the far wall.
+    #
+    # Which is also why it does NOT take the centre. The centre belongs to the Poneglyph, the room
+    # is named for it, and a ten-block object there would stand between the party and the two
+    # characters on the flanks whose fork is what this room is for.
+    #
+    # It says UP, which is where this one goes: the surface, not the next floor. The trampilla keeps
+    # the descent, on every floor, unchanged.
+    #
+    # ONLY THE MARKER IS AUTHORED. The cage itself is stamped by DungeonElevator at build time,
+    # because it must appear on the last floor of a tramo and nowhere else — and a template is the
+    # one thing that cannot be conditional. Authoring it here put a lift on floor 1 of a two-floor
+    # dungeon, which is exactly the case the marker exists to avoid.
+    #
+    # The 7x7 the fixture claims (x17-23, z1-7) is left as plain floor and plain gallery, so a
+    # floor without a lift shows nothing at all rather than an empty bay.
+    r.mark('ascensor', 20, 1, 4)
 
     # Corner pilasters and soul light, until the seal itself becomes the lamp. The east and west
     # wall centres stay clear for the satellite doors.
@@ -3338,6 +3364,139 @@ SHARED = {
 }
 
 
+# ------------------------------------------------------------------------------ fixtures
+#
+# A fixture is a free-standing structure pasted at a marker rather than a room pasted into cells.
+# It has no shell, no doorways and no audit: it is a prop, and the room it lands in was already
+# audited without it.
+#
+# They live outside the piso folders (`dungeon/fixture/`) precisely so `--check`, which asserts a
+# piso folder holds exactly the rooms this tool builds, never sees them.
+
+FIXTURE_OUT = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..',
+    'src/main/resources/data/teras/structure/dungeon/fixture'))
+
+
+class Fixture:
+    """A small structure template. Same NBT shape as a Room, without any of the room contract."""
+
+    def __init__(self, sx, sy, sz):
+        self.sx, self.sy, self.sz = sx, sy, sz
+        self.palette = []
+        self.pal_index = {}
+        self.grid = {}
+
+    def block(self, name, **props):
+        key = (name, tuple(sorted((k, str(v)) for k, v in props.items())))
+        if key not in self.pal_index:
+            self.pal_index[key] = len(self.palette)
+            self.palette.append(key)
+        return self.pal_index[key]
+
+    def set(self, x, y, z, idx):
+        if 0 <= x < self.sx and 0 <= y < self.sy and 0 <= z < self.sz:
+            self.grid[(x, y, z)] = idx
+
+    def fill(self, idx):
+        for x in range(self.sx):
+            for y in range(self.sy):
+                for z in range(self.sz):
+                    self.grid[(x, y, z)] = idx
+
+    def to_nbt(self):
+        blocks = [{'pos': [x, y, z], 'state': idx}
+                  for (x, y, z), idx in sorted(self.grid.items(),
+                                               key=lambda e: (e[0][1], e[0][2], e[0][0]))]
+        palette = []
+        for (name, props) in self.palette:
+            entry = {'Name': name}
+            if props:
+                entry['Properties'] = {k: v for k, v in props}
+            palette.append(entry)
+        return {'size': [self.sx, self.sy, self.sz], 'entities': [], 'blocks': blocks,
+                'palette': palette, 'DataVersion': DATA_VERSION}
+
+
+# The ascensor's footprint. Square on purpose: DungeonElevator pins the structure's bounding box to
+# `marker - (HALF, 1, HALF)`, and a square box maps onto itself under every rotation, so the middle
+# column lands on the marker whichever way the salida was turned.
+ASC_HALF = 3
+ASC_SIZE = ASC_HALF * 2 + 1
+ASC_TOP = 9          # top of the posts; the winch head sits one above
+ASC_WALL = 3         # how high the grate walls reach — above this you see through the cage
+
+
+def build_ascensor(awake):
+    """El ascensor, live or dead.
+
+    Local y=0 is the room's floor layer, so the structure overwrites the floor it stands on and the
+    trophy gallery band that crosses it. Every cell it does not use is explicit air: the fixture has
+    to CLEAR what was authored under it, and a structure only touches the positions it lists.
+    """
+    f = Fixture(ASC_SIZE, ASC_TOP + 2, ASC_SIZE)
+    if awake:
+        post = f.block('minecraft:waxed_cut_copper')
+        grate = f.block('minecraft:waxed_copper_grate')
+        plate = f.block('minecraft:waxed_copper_block')
+        bulb = f.block('minecraft:copper_bulb', lit='true', powered='false')
+    else:
+        post = f.block('minecraft:oxidized_cut_copper')
+        grate = f.block('minecraft:oxidized_copper_grate')
+        plate = f.block('minecraft:oxidized_copper')
+        bulb = f.block('minecraft:oxidized_copper_bulb', lit='false', powered='false')
+    chain = f.block('minecraft:chain', axis='y')
+    f.fill(f.block('minecraft:air'))
+
+    for x in range(ASC_SIZE):
+        for z in range(ASC_SIZE):
+            dx, dz = x - ASC_HALF, z - ASC_HALF
+            corner = abs(dx) == ASC_HALF and abs(dz) == ASC_HALF
+            edge = abs(dx) == ASC_HALF or abs(dz) == ASC_HALF
+            # The base covers the WHOLE footprint, edge included. The fixture writes explicit air
+            # everywhere it does not build, so a base that only covered the car would have left a
+            # one-block ring of holes in the room's floor around the cage — the structure clears
+            # what it lands on, and the floor layer is part of what it lands on.
+            f.set(x, 0, z, plate)
+            f.set(x, ASC_TOP + 1, z, post if edge else plate)
+            if corner:
+                for y in range(1, ASC_TOP + 1):
+                    f.set(x, y, z, post)
+                # A bulb in each corner under the winch: the only light the fixture makes, and the
+                # whole difference between a lift that works and one that does not.
+                f.set(x, ASC_TOP, z, bulb)
+                continue
+            # The mouth is the middle three columns of the +z face — the side the party walks in
+            # from, at door width, so it reads as an opening rather than a gap in a wall.
+            if not edge or (dz == ASC_HALF and abs(dx) <= 1):
+                continue
+            for y in range(1, ASC_WALL + 1):
+                f.set(x, y, z, grate)
+    # Two chains into the winch, off-centre so they read as cable rather than as a pillar, stopping
+    # at head height so the car stays walk-through.
+    for y in range(4, ASC_TOP):
+        f.set(ASC_HALF - 2, y, ASC_HALF - 1, chain)
+        f.set(ASC_HALF + 2, y, ASC_HALF + 1, chain)
+    return f
+
+
+FIXTURES = {
+    'ascensor': lambda: build_ascensor(True),
+    'ascensor_dormido': lambda: build_ascensor(False),
+}
+
+
+def write_fixtures():
+    os.makedirs(FIXTURE_OUT, exist_ok=True)
+    for name, builder in FIXTURES.items():
+        fixture = builder()
+        write_nbt(os.path.join(FIXTURE_OUT, name + '.nbt'), fixture.to_nbt())
+        print(f'{name:18} {fixture.sx}x{fixture.sy}x{fixture.sz}  '
+              f'blocks={len(fixture.grid)}  palette={len(fixture.palette)}')
+    print(f'\nwrote fixtures to {os.path.abspath(FIXTURE_OUT)}')
+    return 0
+
+
 def variants_for(piso):
     """folder -> file -> builder for one piso. Infestadas takes every Cuevas room dressed by
     infest(), plus its own — it declares all four families now, so it owes all 17 keys."""
@@ -3395,8 +3554,13 @@ def main():
                         help='which set to author; infestadas dresses the cuevas rooms, and '
                              'comun is the shared set every piso inherits by default')
     parser.add_argument('--variante', help='build only this variant of --room')
+    parser.add_argument('--fixtures', action='store_true',
+                        help='write the free-standing fixtures (dungeon/fixture/) and nothing else')
     parser.add_argument('--out')
     args = parser.parse_args()
+
+    if args.fixtures:
+        return write_fixtures()
 
     out = args.out or os.path.join(
         os.path.dirname(os.path.abspath(__file__)), '..',

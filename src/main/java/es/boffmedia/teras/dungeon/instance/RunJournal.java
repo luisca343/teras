@@ -39,6 +39,15 @@ final class RunJournal {
                     int roomSize, int roomHeight,
                     Map<UUID, DungeonRun.ReturnPoint> party) {}
 
+    /**
+     * A pending return with the moment it was filed.
+     *
+     * <p>The stamp is what makes {@code returns.json} finite. An entry is only ever consumed by its
+     * owner logging back in, so a player who never returns leaves one behind forever — invisible,
+     * cheap individually, and unbounded over a server's lifetime.</p>
+     */
+    record TimestampedReturn(DungeonRun.ReturnPoint point, long savedAtMs) {}
+
     private static Path runsDir() {
         return FMLPaths.CONFIGDIR.get().resolve("teras").resolve("dungeons").resolve("runs");
     }
@@ -115,17 +124,87 @@ final class RunJournal {
         return runs;
     }
 
-    // --- pending returns for players offline when their run ended -----------------------------
+    // --- the ascensor ledger ------------------------------------------------------------------
 
-    static Map<UUID, DungeonRun.ReturnPoint> loadReturns() {
-        Map<UUID, DungeonRun.ReturnPoint> returns = new LinkedHashMap<>();
-        if (!Files.exists(returnsFile())) {
-            return returns;
+    private static Path elevatorsFile() {
+        return runsDir().resolve("ascensores.json");
+    }
+
+    static Map<UUID, Map<String, Integer>> loadElevators() {
+        return loadElevators(elevatorsFile());
+    }
+
+    static void saveElevators(Map<UUID, Map<String, Integer>> unlocks) {
+        saveElevators(unlocks, elevatorsFile());
+    }
+
+    /**
+     * Reads the ascensor unlocks. Takes its path for the same reason {@link #loadReturns(Path)}
+     * does — the format has to be exercisable without a game directory.
+     *
+     * <p><b>No timestamp, unlike a return.</b> A return is consumed once and rots if its owner never
+     * comes back; an unlock is a permanent fact about a player, and making one expire would punish
+     * somebody for not playing for a month.</p>
+     */
+    static Map<UUID, Map<String, Integer>> loadElevators(Path file) {
+        Map<UUID, Map<String, Integer>> unlocks = new LinkedHashMap<>();
+        if (!Files.exists(file)) {
+            return unlocks;
         }
-        try (Reader reader = Files.newBufferedReader(returnsFile())) {
+        try (Reader reader = Files.newBufferedReader(file)) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
             for (String key : root.keySet()) {
-                returns.put(UUID.fromString(key), parsePoint(root.getAsJsonObject(key)));
+                JsonObject byDungeon = root.getAsJsonObject(key);
+                Map<String, Integer> tramos = new LinkedHashMap<>();
+                for (String dungeon : byDungeon.keySet()) {
+                    tramos.put(dungeon, byDungeon.get(dungeon).getAsInt());
+                }
+                unlocks.put(UUID.fromString(key), tramos);
+            }
+        } catch (Exception e) {
+            Teras.LOGGER.warn("Dungeons: unreadable ascensores.json: {}", e.toString());
+        }
+        return unlocks;
+    }
+
+    static void saveElevators(Map<UUID, Map<String, Integer>> unlocks, Path file) {
+        JsonObject root = new JsonObject();
+        for (Map.Entry<UUID, Map<String, Integer>> entry : unlocks.entrySet()) {
+            JsonObject byDungeon = new JsonObject();
+            entry.getValue().forEach(byDungeon::addProperty);
+            root.add(entry.getKey().toString(), byDungeon);
+        }
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, GSON.toJson(root));
+        } catch (Exception e) {
+            Teras.LOGGER.warn("Dungeons: could not save ascensores.json: {}", e.toString());
+        }
+    }
+
+    // --- pending returns for players offline when their run ended -----------------------------
+
+    static Map<UUID, TimestampedReturn> loadReturns() {
+        return loadReturns(returnsFile());
+    }
+
+    static void saveReturns(Map<UUID, TimestampedReturn> returns) {
+        saveReturns(returns, returnsFile());
+    }
+
+    /**
+     * Reads a returns file. Takes its path so the format can be exercised without a game directory —
+     * every other caller wants {@link #returnsFile()}.
+     */
+    static Map<UUID, TimestampedReturn> loadReturns(Path file) {
+        Map<UUID, TimestampedReturn> returns = new LinkedHashMap<>();
+        if (!Files.exists(file)) {
+            return returns;
+        }
+        try (Reader reader = Files.newBufferedReader(file)) {
+            JsonObject root = GSON.fromJson(reader, JsonObject.class);
+            for (String key : root.keySet()) {
+                returns.put(UUID.fromString(key), parseReturn(root.getAsJsonObject(key)));
             }
         } catch (Exception e) {
             Teras.LOGGER.warn("Dungeons: unreadable returns.json: {}", e.toString());
@@ -133,17 +212,34 @@ final class RunJournal {
         return returns;
     }
 
-    static void saveReturns(Map<UUID, DungeonRun.ReturnPoint> returns) {
+    static void saveReturns(Map<UUID, TimestampedReturn> returns, Path file) {
         JsonObject root = new JsonObject();
-        for (Map.Entry<UUID, DungeonRun.ReturnPoint> entry : returns.entrySet()) {
-            root.add(entry.getKey().toString(), renderPoint(entry.getValue()));
+        for (Map.Entry<UUID, TimestampedReturn> entry : returns.entrySet()) {
+            JsonObject obj = new JsonObject();
+            obj.add("point", renderPoint(entry.getValue().point()));
+            obj.addProperty("savedAtMs", entry.getValue().savedAtMs());
+            root.add(entry.getKey().toString(), obj);
         }
         try {
-            Files.createDirectories(runsDir());
-            Files.writeString(returnsFile(), GSON.toJson(root));
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, GSON.toJson(root));
         } catch (Exception e) {
             Teras.LOGGER.warn("Dungeons: could not save returns.json: {}", e.toString());
         }
+    }
+
+    /**
+     * One entry, in either format. Files written before the stamp existed are flat return points;
+     * they are read as saved <b>now</b>, so an upgrade never expires the entries it inherits — the
+     * sweep is for players who stopped coming back, not for a format change.
+     */
+    private static TimestampedReturn parseReturn(JsonObject entry) {
+        if (entry.has("point")) {
+            return new TimestampedReturn(parsePoint(entry.getAsJsonObject("point")),
+                    entry.has("savedAtMs") ? entry.get("savedAtMs").getAsLong()
+                            : System.currentTimeMillis());
+        }
+        return new TimestampedReturn(parsePoint(entry), System.currentTimeMillis());
     }
 
     private static JsonObject renderPoint(DungeonRun.ReturnPoint p) {

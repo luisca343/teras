@@ -29,6 +29,47 @@ public final class DungeonEntrance {
     public static final String ENTRANCE_TAG = "teras_dungeon_entrada";
 
     /**
+     * Whether this party may start this deep, as the refusal to show — or null to let them in.
+     *
+     * <h2>Why the check is here and not in the command</h2>
+     *
+     * <p>{@code entrada iniciar} runs at permission level 2 and only CustomNPCs ever executes it,
+     * so a gate in the command would be a gate on one door of two. This is the one place that knows
+     * the <b>whole entering party</b>, which is also what the rule needs.</p>
+     *
+     * <h2>The shallowest member decides</h2>
+     *
+     * <p>A party descends only as deep as its least-travelled member. The alternative — the
+     * leader's depth, or the deepest — lets a veteran drag someone into tramo 4 on their first run,
+     * and the point of an unlock is that it was earned. It also means veterans replay early tramos
+     * with friends, which is good for a server rather than a cost.</p>
+     */
+    private static String elevatorRefusal(String dungeonId, int stage, List<ServerPlayer> entering) {
+        if (stage <= 1) {
+            return null;
+        }
+        var dungeon = es.boffmedia.teras.dungeon.piso.PisoCatalog.dungeon(dungeonId);
+        if (dungeon == null) {
+            return null;
+        }
+        var position = dungeon.locate(stage);
+        if (position == null || position.tierIndex() <= 0) {
+            return null;
+        }
+        int needed = position.tierIndex();
+        for (ServerPlayer player : entering) {
+            int has = es.boffmedia.teras.dungeon.instance.ElevatorLedger
+                    .deepest(player.getUUID(), dungeonId);
+            if (has < needed) {
+                return player.getName().getString()
+                        + " no ha anclado todavía el ascensor a esa profundidad. "
+                        + "El grupo baja hasta donde llega el menos avanzado.";
+            }
+        }
+        return null;
+    }
+
+    /**
      * Starts a run for {@code leader} and whoever of their party is standing with them. Returns
      * an error to show the leader, or null once the build is under way.
      *
@@ -66,10 +107,14 @@ public final class DungeonEntrance {
             }
         }
 
+        String dungeonId = es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultDungeonId();
+        String locked = elevatorRefusal(dungeonId, stage, entering);
+        if (locked != null) {
+            return locked;
+        }
+
         DungeonRunManager.StartOutcome outcome =
-                DungeonRunManager.start(leader, entering,
-                        es.boffmedia.teras.dungeon.piso.PisoCatalog.defaultDungeonId(),
-                        stage, curses, null);
+                DungeonRunManager.start(leader, entering, dungeonId, stage, curses, null);
         if (outcome.error() != null) {
             return outcome.error();
         }

@@ -105,11 +105,33 @@ public final class GearDefs {
         return melee(id, GearKind.AXE, rarity, damage, speed, ability, magnitude);
     }
 
+    /** A sword's crit chance, and an axe's share of armour ignored. See {@link #melee}. */
+    private static final double SWORD_CRIT = 0.08;
+    private static final double AXE_PENETRACION = 0.15;
+
+    /**
+     * A melee piece: two vanilla lines, plus the one first-party line that says which kind it is.
+     *
+     * <p><b>The kinds are separated on the new axes rather than on damage.</b> A sword and an axe
+     * with the same {@code attack_damage} and different {@code attack_speed} are the same weapon at
+     * two speeds, which is the vocabulary problem the sheet exists to fix: vanilla could only make
+     * one bigger. So a sword crits and an axe pierces — the sword is the weapon that rewards landing
+     * a lot of hits, the axe the one that goes through whatever a deep floor is wearing. Both lines
+     * are small: this is the floor of a kind's identity, and a piece is free to add to it.</p>
+     *
+     * <p>These are also what make {@code critico} and {@code penetracion} <i>reachable</i>. Before
+     * anything authored them, crit sat at its base of zero and no hit in the dungeon could ever
+     * crit.</p>
+     */
     private static GearDef melee(String id, GearKind kind, GearDef.Rarity rarity, double damage,
                                  double speed, GearAbility ability, double magnitude) {
+        GearDef.Stat identity = kind == GearKind.AXE
+                ? new GearDef.Stat(GearStat.PENETRACION, AXE_PENETRACION, FLAT)
+                : new GearDef.Stat(GearStat.CRITICO, SWORD_CRIT, FLAT);
         return new GearDef(id, kind, rarity, List.of(
                 new GearDef.Stat(GearStat.ATTACK_DAMAGE, damage, FLAT),
-                new GearDef.Stat(GearStat.ATTACK_SPEED, speed, FLAT)),
+                new GearDef.Stat(GearStat.ATTACK_SPEED, speed, FLAT),
+                identity),
                 ability, magnitude, "", "");
     }
 
@@ -186,12 +208,22 @@ public final class GearDefs {
                 sword("colmillo_diablo", EPICO, 5.0, 0.6, GearAbility.DESGARRO, 3.0));
         // An axe, not a sword: it is a hammer, and AXE is a kind of its own now — it was SWORD only
         // because that was once the only melee kind.
-        put(map,
-                axe("martillo_rompemuros", EPICO, 9.0, -0.4, GearAbility.ONDA, 0.15));
+        put(map, new GearDef("martillo_rompemuros", GearKind.AXE, EPICO, List.of(
+                new GearDef.Stat(GearStat.ATTACK_DAMAGE, 9.0, FLAT),
+                new GearDef.Stat(GearStat.ATTACK_SPEED, -0.4, FLAT),
+                new GearDef.Stat(GearStat.PENETRACION, AXE_PENETRACION, FLAT),
+                // A long weapon as well as a slow one: reach is what makes the wind-up survivable, so
+                // the hammer is where alcance is taught.
+                new GearDef.Stat(GearStat.ALCANCE, 1.0, FLAT)),
+                GearAbility.ONDA, 0.15, "", ""));
         put(map, new GearDef("hoja_maldita", GearKind.SWORD, RARO, List.of(
                 new GearDef.Stat(GearStat.ATTACK_DAMAGE, 8.0, FLAT),
                 // The curse: it hits hard and leaves you softer for carrying it.
-                new GearDef.Stat(GearStat.ARMOR, -2.0, FLAT)),
+                new GearDef.Stat(GearStat.ARMOR, -2.0, FLAT),
+                // Crits hard rather than often — the other half of the trade, and the only shipped
+                // piece that moves contundencia, so "crit power" has somewhere to be learned.
+                new GearDef.Stat(GearStat.CRITICO, 0.05, FLAT),
+                new GearDef.Stat(GearStat.CONTUNDENCIA, 0.5, FLAT)),
                 GearAbility.BOTIN, 4, "", ""));
 
         // Armour. Each kind's first-party item carries the worn look until an AW skin covers it;
@@ -202,14 +234,20 @@ public final class GearDefs {
                 GearAbility.NINGUNA, 0, "", ""));
         put(map, new GearDef("coraza_abisal", GearKind.CHESTPLATE, RARO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 6.0, FLAT),
-                new GearDef.Stat(GearStat.ARMOR_TOUGHNESS, 1.0, FLAT)),
+                new GearDef.Stat(GearStat.ARMOR_TOUGHNESS, 1.0, FLAT),
+                // The heavy chest is what makes a swarm survivable: poise decides how many unanswered
+                // swings you can take before you are staggered and everything lands.
+                new GearDef.Stat(GearStat.APLOMO, 6.0, FLAT)),
                 GearAbility.ESPINAS, 0.15, "", ""));
         put(map, new GearDef("grebas_saqueador", GearKind.LEGGINGS, COMUN, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 4.0, FLAT)),
                 GearAbility.BOTIN, 3, "", ""));
         put(map, new GearDef("botas_fantasma", GearKind.BOOTS, RARO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 2.0, FLAT),
-                new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.15, FRACTION_OF_BASE)),
+                new GearDef.Stat(GearStat.MOVEMENT_SPEED, 0.15, FRACTION_OF_BASE),
+                // Rolls come back faster. The one piece that pays into the esquiva, which is the verb
+                // every dodge boon will later attach to.
+                new GearDef.Stat(GearStat.ENFRIAMIENTO, 0.25, FLAT)),
                 GearAbility.NINGUNA, 0, "", ""));
         put(map, new GearDef("corona_jefe", GearKind.HELMET, EPICO, List.of(
                 new GearDef.Stat(GearStat.ARMOR, 3.0, FLAT),

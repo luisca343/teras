@@ -17,9 +17,12 @@
 boss:         boss
 boss_big:     boss
 
-# La sala del sello: the pit down and the boss reward stand. Optional key — a piso without one
-# falls back to carving the pit in the arena — but a shipped exit room owes both.
-exit:         trapdoor, premio
+# La sala del sello: the pit down, the boss reward stand, and where the ascensor is stamped on the
+# floor that closes a tramo. Optional key — a piso without one falls back to carving the pit in the
+# arena — but a shipped exit room owes all three. `ascensor` marks a position, not a structure: the
+# fixture is pasted there only on a tramo boundary, so a piso that omits the marker silently loses
+# every lift it should have had.
+exit:         trapdoor, premio, ascensor
 
 mini_boss:    boss
 treasure:     loot

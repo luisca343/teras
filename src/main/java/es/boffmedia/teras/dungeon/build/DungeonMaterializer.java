@@ -476,6 +476,16 @@ public final class DungeonMaterializer {
                     decorate(room, marker.pos(), marker.kind());
                     continue;
                 }
+                // The one fixture whose very existence is conditional, so it cannot live in the
+                // template: an ascensor stands on the floor that closes a tramo and nowhere else.
+                // Every other floor airs the marker out and shows the plain back wall.
+                if (marker.kind().equals("ascensor")) {
+                    if (plan != null && plan.tramoBoundary()) {
+                        DungeonElevator.stamp(level, marker.pos(), settings.getRotation(), true);
+                    }
+                    level.setBlock(marker.pos(), Blocks.AIR.defaultBlockState(), 2);
+                    continue;
+                }
                 level.setBlock(marker.pos(), markerFloor(room, marker.kind(), marker.pos()), 2);
             }
             markers.put(room, roomMarkers);

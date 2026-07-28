@@ -10,8 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Server → client: the receiving player's dungeon minimap — discovered rooms with their state,
- * dim outlines for known-but-unentered neighbors, and the player's current cell. A full snapshot
+ * Server → client: the receiving player's dungeon minimap — discovered rooms with their state, the
+ * <b>named</b> neighbours of every discovered room, and the player's current cell. A full snapshot
  * every time, like {@link RaceHudPayload}: a 13×13 floor is a few hundred bytes and a snapshot
  * can never render a half-updated map.
  *
@@ -29,9 +29,12 @@ public record DungeonMapPayload(boolean active, int gridSize, int stage, boolean
                                 List<Cell> cells) implements CustomPacketPayload {
 
     /**
-     * @param type  {@code RoomType} ordinal, or {@link #TYPE_UNKNOWN} for an adjacent room the
-     *              player has seen a doorway to but never entered
-     * @param state {@code RoomState} ordinal
+     * @param type  {@code RoomType} ordinal, or {@link #TYPE_UNKNOWN} for a cell whose room is
+     *              deliberately withheld — a secret. An ordinary neighbour behind a visible door
+     *              arrives fully named, because the doorway's own frame already says what is through
+     *              it (PISOS §70) and a blank square was less informative than the wall
+     * @param state {@code RoomState} ordinal. {@code UNDISCOVERED} on a named neighbour is what tells
+     *              the client to draw it as somewhere not yet visited
      * @param label whether this cell carries the room's glyph. A multi-cell room sends several
      *              cells and only one of them is labelled — without it a 2×2 boss chamber drew
      *              four B's, which read as four boss rooms

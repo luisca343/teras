@@ -83,6 +83,7 @@ public final class MarkerContract {
         runtime("ambiente");       // EnemySpawner, when the piso declares `ambientales`
         runtime("cofre");          // ChestPedestal — a priced reward, in any room that carries one
         runtime("inicio");         // BuiltDungeon.partySpawn — where the party lands
+        runtime("ascensor");       // DungeonElevator — stamped on the floor that closes a tramo
         runtime("decoracion");     // Decorator — filled from the piso's surface tables
 
         // Placed so an author can see where the generator will cut its doorways and keep clear of

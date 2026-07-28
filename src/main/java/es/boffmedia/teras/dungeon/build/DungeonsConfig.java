@@ -23,75 +23,38 @@ import java.util.Map;
  * <p>{@code roomSize} is the <b>only</b> size convention: grid pitch, template footprint per cell
  * and door math all derive from it. The legacy paster mixed a ×21 grid pitch with
  * {@code roomSize−1} rotation offsets and was patched by trial (see DUNGEONS.md §1).</p>
+ *
+ * <h2>One file, one domain per record</h2>
+ *
+ * <p>This class is the <b>facade</b>: it owns the YAML file, the shipped template and the load
+ * order, and every {@code DungeonsConfig.thing()} call site in the mod still reads exactly as it
+ * did. What it no longer owns is eighty loose static fields covering fifteen unrelated domains —
+ * each block of the file is a record ({@link CoinConfig}, {@link ShopConfig}, {@link LootConfig},
+ * …) that knows its own defaults and how to read itself, so adding a knob touches one small file
+ * instead of a reset method, a load method and a field list three hundred lines apart.</p>
+ *
+ * <p>The YAML format is untouched by the split. A config on disk reads identically.</p>
  */
 @EventBusSubscriber(modid = Teras.MOD_ID)
 public final class DungeonsConfig {
     private DungeonsConfig() {}
 
-    private static int roomSize;
-    private static int roomHeight;
-    private static int doorWidth;
-    private static int doorHeight;
-    private static String dimension;
-    private static int slotY;
-    private static int slotSpacing;
-    private static int maxSlots;
-    private static int desertionGraceSeconds;
-    private static int buildTimeoutSeconds;
-    private static String sealBlock;
-    private static String sealRuneBlock;
-    private static String sealRuneLitBlock;
-    private static int descentSeconds;
-    private static int sealDoorWidth;
-    private static int sealDoorHeight;
-    private static long clearReward;
-    private static int deathPenaltyPct;
-    private static String treasureLootTable;
-    private static String secretLootTable;
-    private static String superSecretLootTable;
-    private static String devilLootTable;
-    private static String ordenLootTable;
-    private static String treasureArmaLootTable;
-    private static String treasureVitalidadLootTable;
-    private static int treasureProvisionCoins;
-    private static int treasureProvisionCharges;
-    private static int gangaChance;
-    private static int gangaDiscountPct;
-    private static String gambleLootTable;
-    private static int shopPremiumStage;
-    private static boolean parkourLimitsEnabled;
-    private static final List<String> PARKOUR_LIMIT_COMMANDS = new java.util.ArrayList<>();
-    private static final List<String> PARKOUR_RESTORE_COMMANDS = new java.util.ArrayList<>();
-    private static String chestLootTable;
-    private static String chestProezaLootTable;
-    private static float chestSpikeDamage;
-    private static float chestTrapDamage;
-    private static int chestTrapChancePct;
-    private static String bossLootTable;
-    private static String crackBlock;
-    private static String spikeBlock;
-    private static int curseDoorTollHearts;
-    private static boolean doorRelief;
-    private static int sealCloseTicks;
-    /**
-     * The frame an ordinary doorway wears when its piso declares none of its own. A piso's
-     * {@code puertas} block overrides it — that is the per-floor half of the door language.
-     */
-    private static es.boffmedia.teras.dungeon.model.DoorStyle doorStyle;
-    /**
-     * The dungeon-wide half: what a door into a special room looks like, on every floor. Treasure
-     * has to read as treasure in Cuevas and in whatever piso is authored next, or the frame is
-     * decoration rather than a sign.
-     */
-    private static final Map<es.boffmedia.teras.dungeon.model.RoomType,
-            es.boffmedia.teras.dungeon.model.DoorStyle> DOOR_STYLES = new LinkedHashMap<>();
-    private static int marketSlots;
-    private static int marketReward;
-    private static int purgePrice;
-    private static int maxParty;
-    private static int entranceRadius;
-    private static final Map<String, String> sounds = new LinkedHashMap<>();
-    private static float soundVolume;
+    private static GenerationConfig generation;
+    private static CoinConfig coins;
+    private static ShopConfig shop;
+    private static LootConfig loot;
+    private static CombatConfig combat;
+    private static ChallengeConfig challenge;
+    private static SacrificeConfig sacrifice;
+    private static ArcadeConfig arcade;
+    private static DevilConfig devil;
+    private static ChestConfig chests;
+    private static ParkourConfig parkour;
+    private static RoomsConfig rooms;
+    private static RunConfig run;
+    private static DoorConfig doors;
+    private static SoundConfig sounds;
+
     /**
      * How likely each curse is per floor, before the piso's own {@code maldiciones} filter it. A
      * curse every eligible piso at that depth refuses simply cannot occur there — the intended
@@ -99,119 +62,6 @@ public final class DungeonsConfig {
      */
     private static final Map<es.boffmedia.teras.dungeon.model.Curse, Double> CURSE_CHANCES =
             new LinkedHashMap<>();
-
-    /**
-     * Cell budget per canonical floor, index 0 = floor 1, and the 0..jitter spread added to it.
-     * A floor's size is a property of <i>which floor it is</i>, never of how long the run using it
-     * happens to be — see {@code FloorDepth}.
-     */
-    private static List<Integer> celdas = List.of();
-    private static int jitter;
-
-    // Coins: what enemies pay, how it is picked up, and what it is worth on the way out.
-    private static int coinsNormalMin;
-    private static int coinsNormalMax;
-    private static int coinsMiniBossMin;
-    private static int coinsMiniBossMax;
-    private static int coinsBossMin;
-    private static int coinsBossMax;
-    private static int coinStageScalingPct;
-    private static double coinPickupRadius;
-    private static int coinDeathPenaltyPct;
-    private static int coinToPesos;
-
-    // Shop: per-kind weight and price. Prices scale per floor like income does.
-    private static final Map<String, Integer> shopWeights = new LinkedHashMap<>();
-    private static final Map<String, Integer> shopPrices = new LinkedHashMap<>();
-
-    // Challenge room waves.
-    private static int challengeWaves;
-    private static int challengeExtraWaveStage;
-    private static int challengeWaveGrowthPct;
-    private static int challengeReward;
-
-    // Sacrifice room.
-    private static float sacrificeDamage;
-    private static int sacrificeBaseChancePct;
-    private static int sacrificeStepChancePct;
-    private static int sacrificeCoinsMin;
-    private static int sacrificeCoinsMax;
-
-    // Arcade room.
-    private static int arcadePrice;
-    private static int arcadeBreakChancePct;
-
-    // Devil deal room.
-    private static int devilCoinPrice;
-    private static int devilHeartPrice;
-    private static int debtInterestPct;
-    private static int debtSettleDiscountPct;
-    private static int debtFloorsToCollect;
-
-    // Backend reporting.
-    private static boolean backendPostEnabled;
-
-    /** Shop stock kinds, as they are keyed in the config's {@code tienda:} block. */
-    private static final Map<String, Integer> DEFAULT_SHOP_WEIGHTS = new LinkedHashMap<>();
-    private static final Map<String, Integer> DEFAULT_SHOP_PRICES = new LinkedHashMap<>();
-
-    static {
-        DEFAULT_SHOP_WEIGHTS.put("pocion", 20);
-        DEFAULT_SHOP_WEIGHTS.put("pocion_mayor", 10);
-        DEFAULT_SHOP_WEIGHTS.put("mapa", 12);
-        DEFAULT_SHOP_WEIGHTS.put("brujula", 12);
-        DEFAULT_SHOP_WEIGHTS.put("rompemuros", 14);
-        DEFAULT_SHOP_WEIGHTS.put("bendicion_fuerza", 8);
-        DEFAULT_SHOP_WEIGHTS.put("bendicion_resistencia", 8);
-        DEFAULT_SHOP_WEIGHTS.put("bendicion_velocidad", 8);
-        DEFAULT_SHOP_WEIGHTS.put("fenix", 5);
-        DEFAULT_SHOP_WEIGHTS.put("seguro", 8);
-        DEFAULT_SHOP_WEIGHTS.put("caja_sorpresa", 10);
-
-        DEFAULT_SHOP_PRICES.put("pocion", 10);
-        DEFAULT_SHOP_PRICES.put("pocion_mayor", 25);
-        DEFAULT_SHOP_PRICES.put("mapa", 15);
-        DEFAULT_SHOP_PRICES.put("brujula", 15);
-        DEFAULT_SHOP_PRICES.put("rompemuros", 20);
-        DEFAULT_SHOP_PRICES.put("bendicion_fuerza", 12);
-        DEFAULT_SHOP_PRICES.put("bendicion_resistencia", 12);
-        DEFAULT_SHOP_PRICES.put("bendicion_velocidad", 12);
-        DEFAULT_SHOP_PRICES.put("fenix", 40);
-        DEFAULT_SHOP_PRICES.put("seguro", 8);
-        DEFAULT_SHOP_PRICES.put("caja_sorpresa", 12);
-    }
-
-    /**
-     * Cue name to vanilla sound id. Overridable in {@code config.yml} under {@code sonidos:} — the
-     * migration path to first-party audio: point an entry at a {@code teras:} id once the assets
-     * exist and nothing here has to change.
-     */
-    private static final Map<String, String> DEFAULT_SOUNDS = Map.ofEntries(
-            Map.entry("ROOM_SEALED", "minecraft:block.iron_door.close"),
-            Map.entry("ROOM_SEALED_BODY", "minecraft:block.anvil.land"),
-            Map.entry("BOSS_SEALED", "minecraft:block.iron_door.close"),
-            Map.entry("BOSS_SEALED_BODY", "minecraft:entity.wither.spawn"),
-            Map.entry("ROOM_OPENED", "minecraft:block.iron_door.open"),
-            Map.entry("ROOM_OPENED_BODY", "minecraft:block.note_block.bell"),
-            Map.entry("BOSS_DEFEATED", "minecraft:ui.toast.challenge_complete"),
-            Map.entry("TRAPDOOR_OPEN", "minecraft:block.end_portal.spawn"),
-            Map.entry("SECRET_OPENED", "minecraft:block.vault.open_shutter"),
-            Map.entry("ENEMY_ENRAGED", "minecraft:entity.ravager.roar"),
-            Map.entry("COIN_PICKUP", "minecraft:entity.experience_orb.pickup"),
-            Map.entry("PURCHASE", "minecraft:entity.player.levelup"),
-            Map.entry("PURCHASE_DENIED", "minecraft:block.note_block.bass"),
-            Map.entry("CHALLENGE_STARTED", "minecraft:event.raid.horn"),
-            Map.entry("WAVE_CLEARED", "minecraft:block.note_block.chime"),
-            Map.entry("SACRIFICE", "minecraft:entity.player.hurt"),
-            Map.entry("SACRIFICE_REWARD", "minecraft:block.amethyst_block.chime"),
-            Map.entry("ARCADE_PLAY", "minecraft:block.lever.click"),
-            Map.entry("ARCADE_WIN", "minecraft:entity.player.levelup"),
-            Map.entry("ARCADE_BREAK", "minecraft:entity.item.break"),
-            Map.entry("DEVIL_OPENED", "minecraft:entity.wither.ambient"),
-            Map.entry("DEVIL_DEAL", "minecraft:entity.evoker.cast_spell"),
-            Map.entry("PHOENIX", "minecraft:item.totem.use"),
-            Map.entry("SEAL_RESTORED", "minecraft:block.beacon.activate"),
-            Map.entry("DESCENT_TICK", "minecraft:block.note_block.hat"));
 
     static {
         resetToDefaults();
@@ -238,382 +88,129 @@ public final class DungeonsConfig {
             if (!Files.exists(path)) {
                 YamlConfig.write(path, renderTemplate());
                 Teras.LOGGER.info("Dungeons: created default {}", path);
+                validate();
                 return;
             }
             YamlConfig yaml = YamlConfig.read(path);
-            roomSize = yaml.integer("tamanoSala", roomSize);
-            roomHeight = yaml.integer("alturaSala", roomHeight);
-            doorWidth = yaml.integer("anchoPuerta", doorWidth);
-            doorHeight = yaml.integer("altoPuerta", doorHeight);
-            dimension = yaml.string("dimension", dimension);
-            slotY = yaml.integer("slotY", slotY);
-            slotSpacing = yaml.integer("separacionSlots", slotSpacing);
-            maxSlots = yaml.integer("maxSlots", maxSlots);
-            desertionGraceSeconds = yaml.integer("graciaAbandonoSegundos", desertionGraceSeconds);
-            buildTimeoutSeconds = yaml.integer("timeoutConstruccionSegundos", buildTimeoutSeconds);
-            sealBlock = yaml.string("bloqueSello", sealBlock);
-            sealRuneBlock = yaml.string("bloqueRunaSello", sealRuneBlock);
-            sealRuneLitBlock = yaml.string("bloqueRunaSelloEncendida", sealRuneLitBlock);
-            descentSeconds = Math.max(3, yaml.integer("segundosDescenso", descentSeconds));
-            sealDoorWidth = Math.max(1, yaml.integer("anchoPuertaSello", sealDoorWidth));
-            sealDoorHeight = Math.max(1, yaml.integer("altoPuertaSello", sealDoorHeight));
-            clearReward = yaml.longValue("recompensaSala", clearReward);
-            deathPenaltyPct = yaml.integer("penalizacionMuertePct", deathPenaltyPct);
-            treasureLootTable = yaml.string("lootTesoro", treasureLootTable);
-            secretLootTable = yaml.string("lootSecreta", secretLootTable);
-            superSecretLootTable = yaml.string("lootSupersecreta", superSecretLootTable);
-            devilLootTable = yaml.string("lootTrato", devilLootTable);
-            ordenLootTable = yaml.string("lootOrden", ordenLootTable);
-            treasureArmaLootTable = yaml.string("lootTesoroArma", treasureArmaLootTable);
-            treasureVitalidadLootTable = yaml.string("lootTesoroVitalidad",
-                    treasureVitalidadLootTable);
-            treasureProvisionCoins = yaml.integer("tesoroProvisionMonedas", treasureProvisionCoins);
-            treasureProvisionCharges = yaml.integer("tesoroProvisionCargas",
-                    treasureProvisionCharges);
-            bossLootTable = yaml.string("lootJefe", bossLootTable);
-            crackBlock = yaml.string("bloqueGrieta", crackBlock);
-            spikeBlock = yaml.string("bloquePinchos", spikeBlock);
-            curseDoorTollHearts = yaml.integer("peajePuertaCorazones", curseDoorTollHearts);
+            // config.yml was the one dungeon config never stamped, so every default added to the
+            // template since a server's first boot has been invisible on it — silently, which is the
+            // exact failure ConfigVersion exists to announce. It is unstamped rather than stale when
+            // the key is missing, and both read as "older than current".
+            ConfigVersion.warnIfStale("config.yml", yaml.integer(ConfigVersion.KEY, 0),
+                    "Copia los bloques que falten de la plantilla, o borra el archivo para "
+                            + "regenerarlo (perderás tus ediciones).");
 
-            YamlConfig doors = yaml.section("puertas");
-            doorRelief = doors.bool("relieve", doorRelief);
-            sealCloseTicks = Math.max(1, doors.integer("ticksCierre", sealCloseTicks));
-            doorStyle = doorStyle(doors.section("normal"), doorStyle);
-            YamlConfig specials = doors.section("especiales");
-            for (RoomType type : RoomType.values()) {
-                DoorStyle current = DOOR_STYLES.get(type);
-                if (current == null) {
-                    continue;
-                }
-                DOOR_STYLES.put(type,
-                        doorStyle(specials.section(type.name().toLowerCase(java.util.Locale.ROOT)),
-                                current));
-            }
-            marketSlots = yaml.integer("ofertasMaldicion", marketSlots);
-            marketReward = yaml.integer("pagoAfliccion", marketReward);
-            purgePrice = yaml.integer("precioPurga", purgePrice);
-            maxParty = Math.max(1, yaml.integer("maxGrupo", maxParty));
-            entranceRadius = Math.max(1, yaml.integer("radioEntrada", entranceRadius));
-            backendPostEnabled = yaml.bool("enviarResultados", backendPostEnabled);
+            generation = GenerationConfig.read(yaml, generation);
+            coins = CoinConfig.read(yaml, coins);
+            shop = ShopConfig.read(yaml, shop);
+            loot = LootConfig.read(yaml, loot);
+            combat = CombatConfig.read(yaml, combat);
+            challenge = ChallengeConfig.read(yaml, challenge);
+            sacrifice = SacrificeConfig.read(yaml, sacrifice);
+            arcade = ArcadeConfig.read(yaml, arcade);
+            devil = DevilConfig.read(yaml, devil);
+            chests = ChestConfig.read(yaml, chests);
+            parkour = ParkourConfig.read(yaml, parkour);
+            rooms = RoomsConfig.read(yaml, rooms);
+            run = RunConfig.read(yaml, run);
+            doors = DoorConfig.read(yaml, doors);
+            sounds = SoundConfig.read(yaml, sounds);
+            readCurseChances(yaml);
 
-            YamlConfig gen = yaml.section("generacion");
-            jitter = Math.max(0, gen.integer("jitter", jitter));
-            List<Object> curve = gen.list("celdas");
-            if (!curve.isEmpty()) {
-                List<Integer> parsed = new java.util.ArrayList<>();
-                for (Object cell : curve) {
-                    try {
-                        parsed.add(Integer.parseInt(String.valueOf(cell).trim()));
-                    } catch (NumberFormatException e) {
-                        parsed.clear();
-                        break;
-                    }
-                }
-                // All or nothing: half a curve would silently reshape whichever floors survived
-                // parsing, and a floor quietly changing size is the bug this table was built to end.
-                if (parsed.isEmpty() || parsed.stream().anyMatch(cells -> cells < 1)) {
-                    Teras.LOGGER.error("Dungeons: 'generacion.celdas' is not a list of positive "
-                            + "integers; keeping the built-in curve {}", celdas);
-                } else {
-                    celdas = List.copyOf(parsed);
-                }
-            }
-
-            YamlConfig curseBlock = yaml.section("maldiciones");
-            for (es.boffmedia.teras.dungeon.model.Curse curse
-                    : es.boffmedia.teras.dungeon.model.Curse.values()) {
-                String key = curse.name().toLowerCase(java.util.Locale.ROOT);
-                int pct = curseBlock.integer(key,
-                        (int) Math.round(CURSE_CHANCES.getOrDefault(curse, 0.0) * 100));
-                CURSE_CHANCES.put(curse, Math.max(0, Math.min(100, pct)) / 100.0);
-            }
-
-            YamlConfig coins = yaml.section("monedas");
-            coinsNormalMin = coins.integer("normalMin", coinsNormalMin);
-            coinsNormalMax = coins.integer("normalMax", coinsNormalMax);
-            coinsMiniBossMin = coins.integer("miniJefeMin", coinsMiniBossMin);
-            coinsMiniBossMax = coins.integer("miniJefeMax", coinsMiniBossMax);
-            coinsBossMin = coins.integer("jefeMin", coinsBossMin);
-            coinsBossMax = coins.integer("jefeMax", coinsBossMax);
-            coinStageScalingPct = coins.integer("escaladoPorPisoPct", coinStageScalingPct);
-            coinPickupRadius = Math.max(0.5, coins.integer("radioRecogida",
-                    (int) Math.round(coinPickupRadius)));
-            coinDeathPenaltyPct = coins.integer("muertePct", coinDeathPenaltyPct);
-            coinToPesos = coins.integer("cambioPesos", coinToPesos);
-
-            YamlConfig shop = yaml.section("tienda");
-            YamlConfig shopWeightBlock = shop.section("pesos");
-            YamlConfig shopPriceBlock = shop.section("precios");
-            for (String kind : DEFAULT_SHOP_WEIGHTS.keySet()) {
-                shopWeights.put(kind, shopWeightBlock.integer(kind, shopWeights.get(kind)));
-                shopPrices.put(kind, shopPriceBlock.integer(kind, shopPrices.get(kind)));
-            }
-            gangaChance = shop.integer("gangaProbabilidad", gangaChance);
-            gangaDiscountPct = shop.integer("gangaDescuentoPct", gangaDiscountPct);
-            gambleLootTable = shop.string("lootCaja", gambleLootTable);
-            shopPremiumStage = shop.integer("pisoPremium", shopPremiumStage);
-
-            YamlConfig challenge = yaml.section("desafio");
-            challengeWaves = Math.max(1, challenge.integer("oleadasBase", challengeWaves));
-            challengeExtraWaveStage = challenge.integer("oleadaExtraDesdeEtapa", challengeExtraWaveStage);
-            challengeWaveGrowthPct = challenge.integer("crecimientoOleadaPct", challengeWaveGrowthPct);
-            challengeReward = challenge.integer("recompensaMonedas", challengeReward);
-
-            YamlConfig sacrifice = yaml.section("sacrificio");
-            sacrificeDamage = sacrifice.integer("dano", Math.round(sacrificeDamage));
-            sacrificeBaseChancePct = sacrifice.integer("probBasePct", sacrificeBaseChancePct);
-            sacrificeStepChancePct = sacrifice.integer("probPorPasoPct", sacrificeStepChancePct);
-            sacrificeCoinsMin = sacrifice.integer("monedasMin", sacrificeCoinsMin);
-            sacrificeCoinsMax = sacrifice.integer("monedasMax", sacrificeCoinsMax);
-
-            YamlConfig parkour = yaml.section("parcool");
-            parkourLimitsEnabled = parkour.bool("habilitado", parkourLimitsEnabled);
-            readCommands(parkour, "comandosQuitar", PARKOUR_LIMIT_COMMANDS);
-            readCommands(parkour, "comandosDevolver", PARKOUR_RESTORE_COMMANDS);
-
-            YamlConfig chest = yaml.section("cofres");
-            chestLootTable = chest.string("loot", chestLootTable);
-            chestProezaLootTable = chest.string("lootProeza", chestProezaLootTable);
-            chestSpikeDamage = chest.integer("danoPuas", Math.round(chestSpikeDamage));
-            chestTrapDamage = chest.integer("danoTrampa", Math.round(chestTrapDamage));
-            chestTrapChancePct = chest.integer("probTrampaPct", chestTrapChancePct);
-
-            YamlConfig arcade = yaml.section("arcada");
-            arcadePrice = arcade.integer("precio", arcadePrice);
-            arcadeBreakChancePct = arcade.integer("probRoturaPct", arcadeBreakChancePct);
-
-            YamlConfig devil = yaml.section("trato");
-            devilCoinPrice = devil.integer("precioMonedas", devilCoinPrice);
-            devilHeartPrice = devil.integer("precioCorazones", devilHeartPrice);
-            debtInterestPct = devil.integer("interesDeudaPct", debtInterestPct);
-            debtSettleDiscountPct = devil.integer("descuentoSaldoPct", debtSettleDiscountPct);
-            debtFloorsToCollect = devil.integer("pisosHastaCobrador", debtFloorsToCollect);
-
-            soundVolume = (float) yaml.integer("volumenSonidos", Math.round(soundVolume * 100)) / 100f;
-            YamlConfig soundBlock = yaml.section("sonidos");
-            for (String cue : DEFAULT_SOUNDS.keySet()) {
-                sounds.put(cue, soundBlock.string(cue.toLowerCase(java.util.Locale.ROOT), sounds.get(cue)));
-            }
             Teras.LOGGER.info("Dungeons: config loaded from {}", path);
+            // Said out loud because every symptom of it being off is "the game behaves as it always
+            // did", which nobody reads as a setting.
+            Teras.LOGGER.info("Dungeons: rebuilt combat is {} ({}). Diagnose in game with"
+                            + " /teras dungeon combate",
+                    combat.enabled() ? "ON" : "OFF",
+                    yaml.section("combate").has("activado")
+                            ? "set in config.yml"
+                            : "no 'combate' block in config.yml — using the shipped default");
+            validate();
         } catch (Exception e) {
             Teras.LOGGER.warn("Dungeons: failed to load config, using defaults: {}", e.toString());
         }
     }
 
-    private static void resetToDefaults() {
-        celdas = es.boffmedia.teras.dungeon.gen.GenConfig.defaults().celdas();
-        jitter = es.boffmedia.teras.dungeon.gen.GenConfig.defaults().jitter();
-        roomSize = 21;
-        roomHeight = 12;
-        doorWidth = 3;
-        doorHeight = 3;
-        dimension = "teras:vacio";
-        slotY = 64;
-        slotSpacing = 4096;
-        maxSlots = 64;
-        // Long enough to survive a router blip or a client restart, short enough that a party that
-        // is not coming back stops holding a slot and a floor.
-        desertionGraceSeconds = 180;
-        // Generous on purpose. A build that actually fails is reported the moment it does, so this
-        // only ever catches a completion that never arrives at all — and the job queue is one
-        // shared line, so a floor can legitimately sit behind a dozen other builds and discards.
-        // Too tight a timeout here would fail healthy runs on a busy server.
-        buildTimeoutSeconds = 300;
-        // The gate a sealed room drops. Its own block rather than iron bars: panes connect to their
-        // neighbours and nine of them read as a cage, where the reja tiles into one lattice — and
-        // you have to be able to see and shoot through the room you are locked in.
-        sealBlock = "teras:reja";
-        // The seal glyph's rune inlay, dull while the boss lives and lit when the seal re-pins.
-        // The lit rune gets an invisible light block stamped over it, so any block works here.
-        sealRuneBlock = "minecraft:polished_basalt";
-        sealRuneLitBlock = "minecraft:amethyst_block";
-        // The straggler bell: the first member down the pit starts this countdown, and when it
-        // ends the rest of the party descends with them.
-        descentSeconds = 15;
-        // The grand ceremonial door the boss's death carves between the 2×2 arena and the 2×2
-        // sala del sello: one wide opening centered on the shared face, taller than a normal door.
-        sealDoorWidth = 7;
-        sealDoorHeight = 5;
-        // Both zero by default: a run's income is coins now, converted in one lump when it is
-        // completed. The ₽ knobs stay wired for servers that want to pay per room anyway.
-        clearReward = 0;
-        deathPenaltyPct = 0;
-        treasureLootTable = "teras:dungeon/treasure";
-        // A secret costs a wall charge the party bought, so it pays the treasure table: breaking in
-        // has to be worth at least what getting in cost. The super secret is rarer and pays better.
-        secretLootTable = "teras:dungeon/treasure";
-        superSecretLootTable = "teras:dungeon/boss";
-        devilLootTable = "teras:dungeon/devil";
-        ordenLootTable = "teras:dungeon/orden";
-        // The treasure choice room's three stands (PISOS §66). arma and vitalidad are loot tables
-        // so their bundles are data; provisión is coins + a wall charge, handled in code because
-        // both go to the shared purse rather than into a pocket.
-        treasureArmaLootTable = "teras:dungeon/treasure_arma";
-        treasureVitalidadLootTable = "teras:dungeon/treasure_vitalidad";
-        treasureProvisionCoins = 40;
-        treasureProvisionCharges = 1;
-        // Chests (PISOS §69). Every price is charged at the click, never at the approach, because
-        // ParCool makes terrain a stamina cost rather than a lock. proeza draws the boss table on
-        // purpose: it is placed where only parkour reaches, and the route is the whole price.
-        // El plomo (PISOS §69). The action names are ParCool's, not ours, and they are the one part
-        // of this that can rot: verify them once on the live server with /parcool limitation get
-        // global, and fix them here rather than in code if they have moved.
-        parkourLimitsEnabled = true;
-        PARKOUR_LIMIT_COMMANDS.clear();
-        PARKOUR_RESTORE_COMMANDS.clear();
-        for (String action : List.of("WallJump", "HorizontalWallRun", "CatLeap", "ClingToCliff",
-                "Dive", "PoleClimb")) {
-            PARKOUR_LIMIT_COMMANDS.add(
-                    "parcool limitation set individual of %player% boolean " + action + " false");
-            PARKOUR_RESTORE_COMMANDS.add(
-                    "parcool limitation set individual of %player% boolean " + action + " true");
+    private static void readCurseChances(YamlConfig yaml) {
+        YamlConfig curseBlock = yaml.section("maldiciones");
+        for (es.boffmedia.teras.dungeon.model.Curse curse
+                : es.boffmedia.teras.dungeon.model.Curse.values()) {
+            String key = curse.name().toLowerCase(java.util.Locale.ROOT);
+            int pct = curseBlock.integer(key,
+                    (int) Math.round(CURSE_CHANCES.getOrDefault(curse, 0.0) * 100));
+            CURSE_CHANCES.put(curse, Math.max(0, Math.min(100, pct)) / 100.0);
         }
-        chestLootTable = "teras:dungeon/treasure";
-        chestProezaLootTable = "teras:dungeon/boss";
-        chestSpikeDamage = 4;
-        chestTrapDamage = 6;
-        chestTrapChancePct = 35;
-        // The shop's floor deal and its gamble (PISOS §66). The ganga shows only sometimes at base;
-        // future economy items raise a run's discount level toward always (the Steam-Sale hook, held
-        // on DungeonRun). The gamble draws its own steady table — no epic jackpot. Premium stock
-        // (fénix/seguro) waits until the runs that can afford it.
-        gangaChance = 40;
-        gangaDiscountPct = 30;
-        gambleLootTable = "teras:dungeon/gamble";
-        shopPremiumStage = 3;
-        bossLootTable = "teras:dungeon/boss";
-        crackBlock = "teras:muro_agrietado";
-        spikeBlock = "minecraft:pointed_dripstone";
-        doorRelief = true;
-        // Six ticks, top course first. Long enough to read as a gate falling and short enough that
-        // nobody walks out under it: the opening is sealed from the top down, so the last course to
-        // land is the one at head height.
-        sealCloseTicks = 6;
-        resetDoorStyles();
-        // One heart to cross, floored so it can never kill. Real under the health lockdown,
-        // where the only healing left is a potion somebody paid for.
-        curseDoorTollHearts = 1;
-        marketSlots = 3;
-        marketReward = 40;
-        purgePrice = 30;
-        maxParty = 4;
-        entranceRadius = 16;
-        backendPostEnabled = true;
-
-        coinsNormalMin = 1;
-        coinsNormalMax = 3;
-        coinsMiniBossMin = 8;
-        coinsMiniBossMax = 15;
-        coinsBossMin = 20;
-        coinsBossMax = 40;
-        coinStageScalingPct = 15;
-        coinPickupRadius = 2;
-        coinDeathPenaltyPct = 20;
-        coinToPesos = 10;
-
-        shopWeights.clear();
-        shopWeights.putAll(DEFAULT_SHOP_WEIGHTS);
-        shopPrices.clear();
-        shopPrices.putAll(DEFAULT_SHOP_PRICES);
-
-        challengeWaves = 2;
-        challengeExtraWaveStage = 5;
-        challengeWaveGrowthPct = 30;
-        challengeReward = 30;
-
-        sacrificeDamage = 4.0f;
-        sacrificeBaseChancePct = 10;
-        sacrificeStepChancePct = 10;
-        sacrificeCoinsMin = 20;
-        sacrificeCoinsMax = 40;
-
-        arcadePrice = 5;
-        arcadeBreakChancePct = 8;
-
-        devilCoinPrice = 60;
-        devilHeartPrice = 2;
-        debtInterestPct = 50;
-        debtSettleDiscountPct = 20;
-        debtFloorsToCollect = 2;
-
-        soundVolume = 0.8f;
-        sounds.clear();
-        sounds.putAll(DEFAULT_SOUNDS);
     }
 
     /**
-     * The door language, in three families: the piso's own rock for an ordinary passage, copper for
-     * the rooms about money, blackstone for the danger you walk into on purpose — and one of a kind
-     * for each of the three promises.
+     * Says out loud what a hand-edited file got wrong.
      *
-     * <p>Three families is few enough to learn in one floor, which is the whole point of the frame:
-     * a player who has seen one treasure door knows the next one from across a room, on a piso that
-     * did not exist when they learned it. That is why this table is dungeon-wide and the ordinary
-     * frame is not — see {@code puertas} on a piso.</p>
-     *
-     * <p>All copper is <b>waxed</b>. Unwaxed would oxidise green over a server's lifetime, and a
-     * sign that changes colour on its own stops being a sign.</p>
+     * <p>Warnings rather than refusals, and deliberately so: this config is edited live by an
+     * operator, and a value that is merely nonsensical (a max below its min, a reward table left
+     * blank) is a floor that plays oddly, not a server that must not boot. What it must never do is
+     * fail <i>silently</i> — a coin range inverted by a typo pays nothing at all, and there is
+     * nothing in the game that reads as "you swapped two numbers in config.yml".</p>
      */
-    private static void resetDoorStyles() {
-        // The fallback ordinary frame — Cuevas' andesite, since a piso that declares no puertas is
-        // most likely the one being authored against Cuevas as a starting point.
-        doorStyle = DoorStyle.frame("minecraft:polished_andesite", "minecraft:chiseled_tuff",
-                "minecraft:shroomlight", "minecraft:andesite");
-        DOOR_STYLES.clear();
+    static void validate() {
+        range("monedas.normal", coins.normalMin(), coins.normalMax());
+        range("monedas.miniJefe", coins.miniBossMin(), coins.miniBossMax());
+        range("monedas.jefe", coins.bossMin(), coins.bossMax());
+        range("sacrificio.monedas", sacrifice.coinsMin(), sacrifice.coinsMax());
+        positive("maxSlots", generation.maxSlots());
+        positive("tamanoSala", generation.roomSize());
+        positive("alturaSala", generation.roomHeight());
+        positive("anchoPuerta", generation.doorWidth());
+        positive("altoPuerta", generation.doorHeight());
+        positive("monedas.cambioPesos", coins.toPesos());
+        positive("maxGrupo", run.maxParty());
+        for (Map.Entry<String, String> table : loot.tables().entrySet()) {
+            if (table.getValue() == null || table.getValue().isBlank()) {
+                Teras.LOGGER.warn("Dungeons: '{}' is blank — the room it pays for will drop nothing",
+                        table.getKey());
+            }
+        }
+        if (generation.celdas().isEmpty()) {
+            Teras.LOGGER.warn("Dungeons: 'generacion.celdas' is empty — no floor has a cell budget");
+        }
+    }
 
-        // Copper — the rooms about money.
-        DOOR_STYLES.put(RoomType.TREASURE, DoorStyle.frame(
-                "minecraft:waxed_cut_copper", "minecraft:gold_block",
-                "minecraft:waxed_copper_bulb[lit=true,powered=false]",
-                "minecraft:waxed_cut_copper"));
-        // Wood, and the only frame in the dungeon that is not rock: a shop has to read as somebody
-        // built it, from across the room, before you are close enough to see a single ware.
-        DOOR_STYLES.put(RoomType.SHOP, DoorStyle.frame(
-                "minecraft:stripped_dark_oak_wood", "minecraft:waxed_cut_copper",
-                "minecraft:lantern", "minecraft:waxed_cut_copper"));
-        DOOR_STYLES.put(RoomType.ARCADE, DoorStyle.frame(
-                "minecraft:waxed_exposed_cut_copper", "minecraft:amethyst_block",
-                "minecraft:verdant_froglight", "minecraft:waxed_exposed_cut_copper"));
+    private static void range(String key, int min, int max) {
+        if (max < min) {
+            Teras.LOGGER.warn("Dungeons: '{}Max' ({}) is below '{}Min' ({}) — the range is empty and "
+                    + "pays nothing", key, max, key, min);
+        }
+    }
 
-        // Blackstone — the danger you walk into on purpose.
-        DOOR_STYLES.put(RoomType.CHALLENGE, DoorStyle.frame(
-                "minecraft:polished_blackstone_bricks", "minecraft:chiseled_polished_blackstone",
-                "minecraft:soul_lantern", "minecraft:polished_blackstone"));
-        // Unlit, both of them. A room that charges blood should not be the brightest thing in sight.
-        DOOR_STYLES.put(RoomType.SACRIFICE, DoorStyle.frame(
-                "minecraft:red_nether_bricks", "minecraft:nether_wart_block",
-                "", "minecraft:red_nether_bricks"));
-        // The spikes stay: they are the warning, and the frame only frames them.
-        DOOR_STYLES.put(RoomType.CURSE, DoorStyle.frame(
-                "minecraft:blackstone", "minecraft:dripstone_block",
-                "", "minecraft:blackstone"));
-        DOOR_STYLES.put(RoomType.MINI_BOSS, DoorStyle.frame(
-                "minecraft:polished_blackstone_bricks", "minecraft:polished_blackstone",
-                "minecraft:soul_lantern", "minecraft:polished_blackstone"));
-        DOOR_STYLES.put(RoomType.BOSS, DoorStyle.tall(
-                "minecraft:polished_blackstone_bricks", "minecraft:crying_obsidian",
-                "minecraft:soul_lantern", "minecraft:polished_blackstone"));
+    private static void positive(String key, int value) {
+        if (value <= 0) {
+            Teras.LOGGER.warn("Dungeons: '{}' is {} — it must be at least 1", key, value);
+        }
+    }
 
-        // The three promises. One of a kind each, and never reused anywhere else in the dungeon —
-        // which is what lets a player tell "this opens when I win this fight" from "this opens when
-        // the floor's boss falls" without being told either.
-        DOOR_STYLES.put(RoomType.DEVIL_DEAL, DoorStyle.gate(
-                "minecraft:polished_blackstone", "minecraft:crying_obsidian",
-                "", "minecraft:polished_blackstone",
-                "minecraft:polished_blackstone", "teras:marca_pacto"));
-        DOOR_STYLES.put(RoomType.ORDEN, DoorStyle.gate(
-                "minecraft:smooth_quartz", "minecraft:gold_block",
-                "", "minecraft:smooth_quartz",
-                "minecraft:smooth_quartz", "teras:marca_orden"));
-        // The sala del sello's own frame, written at the reveal rather than at the build: the wall
-        // has to be solid until the boss dies. Its accent is the seal's lit rune.
-        DOOR_STYLES.put(RoomType.EXIT, DoorStyle.tall(
-                "minecraft:polished_basalt", "minecraft:amethyst_block",
-                "minecraft:amethyst_block", "minecraft:polished_basalt"));
+    private static void resetToDefaults() {
+        generation = GenerationConfig.defaults();
+        coins = CoinConfig.defaults();
+        shop = ShopConfig.defaults();
+        loot = LootConfig.defaults();
+        combat = CombatConfig.defaults();
+        challenge = ChallengeConfig.defaults();
+        sacrifice = SacrificeConfig.defaults();
+        arcade = ArcadeConfig.defaults();
+        devil = DevilConfig.defaults();
+        chests = ChestConfig.defaults();
+        parkour = ParkourConfig.defaults();
+        rooms = RoomsConfig.defaults();
+        run = RunConfig.defaults();
+        doors = DoorConfig.defaults();
+        sounds = SoundConfig.defaults();
+        CURSE_CHANCES.clear();
     }
 
     private static String renderTemplate() {
-        return """
+        // The stamp is written, never read back into anything: it exists so that a file created
+        // today can be told apart from one created before a default changed.
+        return "version: " + ConfigVersion.CURRENT + "\n" + """
                 # Teras dungeons — build settings.
                 # tamanoSala is the cell pitch AND the per-cell template footprint; a template for a
                 # 2x1 room must be exactly twice as wide. alturaSala is the template height.
@@ -664,6 +261,9 @@ public final class DungeonsConfig {
                 # would never become ACTIVE, and only ACTIVE runs can be ended.
                 graciaAbandonoSegundos: 180
                 timeoutConstruccionSegundos: 300
+                # Days a return point for a player who was offline when their run ended is kept
+                # before it is swept. 0 keeps them forever.
+                diasParaExpirarRetornos: 30
                 # Run loop: what seals doors in combat, and the wall a secret room hides behind.
                 bloqueSello: teras:reja
                 bloqueGrieta: teras:muro_agrietado
@@ -807,6 +407,12 @@ public final class DungeonsConfig {
                 # stand for 'entrar' to work (also the gather radius for their party members).
                 maxGrupo: 4
                 radioEntrada: 16
+                # Contenedores de corazón que cuesta una muerte. Es la única condición de derrota
+                # de la mazmorra: quien se queda sin contenedores queda fuera de la expedición
+                # (espectador, mirando por los ojos de un compañero), y si no queda nadie en pie la
+                # partida se pierde — salís sin bolsa y sin conversión a ₽. El equipo extraído se
+                # conserva siempre. 0 lo desactiva y devuelve la mazmorra a no poder perderse.
+                contenedoresPorMuerte: 2
                 # POST completed/abandoned runs to SmartRotom (leaderboards). Needs config.yml's
                 # apiToken set, or the route 401s — see docs/SMARTROTOM_ENDPOINTS_HANDOFF.md.
                 enviarResultados: true
@@ -882,6 +488,18 @@ public final class DungeonsConfig {
                   probPorPasoPct: 10
                   monedasMin: 20
                   monedasMax: 40
+                # --- El combate reconstruido (ROGUELIKE §4) ---------------------------------
+                # El daño no lo calcula Minecraft: lo calcula Teras, para jugadores y enemigos por
+                # igual, y con él vienen la esquiva (tecla V), el encadenado de golpes ligeros
+                # (clic izquierdo) y el aplomo, que rompe la guardia y deja al enemigo abierto.
+                # El clic derecho NO es un ataque: sigue siendo el escudo, los artilugios, los
+                # cofres, las tiendas y los PNJ.
+                # Los precios del calabozo — las púas del sacrificio, el peaje de la maldición, las
+                # trampas de los cofres, la caída — NO pasan por aquí: siguen doliendo lo mismo por
+                # muy bien equipado que vayas, que es justo lo que es un precio.
+                # Ponlo en false para devolver el combate a Minecraft sin tocar nada más.
+                combate:
+                  activado: true
                 # --- El plomo (ParCool) -----------------------------------------------------
                 # The 'plomo' curse takes the party's parkour away for a floor. ParCool is NOT a
                 # Teras dependency: this drives its own limitation commands as the server, so a
@@ -966,20 +584,44 @@ public final class DungeonsConfig {
                 """;
     }
 
+    // --- the domain records, for anything that wants a whole block at once ---------------------
+
+    public static GenerationConfig generation() {
+        return generation;
+    }
+
+    public static CoinConfig coins() {
+        return coins;
+    }
+
+    public static ShopConfig shop() {
+        return shop;
+    }
+
+    public static LootConfig loot() {
+        return loot;
+    }
+
+    public static CombatConfig combat() {
+        return combat;
+    }
+
+    // --- and the flat accessors every call site in the mod already uses ------------------------
+
     public static int roomSize() {
-        return roomSize;
+        return generation.roomSize();
     }
 
     public static int roomHeight() {
-        return roomHeight;
+        return generation.roomHeight();
     }
 
     public static int doorWidth() {
-        return doorWidth;
+        return generation.doorWidth();
     }
 
     public static int doorHeight() {
-        return doorHeight;
+        return generation.doorHeight();
     }
 
     /**
@@ -988,7 +630,8 @@ public final class DungeonsConfig {
      * one place and the built-in table stays the fallback rather than a second source of truth.
      */
     public static es.boffmedia.teras.dungeon.gen.GenConfig genConfig() {
-        return es.boffmedia.teras.dungeon.gen.GenConfig.defaults().withCurve(celdas, jitter);
+        return es.boffmedia.teras.dungeon.gen.GenConfig.defaults()
+                .withCurve(generation.celdas(), generation.jitter());
     }
 
     public static Map<es.boffmedia.teras.dungeon.model.Curse, Double> curseChances() {
@@ -996,81 +639,84 @@ public final class DungeonsConfig {
     }
 
     public static String dimension() {
-        return dimension;
+        return generation.dimension();
     }
 
     public static int slotY() {
-        return slotY;
+        return generation.slotY();
     }
 
     public static int slotSpacing() {
-        return slotSpacing;
+        return generation.slotSpacing();
     }
 
     public static int maxSlots() {
-        return maxSlots;
+        return generation.maxSlots();
     }
 
     public static int desertionGraceSeconds() {
-        return desertionGraceSeconds;
+        return run.desertionGraceSeconds();
     }
 
     public static int buildTimeoutSeconds() {
-        return buildTimeoutSeconds;
+        return run.buildTimeoutSeconds();
+    }
+
+    /** Days a pending return point is kept before the boot/login sweep drops it; 0 never expires. */
+    public static int returnExpiryDays() {
+        return run.returnExpiryDays();
     }
 
     public static String sealBlock() {
-        return sealBlock;
+        return rooms.sealBlock();
     }
 
     public static String sealRuneBlock() {
-        return sealRuneBlock;
+        return rooms.sealRuneBlock();
     }
 
     public static String sealRuneLitBlock() {
-        return sealRuneLitBlock;
+        return rooms.sealRuneLitBlock();
     }
 
     public static int descentSeconds() {
-        return descentSeconds;
+        return generation.descentSeconds();
     }
 
     public static int sealDoorWidth() {
-        return sealDoorWidth;
+        return rooms.sealDoorWidth();
     }
 
     public static int sealDoorHeight() {
-        return sealDoorHeight;
+        return rooms.sealDoorHeight();
     }
 
     public static long clearReward() {
-        return clearReward;
+        return coins.clearReward();
     }
 
-
     public static int deathPenaltyPct() {
-        return deathPenaltyPct;
+        return coins.bankDeathPenaltyPct();
     }
 
     public static String treasureLootTable() {
-        return treasureLootTable;
+        return loot.treasure();
     }
 
     public static String secretLootTable() {
-        return secretLootTable;
+        return loot.secret();
     }
 
     public static String superSecretLootTable() {
-        return superSecretLootTable;
+        return loot.superSecret();
     }
 
-
     public static String bossLootTable() {
-        return bossLootTable;
+        return loot.boss();
     }
 
     public static String devilLootTable() {
-        return devilLootTable;
+        return loot.devil();
     }
 
     /**
@@ -1080,283 +726,261 @@ public final class DungeonsConfig {
      * in gear and healing and never in keys or petardos.
      */
     public static String ordenLootTable() {
-        return ordenLootTable;
+        return loot.orden();
     }
 
     /** The fighter's stand: one gear piece, rarity leaning raro, and an occasional book (PISOS §66). */
     public static String treasureArmaLootTable() {
-        return treasureArmaLootTable;
+        return loot.treasureArma();
     }
 
     /** The survivor's stand: a greater potion and a smaller heal. */
     public static String treasureVitalidadLootTable() {
-        return treasureVitalidadLootTable;
+        return loot.treasureVitalidad();
     }
 
     /** The merchant's stand: this many coins to the shared purse, before the stage scale. */
     public static int treasureProvisionCoins() {
-        return treasureProvisionCoins;
+        return loot.provisionCoins();
     }
 
     /** …and this many wall charges with them. */
     public static int treasureProvisionCharges() {
-        return treasureProvisionCharges;
+        return loot.provisionCharges();
     }
 
     /**
-     * Replaces {@code target} with the file's list, or leaves the built-in one when the key is
-     * absent. Never merges: a half-overridden command list would take the moveset away and give back
-     * something else, which is worse than either doing nothing or doing all of it.
+     * Whether Teras computes damage instead of Minecraft, and whether the esquiva answers its key.
+     *
+     * <p>Off returns every <b>fight</b> to vanilla: the damage pipeline, the light chain, the heavy, the
+     * dodge, poise and the stat panel all stand down. It is deliberately not a master switch for the
+     * dungeon — the healing lockdown, the tolls, and the Pokémon ban ({@code DungeonPokemonGuard}) are
+     * loadout and economy rules rather than combat rules, and they stay on. Said explicitly because this
+     * javadoc used to promise that off "leaves every shipped fight exactly as it was" while one guard in
+     * the combat package quietly ignored the flag.</p>
      */
-    /**
-     * One door style, key by key over {@code fallback}. Per-key rather than all-or-nothing so a
-     * server can repaint a single lamp without restating a frame it never meant to change — and so
-     * a style gaining a part later does not blank it out of every config already on disk.
-     */
-    private static DoorStyle doorStyle(YamlConfig section, DoorStyle fallback) {
-        return new DoorStyle(
-                section.string("marco", fallback.marco()),
-                section.string("acento", fallback.acento()),
-                section.string("luz", fallback.luz()),
-                section.string("umbral", fallback.umbral()),
-                section.string("porton", fallback.porton()),
-                section.string("marca", fallback.marca()),
-                section.bool("alta", fallback.alta()));
-    }
-
-    private static void readCommands(YamlConfig section, String key, List<String> target) {
-        List<Object> raw = section.list(key);
-        if (raw.isEmpty()) {
-            return;
-        }
-        target.clear();
-        for (Object line : raw) {
-            String command = String.valueOf(line).trim();
-            if (!command.isEmpty()) {
-                target.add(command);
-            }
-        }
+    public static boolean combatEnabled() {
+        return combat.enabled();
     }
 
     /** Whether el plomo tries to drive ParCool at all. Off makes the curse a no-op, not an error. */
     public static boolean parkourLimitsEnabled() {
-        return parkourLimitsEnabled;
+        return parkour.enabled();
     }
 
     /** The commands that take the moveset away, with {@code %player%} still in them. */
     public static List<String> parkourLimitCommands() {
-        return List.copyOf(PARKOUR_LIMIT_COMMANDS);
+        return List.copyOf(parkour.limitCommands());
     }
 
     /** …and the ones that give it back. */
     public static List<String> parkourRestoreCommands() {
-        return List.copyOf(PARKOUR_RESTORE_COMMANDS);
+        return List.copyOf(parkour.restoreCommands());
     }
 
     /** What a chest pays. Every kind but proeza draws this one. */
     public static String chestLootTable() {
-        return chestLootTable;
+        return loot.chest();
     }
 
     /** What a proeza chest pays — the one placed where only parkour reaches. */
     public static String chestProezaLootTable() {
-        return chestProezaLootTable;
+        return loot.chestProeza();
     }
 
     /** Health a spiked chest takes from each claimant, before the floor's scale. */
     public static float chestSpikeDamage() {
-        return chestSpikeDamage;
+        return chests.spikeDamage();
     }
 
     /** Health a doubtful chest takes when the gamble goes wrong. */
     public static float chestTrapDamage() {
-        return chestTrapDamage;
+        return chests.trapDamage();
     }
 
     /** Chance (0–100) that a doubtful chest bites instead of paying double. */
     public static int chestTrapChancePct() {
-        return chestTrapChancePct;
+        return chests.trapChancePct();
     }
 
     /** Base chance (0–100) that a floor's shop features one discounted ganga slot. */
     public static int gangaChance() {
-        return gangaChance;
+        return shop.gangaChance();
     }
 
     /** How deep the ganga cuts, as a percentage off the sticker price. */
     public static int gangaDiscountPct() {
-        return gangaDiscountPct;
+        return shop.gangaDiscountPct();
     }
 
     /** The gamble slot's reward table — its own, so it can be steady (no epic jackpot). */
     public static String gambleLootTable() {
-        return gambleLootTable;
+        return shop.gambleLootTable();
     }
 
     /** The stage from which premium stock (fénix, seguro) enters the shop's planogram. */
     public static int shopPremiumStage() {
-        return shopPremiumStage;
+        return shop.premiumStage();
     }
 
     public static String crackBlock() {
-        return crackBlock;
+        return rooms.crackBlock();
     }
 
     public static String spikeBlock() {
-        return spikeBlock;
+        return rooms.spikeBlock();
     }
 
     public static int curseDoorTollHearts() {
-        return curseDoorTollHearts;
+        return rooms.curseDoorTollHearts();
     }
 
     /** Whether door frames stand proud of the wall, or are inlaid flat into it. */
     public static boolean doorRelief() {
-        return doorRelief;
+        return doors.relief();
     }
 
     /** How long a sealing gate takes to fall, top course first. */
     public static int sealCloseTicks() {
-        return sealCloseTicks;
+        return doors.sealCloseTicks();
     }
 
     /** The ordinary frame, for a piso that declares no {@code puertas} of its own. */
     public static DoorStyle doorStyle() {
-        return doorStyle;
+        return doors.normal();
     }
 
     /** The dungeon-wide frame for a door into {@code type}, or null when it wears its piso's. */
     public static DoorStyle doorStyle(RoomType type) {
-        return DOOR_STYLES.get(type);
+        return doors.specials().get(type);
     }
 
     public static int marketSlots() {
-        return marketSlots;
+        return shop.marketSlots();
     }
 
     public static int marketReward() {
-        return marketReward;
+        return shop.marketReward();
     }
 
     public static int purgePrice() {
-        return purgePrice;
+        return shop.purgePrice();
     }
 
     public static boolean backendPostEnabled() {
-        return backendPostEnabled;
+        return run.backendPostEnabled();
     }
 
     public static int coinsNormalMin() {
-        return coinsNormalMin;
+        return coins.normalMin();
     }
 
     public static int coinsNormalMax() {
-        return coinsNormalMax;
+        return coins.normalMax();
     }
 
     public static int coinsMiniBossMin() {
-        return coinsMiniBossMin;
+        return coins.miniBossMin();
     }
 
     public static int coinsMiniBossMax() {
-        return coinsMiniBossMax;
+        return coins.miniBossMax();
     }
 
     public static int coinsBossMin() {
-        return coinsBossMin;
+        return coins.bossMin();
     }
 
     public static int coinsBossMax() {
-        return coinsBossMax;
+        return coins.bossMax();
     }
 
     public static int coinStageScalingPct() {
-        return coinStageScalingPct;
+        return coins.stageScalingPct();
     }
 
     public static double coinPickupRadius() {
-        return coinPickupRadius;
+        return coins.pickupRadius();
     }
 
     public static int coinDeathPenaltyPct() {
-        return coinDeathPenaltyPct;
+        return coins.deathPenaltyPct();
     }
 
     public static int coinToPesos() {
-        return coinToPesos;
+        return coins.toPesos();
     }
-
 
     /** Roll weight of a shop stock kind; 0 keeps it out of the pool entirely. */
     public static int shopWeight(String kind) {
-        return shopWeights.getOrDefault(kind, 0);
+        return shop.weight(kind);
     }
 
     /** Base price in coins, before per-floor scaling. */
     public static int shopPrice(String kind) {
-        return shopPrices.getOrDefault(kind, DEFAULT_SHOP_PRICES.getOrDefault(kind, 10));
+        return shop.price(kind);
     }
 
     public static int challengeWaves() {
-        return challengeWaves;
+        return challenge.waves();
     }
 
     public static int challengeExtraWaveStage() {
-        return challengeExtraWaveStage;
+        return challenge.extraWaveStage();
     }
 
     public static int challengeWaveGrowthPct() {
-        return challengeWaveGrowthPct;
+        return challenge.waveGrowthPct();
     }
 
     public static int challengeReward() {
-        return challengeReward;
+        return challenge.reward();
     }
 
     public static float sacrificeDamage() {
-        return sacrificeDamage;
+        return sacrifice.damage();
     }
 
     public static int sacrificeBaseChancePct() {
-        return sacrificeBaseChancePct;
+        return sacrifice.baseChancePct();
     }
 
     public static int sacrificeStepChancePct() {
-        return sacrificeStepChancePct;
+        return sacrifice.stepChancePct();
     }
 
     public static int sacrificeCoinsMin() {
-        return sacrificeCoinsMin;
+        return sacrifice.coinsMin();
     }
 
     public static int sacrificeCoinsMax() {
-        return sacrificeCoinsMax;
+        return sacrifice.coinsMax();
     }
 
     public static int arcadePrice() {
-        return arcadePrice;
+        return arcade.price();
     }
 
     public static int arcadeBreakChancePct() {
-        return arcadeBreakChancePct;
+        return arcade.breakChancePct();
     }
 
     public static int devilCoinPrice() {
-        return devilCoinPrice;
+        return devil.coinPrice();
     }
 
     public static int devilHeartPrice() {
-        return devilHeartPrice;
+        return devil.heartPrice();
     }
 
     /** What the loan costs over the cash price — the creditor's margin on <i>pedir prestado</i>. */
     public static int debtInterestPct() {
-        return debtInterestPct;
+        return devil.debtInterestPct();
     }
 
     /** Taken off the face value for settling early, which is the reason to seek him out again. */
     public static int debtSettleDiscountPct() {
-        return debtSettleDiscountPct;
+        return devil.debtSettleDiscountPct();
     }
 
     /**
@@ -1368,23 +992,27 @@ public final class DungeonsConfig {
      * Descenso-shaped mechanic by choice. Do not "fix" it in a later pass.</p>
      */
     public static int debtFloorsToCollect() {
-        return debtFloorsToCollect;
+        return devil.floorsToCollect();
     }
 
     public static int maxParty() {
-        return maxParty;
+        return run.maxParty();
     }
 
     public static int entranceRadius() {
-        return entranceRadius;
+        return run.entranceRadius();
+    }
+
+    public static int containersLostPerDeath() {
+        return run.containersLostPerDeath();
     }
 
     /** Vanilla (or first-party) sound id for a cue; never null — unknown cues fall back silently. */
     public static String sound(String cue) {
-        return sounds.getOrDefault(cue, DEFAULT_SOUNDS.get(cue));
+        return sounds.cue(cue);
     }
 
     public static float soundVolume() {
-        return soundVolume;
+        return sounds.volume();
     }
 }

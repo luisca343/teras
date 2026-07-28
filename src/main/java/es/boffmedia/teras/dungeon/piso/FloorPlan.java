@@ -23,6 +23,12 @@ import java.util.Set;
  *                    spawn site is what keeps "a spider queen must not appear in plain Cuevas" a
  *                    property of the plan instead of a rule two callers have to remember
  * @param minijefes   the mini-boss pool, resolved the same way
+ * @param tramoBoundary whether this floor is the <b>last of its tramo and another tramo follows</b>
+ *                    — the only place an ascensor stands. Resolved here for the reason the boss
+ *                    pools are: the answer needs the dungeon's whole tramo list, which nothing
+ *                    downstream has, and a materializer re-deriving it from {@code indexInTier}
+ *                    alone would put a lift on the last floor of the last tramo, where there is
+ *                    nothing left to come back to
  */
 public record FloorPlan(int stage,
                         String dungeonId,
@@ -32,7 +38,8 @@ public record FloorPlan(int stage,
                         double dificultad,
                         Set<Curse> curses,
                         List<String> jefes,
-                        List<String> minijefes) {
+                        List<String> minijefes,
+                        boolean tramoBoundary) {
 
     /**
      * A plan with no pools of its own, which falls back to the global {@code enemies.json} tables.
@@ -42,8 +49,15 @@ public record FloorPlan(int stage,
     public FloorPlan(int stage, String dungeonId, int tierIndex, int indexInTier, FloorDef piso,
                      double dificultad, Set<Curse> curses) {
         this(stage, dungeonId, tierIndex, indexInTier, piso, dificultad, curses,
-                List.of(), List.of());
+                List.of(), List.of(), false);
     }
+
+    /**
+     * <b>Deliberately no nine-argument shape.</b> {@code planFor} rebuilds a plan to fold in a
+     * forced curse, and an overload defaulting {@code tramoBoundary} would have silently dropped it
+     * there — an admin forcing a curse would have removed that floor's ascensor and nothing would
+     * have said so. A caller rebuilding a plan has to carry the flag across by hand.
+     */
 
     public FloorPlan {
         jefes = jefes == null ? List.of() : List.copyOf(jefes);

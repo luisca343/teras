@@ -52,6 +52,7 @@ public final class TerasNet {
         registrar.playToServer(SetCallPayload.TYPE, SetCallPayload.STREAM_CODEC, TerasNet::handleSetCall);
         registrar.playToServer(LeaveCallPayload.TYPE, LeaveCallPayload.STREAM_CODEC, TerasNet::handleLeaveCall);
         registrar.playToServer(OpenPCPayload.TYPE, OpenPCPayload.STREAM_CODEC, TerasNet::handleOpenPC);
+        registrar.playToServer(DodgePayload.TYPE, DodgePayload.STREAM_CODEC, TerasNet::handleDodge);
         // Client-only bodies are isolated behind lambdas -> client class (never loaded on the server).
         registrar.playToClient(McefResponsePayload.TYPE, McefResponsePayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onMcefResponse(payload, context));
@@ -71,6 +72,8 @@ public final class TerasNet {
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onDungeonMap(payload, context));
         registrar.playToClient(DungeonWalletPayload.TYPE, DungeonWalletPayload.STREAM_CODEC,
                 (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onDungeonWallet(payload, context));
+        registrar.playToClient(CombatStatsPayload.TYPE, CombatStatsPayload.STREAM_CODEC,
+                (payload, context) -> es.boffmedia.teras.client.ClientNetHandler.onCombatStats(payload, context));
     }
 
     // ---- Server-side send helpers ----
@@ -122,6 +125,11 @@ public final class TerasNet {
     /** Asks the server to open this player's PC; see {@link OpenPCPayload}. */
     public static void requestOpenPC(long requestId) {
         PacketDistributor.sendToServer(new OpenPCPayload(requestId));
+    }
+
+    /** Asks the server to roll; see {@link DodgePayload}. */
+    public static void sendDodge(float forward, float left) {
+        PacketDistributor.sendToServer(new DodgePayload(forward, left));
     }
 
     /** Sends a picture frame's edited configuration to the server; see {@link FrameConfigPayload}. */
@@ -398,6 +406,20 @@ public final class TerasNet {
             } else {
                 replyError(sp, payload.requestId(), reason);
             }
+        });
+    }
+
+    /**
+     * Rolls, if the sender may.
+     *
+     * <p>AUTHORITY: the player comes from the connection, so a client can only ever dodge itself, and
+     * every condition that matters — inside a run, combat enabled, off cooldown — is checked in
+     * {@code Dodge}. Spamming this costs nothing but a refused call.</p>
+     */
+    private static void handleDodge(DodgePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer sp)) return;
+            es.boffmedia.teras.dungeon.combat.Dodge.perform(sp, payload.forward(), payload.left());
         });
     }
 

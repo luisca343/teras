@@ -203,7 +203,10 @@ public final class GearEvents {
             if (nearby == victim || nearby == killer || nearby instanceof ServerPlayer) {
                 continue;
             }
-            nearby.hurt(killer.damageSources().playerAttack(killer), damage);
+            // indirectMagic, not playerAttack: the shockwave is a share of the victim's health that
+            // this ability authored, and playerAttack is a type CombatEngine reads as a swing — which
+            // would replace the number AND consume whatever heavy the killer had wound up.
+            nearby.hurt(killer.damageSources().indirectMagic(killer, killer), damage);
             Vec3 push = nearby.position().subtract(victim.position()).normalize().scale(0.5);
             nearby.push(push.x, 0.3, push.z);
         }

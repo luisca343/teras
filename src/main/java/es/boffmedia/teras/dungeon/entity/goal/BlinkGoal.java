@@ -8,6 +8,9 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 
@@ -19,7 +22,22 @@ import java.util.EnumSet;
  *
  * <p>It moves the enemy <b>away from</b> whatever crowded it rather than to a random point, so a
  * blink always buys the distance it exists to buy, and it lands only on ground the enemy could have
- * walked to — a blink through a wall would put it outside the room the party is sealed into.</p>
+ * walked to.</p>
+ *
+ * <h2>Why it may not cross a wall</h2>
+ *
+ * <p>That last clause was a <b>claim and not a check</b> for as long as this class existed:
+ * {@link #tryBlink} tested that the destination had footing and was unoccupied, which the floor of the
+ * next room over satisfies perfectly. A blinker standing near a wall would jump 4–7 blocks straight
+ * through it, out of the room the party is sealed into — and because the clear ledger tracks an enemy
+ * by <i>registration</i> rather than by position, the room then stayed sealed over an enemy nobody
+ * could reach. The fight became unwinnable and the floor unclearable.</p>
+ *
+ * <p>{@link #reaches} is that check: a ray from the enemy to the destination that must arrive without
+ * hitting anything solid. It is deliberately stricter than "is the destination valid" and cheaper than
+ * knowing where the room is — it is the same question the javadoc was already answering out loud.
+ * {@code RunEngine}'s containment sweep is the belt to this braces, for anything that moves an enemy
+ * without asking a goal.</p>
  */
 public class BlinkGoal extends Goal {
 
@@ -88,6 +106,9 @@ public class BlinkGoal extends Goal {
                 .move(x - enemy.getX(), y - enemy.getY(), z - enemy.getZ()))) {
             return false;
         }
+        if (!reaches(x, y, z)) {
+            return false;
+        }
         puff();
         enemy.teleportTo(x, y, z);
         puff();
@@ -113,6 +134,20 @@ public class BlinkGoal extends Goal {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether the enemy could get there in a straight line without passing through anything.
+     *
+     * <p>Cast at eye height rather than at the feet: a floor-level ray clips the lip of every step and
+     * slab an authored room is full of, which would refuse most legal blinks inside one room. Eye
+     * height is the honest test of "is there a wall between us".</p>
+     */
+    private boolean reaches(double x, double y, double z) {
+        Vec3 from = new Vec3(enemy.getX(), enemy.getEyeY(), enemy.getZ());
+        Vec3 to = new Vec3(x, y + enemy.getEyeHeight(), z);
+        return enemy.level().clip(new ClipContext(from, to, ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE, enemy)).getType() == HitResult.Type.MISS;
     }
 
     private void puff() {

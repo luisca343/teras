@@ -28,6 +28,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
@@ -87,6 +88,15 @@ public final class RunEngine {
 
     private static final Map<Integer, ActiveFloor> FLOORS = new LinkedHashMap<>();
     private static final Map<UUID, Integer> RESPAWN_AT_START = new HashMap<>();
+
+    /**
+     * Who is out of the expedition, and what they were playing as before they were.
+     *
+     * <p>The mode is stored rather than assumed: benching sets spectator, and restoring it to
+     * survival unconditionally would quietly demote an operator who entered the run in creative.</p>
+     */
+    private static final Map<UUID, net.minecraft.world.level.GameType> BENCHED = new HashMap<>();
+
     private static long tick;
 
     /**
@@ -136,6 +146,8 @@ public final class RunEngine {
         final java.util.Set<UUID> curseTollPaid = new java.util.HashSet<>();
         /** The curse room's market: its offers, and the pedestal that undoes them. */
         final CurseMarket market = new CurseMarket();
+        /** The way up, on the floors that have one. */
+        final ElevatorRide lift = new ElevatorRide();
         /** Missing-marker warnings already logged, so the tick loop cannot repeat one. */
         final java.util.Set<String> warnedMarkers = new java.util.HashSet<>();
         /**
@@ -264,13 +276,14 @@ public final class RunEngine {
             // failure here that follows them into the rest of the server.
             ParkourLimits.clear(floor);
             floor.market.despawnDisplays(floor);
+            floor.lift.forget();
             floor.bossBars.clear();
             // Characters are floor-scoped like every other fixture: the entities go with the
             // floor's sweep, and this drops what the click router remembered about them.
             DungeonNpcs.clear(runId);
             clearDescentBar(floor);
             for (UUID member : floor.run.party().keySet()) {
-                ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+                ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
                 if (player != null) {
                     PacketDistributor.sendToPlayer(player, DungeonMapPayload.hidden());
                     PacketDistributor.sendToPlayer(player, DungeonWalletPayload.hidden());
@@ -287,8 +300,16 @@ public final class RunEngine {
      * overworld.
      */
     public static void clearRunEffects(ServerPlayer player) {
+        // First: the rest of this hands back a body, and a spectator has no use for one.
+        unbench(player);
         DungeonHealth.clearHpDebt(player);
         DungeonShop.clearBlessings(player);
+        // A cooldown or an i-frame window that outlived its run would be waiting on the next one.
+        es.boffmedia.teras.dungeon.combat.Dodge.forget(player.getUUID());
+        es.boffmedia.teras.dungeon.combat.CombatEngine.forget(player.getUUID());
+        // clear, not forget: the panel has to be told to go. See CombatStatsSync.clear.
+        es.boffmedia.teras.dungeon.combat.CombatStatsSync.clear(player);
+        es.boffmedia.teras.dungeon.combat.Escudo.forget(player);
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
@@ -312,7 +333,7 @@ public final class RunEngine {
      */
     static void broadcastWallet(ActiveFloor floor) {
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player == null) {
                 continue;
             }
@@ -331,21 +352,22 @@ public final class RunEngine {
     static void syncAfflictions(ActiveFloor floor) {
         broadcastWallet(floor);
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player != null) {
                 Afflictions.apply(floor.run, player);
             }
         }
     }
 
-    /** A line to everyone still in the run. */
+    /**
+     * A line to everyone still in the run.
+     *
+     * <p>Kept as the engine's own entry point — a floor is what every caller in this package has —
+     * but the broadcast itself lives in {@link RunPartyHelper}, which is also what
+     * {@code DungeonRunManager} sends through.</p>
+     */
     static void message(ActiveFloor floor, String text) {
-        for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
-            if (player != null) {
-                player.sendSystemMessage(Component.literal(text));
-            }
-        }
+        RunPartyHelper.message(floor.level.getServer(), floor.run, text);
     }
 
     /** A cue at a world position, for the things that happen at a block rather than to a room. */
@@ -510,6 +532,7 @@ public final class RunEngine {
                     // halfway has to be added to it.
                     floor.bossBars.tick(floor);
                     floor.market.tick(floor);
+                    floor.lift.tick(floor);
                 }
                 if (sweep) {
                     abandonDeserted(floor);
@@ -534,6 +557,42 @@ public final class RunEngine {
         // Idempotent, so it costs nothing when end() already did it, and it still guarantees the
         // broken floor cannot tick again when end() refused the run.
         unregister(floor.run.id());
+    }
+
+    /**
+     * The ascensor's whole job, done at the moment the party leaves the floor it stands on.
+     *
+     * <p>Banked on <b>leaving</b>, never on touching the lift. A missable interaction that costs a
+     * tramo's checkpoint would feel terrible, and <i>you cleared the tramo by leaving it</i> can
+     * neither be forgotten nor claimed for a tramo the party did not finish.</p>
+     *
+     * <p><b>Both ways off count.</b> A boundary floor has two exits and this is called from each —
+     * {@link #beginAdvance} for the trampilla and {@link ElevatorRide} for the lift. Banking only on
+     * the descent is the bug it shipped with: riding out after clearing a tramo, which is precisely
+     * what the lift is for, anchored nothing at all.</p>
+     *
+     * <p>Everyone present is credited, including anyone benched out of the expedition: they were on
+     * the floor that was cleared, and a checkpoint is not a reward for surviving.</p>
+     */
+    static void bankTramo(ActiveFloor floor) {
+        es.boffmedia.teras.dungeon.piso.FloorPlan plan = floor.run.plan();
+        if (plan == null || !plan.tramoBoundary()) {
+            return;
+        }
+        int tramo = plan.tierIndex() + 1;
+        boolean news = false;
+        for (UUID member : floor.run.party().keySet()) {
+            news |= es.boffmedia.teras.dungeon.instance.ElevatorAccess.unlock(
+                    member, floor.run.dungeonId(), tramo);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
+            if (player != null) {
+                es.boffmedia.teras.dungeon.instance.ElevatorAccess.publish(player);
+            }
+        }
+        // Only when it is news: a party replaying a tramo it already owns has nothing to be told.
+        if (news) {
+            message(floor, "§bEl ascensor queda anclado. §7Podréis bajar directos a este tramo.");
+        }
     }
 
     /** Below this share of average party health, the floor ends with the party limping. */
@@ -636,9 +695,15 @@ public final class RunEngine {
      */
     static void chargeToll(ActiveFloor floor, ServerPlayer player, float damage) {
         floor.chargingToll = true;
+        // Escudo is set aside rather than spent: absorption is consumed by vanilla's own damage
+        // application, so shield hearts would otherwise pay the party's tolls — and a price that a
+        // well-equipped party pays less of is not a price. Escudo covers fights; see Escudo's javadoc.
+        float shield = player.getAbsorptionAmount();
+        player.setAbsorptionAmount(0);
         try {
             player.hurt(player.damageSources().magic(), damage);
         } finally {
+            player.setAbsorptionAmount(shield);
             floor.chargingToll = false;
         }
     }
@@ -665,16 +730,30 @@ public final class RunEngine {
                 return;
             }
             run.stateOf(player.getUUID()).countDeath();
+            // The cost of dying, and the reason a run can end at all. Taken here rather than at the
+            // respawn so it is charged even if the player never clicks the button — a death that
+            // only bills you when you come back is a death you can decline.
+            run.stateOf(player.getUUID())
+                    .loseContainers(DungeonsConfig.containersLostPerDeath());
             ActiveFloor died = FLOORS.get(run.id());
             if (died != null) {
                 // Costs this floor its grace and feeds his side of the odds — a death is +20 to the
                 // Acreedor and forfeits la Orden's +20, which is the opposition working.
                 died.someoneDied = true;
             }
+            // A death ends the fight, so it ends the fight's state: the roll they were waiting on, the
+            // chain they were halfway through, the guard that was nearly broken. Not on a phoenix
+            // revive above — that is the same fight continuing, which is what the charm buys.
+            es.boffmedia.teras.dungeon.combat.Dodge.forget(player.getUUID());
+            es.boffmedia.teras.dungeon.combat.CombatEngine.forget(player.getUUID());
+            es.boffmedia.teras.dungeon.combat.Escudo.forget(player);
             RESPAWN_AT_START.put(player.getUUID(), run.id());
             return;
         }
         UUID id = event.getEntity().getUUID();
+        // Dropped now rather than left to the poise sweep, which would carry a dead enemy's guard for
+        // another five seconds before noticing it had come back to full.
+        es.boffmedia.teras.dungeon.combat.CombatEngine.forget(id);
         for (ActiveFloor floor : FLOORS.values()) {
             // The collector first: he is outside the kill ledger, so the room loop below would
             // never see him, and what his death pays is not coins.
@@ -733,7 +812,12 @@ public final class RunEngine {
             message(floor, "§c" + player.getName().getString() + " ha caído — el grupo pierde "
                     + lost + " monedas.");
         }
-        DungeonTitles.send(player, "§4Has caído", lost > 0 ? "§7−" + lost + " monedas" : "");
+        int left = DungeonHealth.containersLeft(player, floor.run);
+        DungeonTitles.send(player, "§4Has caído",
+                left > 0 ? "§7" + left + " contenedores" : "§4Sin contenedores");
+        if (benchIfOut(floor, player)) {
+            return;
+        }
 
         int penaltyPct = DungeonsConfig.deathPenaltyPct();
         if (penaltyPct > 0) {
@@ -747,10 +831,114 @@ public final class RunEngine {
         }
     }
 
+    /**
+     * Takes a player out of the expedition when their last container is gone, and reports whether it
+     * did.
+     *
+     * <p>Spectator rather than a return to town: a party of four in which one member's bad floor
+     * removes them from the session entirely is a worse evening than one in which they watch. The
+     * body stays, the run keeps them on its books, and everything they carry is still theirs when
+     * the run ends.</p>
+     */
+    private static boolean benchIfOut(ActiveFloor floor, ServerPlayer player) {
+        if (DungeonHealth.containersLeft(player, floor.run) > 0) {
+            return false;
+        }
+        if (BENCHED.putIfAbsent(player.getUUID(), player.gameMode.getGameModeForPlayer()) == null) {
+            message(floor, "§4" + player.getName().getString()
+                    + " se queda sin contenedores. Queda fuera de la expedición.");
+        }
+        player.setGameMode(net.minecraft.world.level.GameType.SPECTATOR);
+        holdBench(floor, player);
+        DungeonTitles.send(player, "§4Fuera de la expedición",
+                "§7Miras por los ojos de tus compañeros");
+        return true;
+    }
+
+    /**
+     * Keeps a benched player looking through a living teammate.
+     *
+     * <p><b>This is the whole reason the bench is not plain spectator.</b> A free camera walks
+     * through walls, and the floor's secret rooms, its curse doors and the shape of the whole layout
+     * are exactly what a player who is out has no more business learning — a benched member could
+     * otherwise scout the floor for the party better than the party can. Attaching the camera to a
+     * teammate gives them the fight to watch and nothing else, and it is re-asserted on the scan
+     * because sneaking detaches a spectator camera.</p>
+     */
+    private static void holdBench(ActiveFloor floor, ServerPlayer player) {
+        if (player.getCamera() != player && player.getCamera() != null
+                && player.getCamera().isAlive()) {
+            return;
+        }
+        ServerPlayer host = null;
+        for (UUID member : floor.run.party().keySet()) {
+            if (member.equals(player.getUUID()) || BENCHED.containsKey(member)) {
+                continue;
+            }
+            ServerPlayer candidate = RunPartyHelper.playerOf(floor.level.getServer(), member);
+            if (candidate != null && candidate.serverLevel() == floor.level) {
+                host = candidate;
+                break;
+            }
+        }
+        // No host means everyone is out, and the wipe check below ends the run on this same tick.
+        if (host != null) {
+            player.setCamera(host);
+        }
+    }
+
+    /** True while the player is out of the expedition, whatever run they belong to. */
+    static boolean isBenched(UUID member) {
+        return BENCHED.containsKey(member);
+    }
+
+    /**
+     * Puts a benched player back the way they were found. Called from {@code clearRunEffects}, so
+     * every exit path — completion, wipe, abandon, disconnect — goes through it.
+     */
+    static void unbench(ServerPlayer player) {
+        net.minecraft.world.level.GameType previous = BENCHED.remove(player.getUUID());
+        if (previous == null) {
+            return;
+        }
+        player.setCamera(player);
+        player.setGameMode(previous);
+    }
+
+    /**
+     * The run ends because nobody is left standing.
+     *
+     * <p>Ends rather than completes: {@code DungeonRunManager.end} is the path that does <b>not</b>
+     * convert the purse to ₽, which is what makes a wipe cost the expedition. Gear is untouched —
+     * {@code clearRunEffects} only ever took the run-local items — so a wiped party keeps what it
+     * extracted the hard way and loses what it was carrying.</p>
+     */
+    private static void wipe(ActiveFloor floor) {
+        message(floor, "§4La expedición ha caído. §7Perdéis la bolsa y salís sin nada.");
+        for (UUID member : floor.run.party().keySet()) {
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
+            if (player != null) {
+                DungeonTitles.send(player, "§4Expedición perdida", "§7Nadie queda en pie");
+            }
+        }
+        abandon(floor);
+    }
+
+    /** True when every member of the party is out of the expedition. */
+    private static boolean allBenched(ActiveFloor floor) {
+        for (UUID member : floor.run.party().keySet()) {
+            if (!BENCHED.containsKey(member)) {
+                return false;
+            }
+        }
+        return !floor.run.party().isEmpty();
+    }
+
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         FLOORS.clear();
         RESPAWN_AT_START.clear();
+        BENCHED.clear();
         // The door palette is parsed once per block id and cached for the life of the server. An
         // integrated server loading a second world would otherwise serve the first one's config.
         es.boffmedia.teras.dungeon.build.DoorDressing.clearCache();
@@ -805,6 +993,11 @@ public final class RunEngine {
         }
         if (room != null && room.type() == RoomType.TREASURE
                 && floor.treasure.tryClaim(floor, player, pos)) {
+            event.setCanceled(true);
+            return;
+        }
+        if (room != null && room.type() == RoomType.EXIT
+                && floor.lift.tryRide(floor, player, room, pos)) {
             event.setCanceled(true);
             return;
         }
@@ -870,6 +1063,23 @@ public final class RunEngine {
      * would put the same line in the log twenty times a second for as long as a player stood in
      * the room.</p>
      */
+    /**
+     * Whether the room's template actually carries a marker of {@code kind}.
+     *
+     * <p>{@link #markerPos} cannot answer this: it falls back to the room's centre and warns, which
+     * is right for a fixture that merely ends up in an odd place and wrong for one whose very
+     * existence is the question. An ascensor stands on some floors and not others, and "no marker"
+     * has to mean "no lift" rather than "a lift in the middle of the room".</p>
+     */
+    static boolean hasMarker(ActiveFloor floor, Room room, String kind) {
+        for (TemplateMarkers.Marker marker : floor.built.markers().getOrDefault(room, List.of())) {
+            if (marker.kind().equals(kind)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static BlockPos markerPos(ActiveFloor floor, Room room, String kind) {
         for (TemplateMarkers.Marker marker : floor.built.markers().getOrDefault(room, List.of())) {
             if (marker.kind().equals(kind)) {
@@ -944,7 +1154,7 @@ public final class RunEngine {
     /** Resyncs every member's minimap — after a shop reveal, or any state change. */
     static void syncMapFor(ActiveFloor floor) {
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player != null && player.serverLevel() == floor.level) {
                 sendMap(floor, player);
             }
@@ -1146,7 +1356,7 @@ public final class RunEngine {
         floor.descentBar.setProgress(Math.min(1f, (float) remaining / floor.descentTotalTicks));
         SoundEvent tickCue = soundEvent("DESCENT_TICK");
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player == null || player.serverLevel() != floor.level) {
                 continue;
             }
@@ -1164,7 +1374,7 @@ public final class RunEngine {
     private static boolean allPresentBelow(ActiveFloor floor) {
         BlockPos origin = floor.built.origin();
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player != null && player.serverLevel() == floor.level
                     && player.getY() >= origin.getY() - 2) {
                 return false;
@@ -1184,7 +1394,7 @@ public final class RunEngine {
         clearDescentBar(floor);
         BlockPos origin = floor.built.origin();
         for (UUID falling : floor.run.party().keySet()) {
-            ServerPlayer other = floor.level.getServer().getPlayerList().getPlayer(falling);
+            ServerPlayer other = RunPartyHelper.playerOf(floor.level.getServer(), falling);
             if (other != null && other.serverLevel() == floor.level
                     && other.getY() < origin.getY() - 2) {
                 holdWhileDescending(other);
@@ -1194,6 +1404,7 @@ public final class RunEngine {
         // exists at once: the floor has been played, any deal or refusal on it is recorded, and
         // advanceStage is about to ask who should be waiting in the next sala del sello.
         floor.run.closeFloor(floorOutcome(floor), hasAcreedor(floor));
+        bankTramo(floor);
         DungeonRunManager.advanceStage(floor.run, floor.level);
     }
 
@@ -1231,7 +1442,7 @@ public final class RunEngine {
         float fraction = 0f;
         int counted = 0;
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player != null && player.getMaxHealth() > 0) {
                 fraction += player.getHealth() / player.getMaxHealth();
                 counted++;
@@ -1252,9 +1463,19 @@ public final class RunEngine {
         if (tickDescent(floor)) {
             return;
         }
+        if (allBenched(floor)) {
+            wipe(floor);
+            return;
+        }
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player == null || player.serverLevel() != floor.level) {
+                continue;
+            }
+            if (BENCHED.containsKey(member)) {
+                // Nothing else applies to someone who is out: no pickups, no plates, no cell
+                // tracking. The camera is the only thing that still needs holding.
+                holdBench(floor, player);
                 continue;
             }
             BlockPos origin = floor.built.origin();
@@ -1450,7 +1671,7 @@ public final class RunEngine {
     private static void clearDoorways(ActiveFloor floor, Room room) {
         BlockPos centre = floor.built.roomCenter(room);
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player == null || player.serverLevel() != floor.level) {
                 continue;
             }
@@ -1514,11 +1735,36 @@ public final class RunEngine {
                         }
                         continue;
                     }
-                    GridPos cell = door.from() == room ? door.neighborCell() : door.cell();
-                    if (outlined.add(cell)) {
+                    // Isaac's rule: standing in a room tells you what its neighbours ARE, not merely
+                    // that they exist. The door already says so in the world — PISOS §70 gave every
+                    // doorway the frame of the more special of the two rooms it joins — so a minimap
+                    // that drew a blank square was strictly less informative than looking at the wall,
+                    // and it made the compass a purchase for something the player could already see.
+                    // The room is sent as its whole footprint so a 2x2 chamber reads as one chamber
+                    // before it is entered, exactly as the sala del sello does above.
+                    //
+                    // A secret stays blank: it is reached through a cracked or hidden edge, which this
+                    // loop already skips, but a secret room that also touches a normal door would
+                    // otherwise be given away for free, and hunting walls is the whole point of it.
+                    if (isSecret(other)) {
+                        GridPos cell = door.from() == room ? door.neighborCell() : door.cell();
+                        if (outlined.add(cell)) {
+                            cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
+                                    DungeonMapPayload.TYPE_UNKNOWN, 0, false, false,
+                                    DungeonMapPayload.ROOM_NONE));
+                        }
+                        continue;
+                    }
+                    int neighbourId = floor.built.layout().rooms().indexOf(other);
+                    for (GridPos cell : other.cells()) {
+                        if (!outlined.add(cell)) {
+                            continue;
+                        }
+                        // State UNDISCOVERED on purpose: the icon says what it is, and the fill says
+                        // you have not been. Sending DISCOVERED would colour it as somewhere visited.
                         cells.add(new DungeonMapPayload.Cell(cell.x(), cell.y(),
-                                DungeonMapPayload.TYPE_UNKNOWN, 0, false, false,
-                                DungeonMapPayload.ROOM_NONE));
+                                other.type().ordinal(), RoomState.UNDISCOVERED.ordinal(),
+                                cell.equals(other.cells().get(0)), false, neighbourId));
                     }
                 }
             }
@@ -1596,7 +1842,7 @@ public final class RunEngine {
 
     private static boolean anyAliveInside(ActiveFloor floor, Room room) {
         for (UUID member : floor.run.party().keySet()) {
-            ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+            ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
             if (player == null || !player.isAlive() || player.serverLevel() != floor.level) {
                 continue;
             }
@@ -1619,7 +1865,33 @@ public final class RunEngine {
             if (entity == null || !entity.isAlive()) {
                 floor.enemyRooms.remove(entry.getKey());
                 floor.core.enemyRemoved(entry.getValue());
+                continue;
             }
+            contain(floor, entity, entry.getValue());
+        }
+    }
+
+    /**
+     * Puts a tracked enemy back in the room it belongs to.
+     *
+     * <p>The clear ledger keys an enemy to its room by <b>registration</b>, which is what makes a
+     * frozen chunk safe to skip — but it also means an enemy that <i>leaves</i> its room keeps the room
+     * sealed from outside it, and the party sealed in with nothing to kill. A blinker jumping through a
+     * wall was the reported cause and is fixed at the source in {@code BlinkGoal}; this is the net,
+     * because knockback, a shockwave, a boss's own charge and whatever goal is written next can all do
+     * the same thing, and every one of them fails the same unrecoverable way.</p>
+     *
+     * <p>Returned to the room's centre rather than nudged: it is already somewhere it should not be, so
+     * the only position known to be legal is the one the room was built around.</p>
+     */
+    private static void contain(ActiveFloor floor, Entity enemy, Room room) {
+        if (floor.core.state(room) != RoomState.IN_COMBAT || roomAt(floor, enemy.blockPosition()) == room) {
+            return;
+        }
+        BlockPos center = floor.built.roomCenter(room);
+        enemy.teleportTo(center.getX() + 0.5, center.getY(), center.getZ() + 0.5);
+        if (enemy instanceof Mob mob) {
+            mob.getNavigation().stop();
         }
     }
 
@@ -1837,7 +2109,7 @@ public final class RunEngine {
                 // The title lands with the doors, which is the moment the room stops being a room.
                 for (UUID member : floor.run.party().keySet()) {
                     ServerPlayer player =
-                            floor.level.getServer().getPlayerList().getPlayer(member);
+                            RunPartyHelper.playerOf(floor.level.getServer(), member);
                     if (player != null && player.serverLevel() == floor.level) {
                         DungeonTitles.send(player, "§4§l¡JEFE!", spawned.isEmpty() ? ""
                                 : "§7" + es.boffmedia.teras.dungeon.encounter.EnemyNames
@@ -1879,7 +2151,7 @@ public final class RunEngine {
             CoinDrops.spawnCoins(floor.level, plate, reward);
             rollLootAt(floor, plate, DungeonsConfig.treasureLootTable());
             for (UUID member : floor.run.party().keySet()) {
-                DungeonTitles.send(floor.level.getServer().getPlayerList().getPlayer(member),
+                DungeonTitles.send(RunPartyHelper.playerOf(floor.level.getServer(), member),
                         "§6Desafío superado", "§7+" + reward + " monedas");
             }
         }
@@ -1891,7 +2163,7 @@ public final class RunEngine {
                 return;
             }
             for (UUID member : floor.run.party().keySet()) {
-                ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+                ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
                 if (player != null && player.serverLevel() == floor.level) {
                     EconomyStore.deposit(member, reward);
                 }
@@ -1936,7 +2208,14 @@ public final class RunEngine {
         /** The seal re-pins: runes lit, pit grate retracted, doorway unbarred, reward armed. */
         private void restoreSeal(Room exitRoom) {
             lightSealRunes(exitRoom);
-            openPit(exitRoom);
+            if (liftIsTheWayOut(exitRoom)) {
+                // The last floor of the dungeon: there is nothing under the pit, so it does not
+                // open at all and the ascensor is the way home. Deliberate — a hole that ends the
+                // run by falling into it is not a decision, and the party asked for one.
+                message(floor, "§bNo hay más abajo. §7El ascensor os saca cuando queráis.");
+            } else {
+                openPit(exitRoom);
+            }
             unbarSealDoors();
             sound(DungeonSound.SEAL_RESTORED, exitRoom);
             floor.pedestals.armAt(floor, exitRoom, ClaimPolicy.Kind.ONE_OF_N,
@@ -1987,6 +2266,22 @@ public final class RunEngine {
          * own, but the extent taken from it does not — reading {@code +x/+z} off a rotated corner
          * put the hole two blocks off the grate on three rotations out of four.</p>
          */
+        /**
+         * Whether this floor's pit should stay shut because the ascensor is the exit.
+         *
+         * <p>Only on the dungeon's <b>last</b> floor, and only when a lift is actually standing
+         * there. Both halves are safety: a piso with no {@code exit} template carves its pit in the
+         * arena and has no lift at all, and sealing the pit for it would leave the party on a floor
+         * with no way off it. When in doubt the pit opens and the run completes on the drop, which
+         * is exactly what happened before any of this existed.</p>
+         */
+        private boolean liftIsTheWayOut(Room exitRoom) {
+            var dungeon = es.boffmedia.teras.dungeon.piso.PisoCatalog.dungeon(floor.run.dungeonId());
+            return dungeon != null
+                    && floor.run.stage() >= dungeon.length()
+                    && hasMarker(floor, exitRoom, "ascensor");
+        }
+
         private void openPit(Room exitRoom) {
             BlockPos hole = floor.built.clampInside(exitRoom,
                     markerPos(floor, exitRoom, "trapdoor"), 4);
@@ -2060,7 +2355,7 @@ public final class RunEngine {
          */
         private void sealCeremony() {
             for (UUID member : floor.run.party().keySet()) {
-                ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+                ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
                 if (player != null) {
                     player.sendSystemMessage(Component.literal(
                             "§dEl sello se restaura — la roca cede tras la arena."));
@@ -2098,7 +2393,7 @@ public final class RunEngine {
                     DungeonsConfig.bossLootTable(),
                     floor.built.clampInside(bossRoom, hole.offset(3, 0, 0), 3));
             for (UUID member : floor.run.party().keySet()) {
-                ServerPlayer player = floor.level.getServer().getPlayerList().getPlayer(member);
+                ServerPlayer player = RunPartyHelper.playerOf(floor.level.getServer(), member);
                 if (player != null) {
                     player.sendSystemMessage(Component.literal(
                             "§6La trampilla al siguiente piso se ha abierto."));

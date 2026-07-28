@@ -1,5 +1,6 @@
 package es.boffmedia.teras.util.data;
 
+import es.boffmedia.teras.Teras;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.scores.Objective;
@@ -20,6 +21,21 @@ import java.util.Locale;
 public final class TerasScoreboard {
     private TerasScoreboard() {}
 
+    /**
+     * The objective for {@code objective}, creating it if the world has none — or <b>null</b> if
+     * creating it failed.
+     *
+     * <p><b>Why creation is wrapped.</b> A trainer's objective is named after its config, so unlike
+     * the dungeon's fixed set ({@code DungeonObjectives}) this cannot all be made at server start;
+     * the first player to beat a trainer nobody has beaten before creates it mid-tick. That is the
+     * shape that crashes a <i>server</i> in this pack: {@code Scoreboard.addObjective} calls
+     * {@code ServerScoreboard.setDirty}, and CustomNPCs registers a dirty-listener at its own server
+     * start that throws {@code NullPointerException} inside {@code Optional.of}.</p>
+     *
+     * <p>So the record is allowed to be lost — one line in the log, one trainer defeat unrecorded —
+     * and the server is not. Long-lived worlds never notice either way, because their objectives
+     * were created before that listener existed.</p>
+     */
     public static Objective getOrCreateObjective(ServerPlayer player, String objective) {
         String tag = objective.replace("/", "").toLowerCase(Locale.ROOT);
         Scoreboard scoreboard = player.getScoreboard();
@@ -27,17 +43,26 @@ public final class TerasScoreboard {
         if (existing != null) {
             return existing;
         }
-        return scoreboard.addObjective(tag, ObjectiveCriteria.DUMMY, Component.literal(tag),
-                ObjectiveCriteria.RenderType.INTEGER, false, null);
+        try {
+            return scoreboard.addObjective(tag, ObjectiveCriteria.DUMMY, Component.literal(tag),
+                    ObjectiveCriteria.RenderType.INTEGER, false, null);
+        } catch (Throwable t) {
+            Teras.LOGGER.error("Could not create the '{}' scoreboard objective, so this result is "
+                    + "not recorded. Create it once with '/scoreboard objectives add {} dummy' and "
+                    + "it will be written from then on.", tag, tag, t);
+            return null;
+        }
     }
 
     public static void set(ServerPlayer player, String objective, int value) {
         Objective o = getOrCreateObjective(player, objective);
-        player.getScoreboard().getOrCreatePlayerScore(player, o).set(value);
+        if (o != null) {
+            player.getScoreboard().getOrCreatePlayerScore(player, o).set(value);
+        }
     }
 
     public static int get(ServerPlayer player, String objective) {
         Objective o = getOrCreateObjective(player, objective);
-        return player.getScoreboard().getOrCreatePlayerScore(player, o).get();
+        return o == null ? 0 : player.getScoreboard().getOrCreatePlayerScore(player, o).get();
     }
 }

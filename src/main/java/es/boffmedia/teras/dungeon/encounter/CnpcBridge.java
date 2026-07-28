@@ -2,8 +2,11 @@ package es.boffmedia.teras.dungeon.encounter;
 
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.dungeon.entity.GeoEnemyVariant;
+import es.boffmedia.teras.dungeon.instance.DescentCommand;
+import es.boffmedia.teras.dungeon.instance.ElevatorAccess;
 import es.boffmedia.teras.dungeon.entity.goal.CloneHopGoal;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.neoforged.fml.ModList;
@@ -138,6 +141,47 @@ public final class CnpcBridge {
      * in the copy's map, so writing a label through it would rewrite the operator's dialogue for
      * everyone, permanently. Each substituted option is therefore rebuilt from its own NBT first.</p>
      */
+    /**
+     * Removes the descent options this player has not earned, from their own copy of the dialogue.
+     *
+     * <h2>Why the mod removes them instead of CustomNPCs hiding them</h2>
+     *
+     * <p>Two independent reasons, both already paid for. A <b>Command</b> option is the only type
+     * that can start a run and the one type CustomNPCs will never hide, whatever conditions are set
+     * on it (mimir 65). And the scoreboard objective its condition screen would need cannot exist
+     * in this modpack at all: whoever creates {@code teras_ascensor}, CustomNPCs announces it a
+     * second time and every connected client is disconnected by the duplicate packet (mimir 120).</p>
+     *
+     * <p>So the branch point moves out of the editor and into here. {@code Dialog.copy} has already
+     * made this player their own instance — the same copy {@link #fillDialog} rewrites the numbers
+     * in — so dropping entries from its option map affects nobody else and nothing on disk.</p>
+     *
+     * <h2>What it will not do</h2>
+     *
+     * <p>Only options whose command is a descent to a stage the ledger refuses. Anything it cannot
+     * read is kept ({@link DescentCommand#stageOf} returns 0), because an operator's option quietly
+     * vanishing is a far worse failure than one extra row that the command itself then refuses with
+     * a message naming who is short.</p>
+     */
+    public static void gateDescents(Dialog dialog, ServerPlayer player) {
+        try {
+            if (dialog.options == null || dialog.options.isEmpty()) {
+                return;
+            }
+            HashMap<Integer, DialogOption> kept = new HashMap<>();
+            dialog.options.forEach((slot, option) -> {
+                int stage = option == null ? 0 : DescentCommand.stageOf(option.command);
+                if (stage <= 1 || ElevatorAccess.canBoard(player.getUUID(), stage)) {
+                    kept.put(slot, option);
+                }
+            });
+            dialog.options = kept;
+        } catch (Throwable t) {
+            // A dialogue that shows too much still works; one that throws here shows nothing.
+            Teras.LOGGER.warn("Dungeons: could not filter a dialogue's descents: {}", t.toString());
+        }
+    }
+
     public static void fillDialog(Dialog dialog, Map<String, String> tokens) {
         try {
             dialog.text = substitute(dialog.text, tokens);

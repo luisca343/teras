@@ -25,6 +25,8 @@ public final class DungeonMapOverlay {
 
     private static final int COLOUR_UNKNOWN = 0x50FFFFFF;
     private static final int COLOUR_DISCOVERED = 0xB0707070;
+    /** Named but never entered: darker than a visited room, solid enough to read its icon against. */
+    private static final int COLOUR_UNVISITED = 0x80303030;
     private static final int COLOUR_COMBAT = 0xB0A03030;
     private static final int COLOUR_CLEARED = 0xB0404040;
     private static final int COLOUR_CURRENT = 0xFFFFFFFF;
@@ -86,6 +88,7 @@ public final class DungeonMapOverlay {
             0xFFFFF0B0};  // ORDEN — pale gold, the grace on the sello's far flank
 
     /** State ordinals, matching the server's {@code RoomState}. */
+    private static final int STATE_UNDISCOVERED = 0;
     private static final int STATE_IN_COMBAT = 2;
     private static final int STATE_CLEARED = 3;
 
@@ -339,6 +342,12 @@ public final class DungeonMapOverlay {
         }
         if (cell.state() == STATE_CLEARED) {
             return COLOUR_CLEARED;
+        }
+        // A typed room the player has not been in yet: neighbours now arrive fully named, so the fill
+        // is what carries "you have not been here". Without this they were drawn in the visited grey
+        // and a floor looked explored the moment it was glimpsed.
+        if (cell.state() == STATE_UNDISCOVERED) {
+            return COLOUR_UNVISITED;
         }
         return COLOUR_DISCOVERED;
     }

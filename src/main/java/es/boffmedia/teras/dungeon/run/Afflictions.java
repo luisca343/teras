@@ -36,6 +36,9 @@ public final class Afflictions {
     /** Half-hearts of maximum health Pulso débil takes. Two hearts, matching the catalog text. */
     private static final int PULSO_DEBIL_HALF_HEARTS = 4;
 
+    /** Half-hearts in one heart container. */
+    public static final int HALF_HEARTS_PER_CONTAINER = 2;
+
     private static boolean party(DungeonRun run, Afliccion afliccion) {
         return run.afflictions().has(afliccion);
     }
@@ -100,7 +103,7 @@ public final class Afflictions {
 
     /**
      * Every half-heart of maximum health this run has taken from {@code member} — sold to a devil
-     * deal, or accepted as Pulso débil.
+     * deal, accepted as Pulso débil, or lost to a death.
      *
      * <p><b>The single answer, because three separate places rebuild a player's body from it</b>:
      * arriving on a floor, respawning after a death, and closing a devil deal. Each read
@@ -108,10 +111,12 @@ public final class Afflictions {
      * next time any of the three ran — which for a floor transition is within a minute of buying it.
      * Rides the devil deal's own debt rather than a separate attribute modifier: it is the same
      * quantity, and two systems writing one attribute by different routes is how one of them
-     * silently wins.</p>
+     * silently wins. Containers lost to deaths join it for that reason and no other — they are
+     * counted separately in {@link PlayerRunState} because only one of the three is refundable.</p>
      */
     public static int totalHpDebt(DungeonRun run, UUID member) {
         return run.stateOf(member).hpDebt()
+                + run.stateOf(member).containersLost() * HALF_HEARTS_PER_CONTAINER
                 + (personal(run, member, Afliccion.PULSO_DEBIL) ? PULSO_DEBIL_HALF_HEARTS : 0);
     }
 

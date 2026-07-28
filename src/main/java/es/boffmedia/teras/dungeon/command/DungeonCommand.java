@@ -200,6 +200,8 @@ public final class DungeonCommand {
                                         .executes(DungeonCommand::endRun)))
                         .then(Commands.literal("lista")
                                 .executes(DungeonCommand::list))
+                        .then(Commands.literal("combate")
+                                .executes(DungeonCommand::combatDiagnostic))
                         .then(Commands.literal("debug")
                                 .then(Commands.argument("run", IntegerArgumentType.integer(1))
                                         .executes(DungeonCommand::debug)))
@@ -553,6 +555,20 @@ public final class DungeonCommand {
      */
     private static Component mapa(String printout) {
         return Component.literal(printout).withStyle(style -> style.withFont(MAP_FONT));
+    }
+
+    /** Why the rebuilt loop is or is not applying to you; see {@code CombatDiagnostic}. */
+    private static int combatDiagnostic(CommandContext<CommandSourceStack> ctx) {
+        net.minecraft.server.level.ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "Ejecútalo como jugador: la mitad de las comprobaciones son sobre ti."));
+            return 0;
+        }
+        for (Component line : es.boffmedia.teras.dungeon.combat.CombatDiagnostic.report(player)) {
+            ctx.getSource().sendSuccess(() -> line, false);
+        }
+        return 1;
     }
 
     private static int list(CommandContext<CommandSourceStack> ctx) {

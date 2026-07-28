@@ -46,6 +46,11 @@ public final class GearStamp {
         ItemAttributeModifiers.Builder builder = ItemAttributeModifiers.builder();
         for (int i = 0; i < def.stats().size(); i++) {
             GearDef.Stat stat = def.stats().get(i);
+            // A first-party stat has no attribute to bind to and is read off the stack by the combat
+            // sheet; handing null to the builder would throw here, at item creation.
+            if (!stat.stat().vanilla()) {
+                continue;
+            }
             // One id per line: a repeated id silently replaces the earlier modifier.
             ResourceLocation id = ResourceLocation.fromNamespaceAndPath(
                     Teras.MOD_ID, "gear/" + def.id() + "/" + i);

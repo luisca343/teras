@@ -10,6 +10,16 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 public final class GearVanilla {
     private GearVanilla() {}
 
+    /**
+     * The vanilla attribute a line binds to, or <b>null</b> for a first-party stat.
+     *
+     * <p>Null is not a failure: {@code critico}, {@code aplomo} and the rest of
+     * {@code GearStat}'s first-party half have no vanilla attribute by design and are read off the
+     * worn stacks by {@code CombatSheets} instead. Every caller that builds an attribute modifier
+     * must therefore test {@link GearStat#vanilla()} and skip the line — a null handed to
+     * {@code ItemAttributeModifiers.Builder#add} throws at stamp time, which is item creation, which
+     * is a crash rather than a bad number.</p>
+     */
     public static Holder<Attribute> attribute(GearStat stat) {
         return switch (stat) {
             case ATTACK_DAMAGE -> Attributes.ATTACK_DAMAGE;
@@ -18,6 +28,8 @@ public final class GearVanilla {
             case ARMOR_TOUGHNESS -> Attributes.ARMOR_TOUGHNESS;
             case MOVEMENT_SPEED -> Attributes.MOVEMENT_SPEED;
             case MAX_HEALTH -> Attributes.MAX_HEALTH;
+            case CRITICO, CONTUNDENCIA, PENETRACION, ALCANCE, ENFRIAMIENTO, APLOMO, SUERTE,
+                 ESCUDO -> null;
         };
     }
 
