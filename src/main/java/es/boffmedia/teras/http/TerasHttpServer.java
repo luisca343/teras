@@ -73,6 +73,9 @@ import java.util.function.Supplier;
  * GET  /weather            -> {data:{weather, changeTime, minecraftTime}}   (no body)
  * GET  /performance        -> {data:{tps, players, memory, uptime}}        (no body)
  * POST /globalchat         -> {data:{sent:true}}       body {uuid, message}
+ * POST /position           -> {data:{online, x, y, z, dimension}}   body {uuid}
+ *                             (offline is a 200 with online:false, not an error — the caller
+ *                             branches on it; the taxi prices a fare from this)
  * POST /updatedex          -> {data:{SEEN:[...], CAUGHT:[...]}}   body {uuid}
  * POST /getallbattleteams  -> {data:{teams:[{id, name, pokemon}], maxTeams}}   body {uuid}
  * POST /updatebattleteam   -> {data:{updated:true}}   body {uuid, name, teamSlot,
@@ -140,6 +143,10 @@ public final class TerasHttpServer {
     private static final String REGIONS_PATH = "/regions";
     private static final String KARTS_LEADERBOARD_PATH = "/karts/leaderboard";
     private static final String KARTS_STATUS_PATH = "/karts/status";
+    private static final String TAXI_STOPS_PATH = "/taxi/stops";
+    private static final String TAXI_TELEPORT_PATH = "/taxi/teleport";
+    private static final String MESSAGE_PATH = "/message";
+    private static final String POSITION_PATH = "/position";
     private static final String BEARER_PREFIX = "Bearer ";
     /** Section sign, kept as an escape so the source stays ASCII. */
     private static final char SECTION = '\u00a7';
@@ -220,6 +227,12 @@ public final class TerasHttpServer {
             server.createContext(REGIONS_PATH, TerasHttpServer::handleRegions);
             server.createContext(KARTS_LEADERBOARD_PATH, TerasHttpServer::handleKartsLeaderboard);
             server.createContext(KARTS_STATUS_PATH, TerasHttpServer::handleKartsStatus);
+            // Stops serve from TaxiStore's immutable snapshot, so no server-thread hop — same
+            // rationale as /regions, and it matters because the taxi page polls this list.
+            server.createContext(TAXI_STOPS_PATH, TerasHttpServer::handleTaxiStops);
+            server.createContext(TAXI_TELEPORT_PATH, exchange -> handleTaxiTeleport(exchange, mc));
+            server.createContext(MESSAGE_PATH, exchange -> handleMessage(exchange, mc));
+            server.createContext(POSITION_PATH, exchange -> handlePosition(exchange, mc));
             server.setExecutor(Teras.EXECUTOR);
             server.start();
 
@@ -229,7 +242,8 @@ public final class TerasHttpServer {
                             + "POST /pc, POST /pc/move, POST /equipo, GET /weather, "
                             + "GET /performance, POST /globalchat, POST /updatedex, "
                             + "POST /getallbattleteams, POST /updatebattleteam, POST /stats, "
-                            + "GET /regions)",
+                            + "GET /regions, GET /taxi/stops, POST /taxi/teleport, POST /message, "
+                            + "POST /position)",
                     TerasConfig.getHttpBind(), TerasConfig.getHttpPort());
             warnAboutExposure();
         } catch (IOException e) {
@@ -548,6 +562,176 @@ public final class TerasHttpServer {
                 return true;
             }, WEATHER_TIMEOUT_SECONDS);
             respond(exchange, 200, "{\"data\":{\"sent\":true}}");
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        }
+    }
+
+    /**
+     * A private message to one player — the backend's "whisper someone in-game" path, used by the
+     * web and ficusai. Same body as {@link #handleGlobalChat}, one recipient.
+     */
+    private static void handleMessage(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonBody.object(readBody(exchange));
+            UUID uuid = JsonBody.uuid(body);
+            String message = JsonBody.string(body, "message");
+            if (message == null || message.isBlank()) {
+                respond(exchange, 400, error("'message' is required"));
+                return;
+            }
+            String clean = message.replace(SECTION, ' ');
+            Boolean sent = onServerThread(mc, () -> {
+                ServerPlayer player = mc.getPlayerList().getPlayer(uuid);
+                if (player == null) {
+                    return false;
+                }
+                MessageHelper.enviarMensaje(player, clean);
+                return true;
+            }, WEATHER_TIMEOUT_SECONDS);
+            if (!Boolean.TRUE.equals(sent)) {
+                // 422 rather than 404: the same answer /giveitems gives for an offline player, so a
+                // caller can treat "the player is not here" identically across every route.
+                respond(exchange, 422, error("Player not online"));
+                return;
+            }
+            respond(exchange, 200, "{\"data\":{\"sent\":true}}");
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        }
+    }
+
+    /**
+     * Where a player is standing right now.
+     *
+     * <p>The only server-side source of a player's coordinates. The web has its own through the
+     * MCEF bridge, but nothing the backend can reach — and the backend needs them twice: to price
+     * a taxi fare from the player's real position rather than one the browser reports, and to
+     * settle a teleport the mod could not confirm by reading back where the player ended up
+     * (docs/TAXI.md).</p>
+     *
+     * <p>Offline is a <b>200 with {@code online:false}</b>, not a 404: to every caller it is an
+     * ordinary state of the world, not a failure of the request.</p>
+     */
+    private static void handlePosition(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonBody.object(readBody(exchange));
+            UUID uuid = JsonBody.uuid(body);
+            JsonObject position = onServerThread(mc, () -> {
+                ServerPlayer player = mc.getPlayerList().getPlayer(uuid);
+                JsonObject json = new JsonObject();
+                if (player == null) {
+                    json.addProperty("online", false);
+                    return json;
+                }
+                json.addProperty("online", true);
+                json.addProperty("x", player.getX());
+                json.addProperty("y", player.getY());
+                json.addProperty("z", player.getZ());
+                json.addProperty("dimension", player.level().dimension().location().toString());
+                return json;
+            }, WEATHER_TIMEOUT_SECONDS);
+            respond(exchange, 200, data(GSON.toJson(position)));
+        } catch (JsonBody.BadRequest e) {
+            respond(exchange, 400, error(e.getMessage()));
+        } catch (IllegalStateException e) {
+            Teras.LOGGER.warn("Teras HTTP API: {}", e.getMessage());
+            respond(exchange, 503, error("Server busy"));
+        }
+    }
+
+    /**
+     * The taxi's destinations. Served straight from {@code TaxiStore}'s snapshot — no server-thread
+     * hop, because the SmartRotom taxi page polls this while the player walks around.
+     */
+    private static void handleTaxiStops(HttpExchange exchange) throws IOException {
+        if (!beginRead(exchange)) {
+            return;
+        }
+        com.google.gson.JsonArray array = new com.google.gson.JsonArray();
+        for (es.boffmedia.teras.taxi.TaxiStop stop : es.boffmedia.teras.taxi.TaxiStore.all()) {
+            JsonObject json = new JsonObject();
+            json.addProperty("id", stop.id());
+            json.addProperty("x", stop.x());
+            json.addProperty("y", stop.y());
+            json.addProperty("z", stop.z());
+            // Stops are overworld-only by rule (docs/TAXI.md), so this is a constant. It is sent
+            // because the backend's TaxiStop entity declares it; the taxi page never reads it.
+            json.addProperty("world", "minecraft:overworld");
+            array.add(json);
+        }
+        respond(exchange, 200, data(GSON.toJson(array)));
+    }
+
+    /**
+     * Moves a player to a stop.
+     *
+     * <p><b>The caller charges the fare afterwards</b>, and only on an answer it can trust — the
+     * backend teleports first and bills second (docs/TAXI.md). That inverts what this route used to
+     * assume, and it is what makes the two properties below load-bearing rather than merely tidy:</p>
+     *
+     * <ul>
+     *   <li><b>All-or-nothing.</b> Nothing is touched until the stop, the player and the arrival are
+     *       all known good, so a refusal means the player did not move and must not be charged.</li>
+     *   <li><b>Distinguishable failures.</b> Each one gets its own status, and the two that share
+     *       409 carry a {@code code}, because the backend turns them into different sentences for
+     *       the player. 503 is the only ambiguous answer: it means we cannot vouch either way, and
+     *       the backend resolves it by reading the player's position back through {@code /position}.</li>
+     * </ul>
+     */
+    private static void handleTaxiTeleport(HttpExchange exchange, MinecraftServer mc) throws IOException {
+        if (!beginWrite(exchange)) {
+            return;
+        }
+        try {
+            JsonObject body = JsonBody.object(readBody(exchange));
+            UUID uuid = JsonBody.uuid(body);
+            String id = JsonBody.string(body, "id");
+            if (id == null || id.isBlank()) {
+                respond(exchange, 400, error("'id' is required"));
+                return;
+            }
+            es.boffmedia.teras.taxi.TaxiStop stop = es.boffmedia.teras.taxi.TaxiStore.find(id);
+            if (stop == null) {
+                respond(exchange, 404, error("Unknown taxi stop"));
+                return;
+            }
+            es.boffmedia.teras.taxi.TaxiTeleport.Result result = onServerThreadOrAbandon(mc,
+                    () -> es.boffmedia.teras.taxi.TaxiTeleport.travel(
+                            mc.getPlayerList().getPlayer(uuid), stop),
+                    GIVE_TIMEOUT_SECONDS, null);
+            if (result == null) {
+                // Abandoned or timed out: we do not know whether it ran, so say so rather than
+                // reporting a trip we cannot vouch for.
+                Teras.LOGGER.warn("taxi/teleport for {} to '{}' did not complete in time", uuid, stop.id());
+                respond(exchange, 503, error("Server busy"));
+                return;
+            }
+            switch (result) {
+                case OK -> respond(exchange, 200, "{\"data\":{\"teleported\":true}}");
+                case OFFLINE -> respond(exchange, 422, error("Player not online"));
+                case UNSAFE -> {
+                    // An error, not a warning: a stop nobody can arrive at is broken content, and
+                    // it will keep refusing every passenger until an admin moves it.
+                    Teras.LOGGER.error("taxi/teleport: stop '{}' has no safe arrival; refusing to "
+                            + "drop {} into it", stop.id(), uuid);
+                    respond(exchange, 409, error("No safe arrival at that stop", "unsafe_arrival"));
+                }
+                case BUSY -> respond(exchange, 409,
+                        error("Player is in a dungeon run", "in_dungeon_run"));
+            }
         } catch (JsonBody.BadRequest e) {
             respond(exchange, 400, error(e.getMessage()));
         } catch (IllegalStateException e) {
@@ -1072,6 +1256,18 @@ public final class TerasHttpServer {
 
     private static String error(String message) {
         return "{\"success\":false,\"message\":\"" + message.replace("\"", "'") + "\",\"data\":null}";
+    }
+
+    /**
+     * An error that also carries a machine-readable {@code code}.
+     *
+     * For the cases where one status covers two different things — the taxi serves both "no safe
+     * arrival" and "the player is in a dungeon run" as 409 — and the caller has to tell them apart
+     * to say anything useful to a player. The prose stays for logs; the code is what is branched on.
+     */
+    private static String error(String message, String code) {
+        return "{\"success\":false,\"message\":\"" + message.replace("\"", "'")
+                + "\",\"code\":\"" + code + "\",\"data\":null}";
     }
 
     private static void respond(HttpExchange exchange, int status, String body) {
