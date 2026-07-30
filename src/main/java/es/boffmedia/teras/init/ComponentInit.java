@@ -43,6 +43,22 @@ public final class ComponentInit {
                     .build());
 
     /**
+     * The track a {@link es.boffmedia.teras.items.Disco} carries — a <b>name</b> in the server's
+     * library ({@code config/teras/discos/}), never a URL.
+     *
+     * <p>A name keeps the download the single moderation checkpoint and keeps a disc playable when
+     * the site it came from goes away. It is written only by {@code /disco crear}, which is
+     * admin-gated; nothing player-facing can mint one. 1.16.5 kept this in raw item NBT under the
+     * same key, and had no writer at all — both lines of {@code /disco crear} that would have set
+     * it were commented out.</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<String>> DISCO_TRACK =
+            COMPONENTS.register("disco_track", () -> DataComponentType.<String>builder()
+                    .persistent(Codec.STRING)
+                    .networkSynchronized(ByteBufCodecs.STRING_UTF8)
+                    .build());
+
+    /**
      * Which dungeon-gear definition a stack embodies, for gear built on a <b>vanilla</b> base item
      * (a diamond sword, not a registered {@code teras:} item). Registered gear carries its id in
      * the item class; vanilla-based gear can only carry it here. Written by loot tables via

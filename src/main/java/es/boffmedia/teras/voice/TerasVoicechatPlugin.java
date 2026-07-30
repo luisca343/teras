@@ -61,6 +61,20 @@ public class TerasVoicechatPlugin implements VoicechatPlugin {
 
     private void onServerStopped(VoicechatServerStoppedEvent event) {
         serverApi = null;
+        // Every locational player holds a channel from this api; leaving them running would keep
+        // feeding a dead server.
+        es.boffmedia.teras.audio.DiscPlayback.stopAll();
+    }
+
+    /**
+     * The live SVC server api, or {@code null} when the voice server is not running.
+     *
+     * <p>The audio side (discos, Tocadiscos) needs the api itself rather than a call helper, so it
+     * is exposed here instead of growing a method per use. Callers must handle {@code null}: SVC is
+     * a soft dependency and its server starts after ours.</p>
+     */
+    public static VoicechatServerApi api() {
+        return serverApi;
     }
 
     /**

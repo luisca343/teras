@@ -12,6 +12,7 @@
     "CnpcDialogPortraitMixin",
     "ParticipantSelectionAccessor",
     "PokemonStorageMixin",
+    "SelectStatPacketMixin",
     "ServerScoreboardMixin",
     "TeamSelectionMixin"
   ],

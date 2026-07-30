@@ -84,6 +84,9 @@ public class Teras {
             // only (Cobblemon has no BattleItemScanner). Same isolation — BackpackBridge names no
             // engine class.
             es.boffmedia.teras.battle.BackpackBridge.registerIfPresent();
+            // The rusty cap's Pokémon interaction. Pixelmon only (Cobblemon has no bottle caps).
+            // Same isolation — ChapaBridge names no engine class.
+            es.boffmedia.teras.pixelmon.chapa.ChapaBridge.registerIfPresent();
             // Regions: the cartel on town enter. Engine-free; future consumers (quests, music)
             // register alongside.
             es.boffmedia.teras.region.RegionTracker.addListener(

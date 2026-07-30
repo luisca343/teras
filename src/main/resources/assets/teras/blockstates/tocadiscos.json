@@ -1,0 +1,9 @@
+{
+  "variants":{
+    "facing=north": {"model": "teras:block/tocadiscos"},
+    "facing=south": { "model":"teras:block/tocadiscos", "y" : 180},
+    "facing=west": { "model":"teras:block/tocadiscos", "y" : 270},
+    "facing=east": { "model":"teras:block/tocadiscos", "y" : 90}
+
+  }
+}

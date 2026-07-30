@@ -25,6 +25,15 @@ public final class SoundInit {
      */
     public static final DeferredHolder<SoundEvent, SoundEvent> SPARKLE = register("sparkle");
 
+    /** The porra's hit. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> BONK = register("bonk");
+
+    /** The taser's discharge, on use whether or not it hits anything. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> TASER = register("taser");
+
+    /** The whip's crack, shared by its swing and its pull. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> LATIGO_NUMERIL = register("latigo_numeril");
+
     private static DeferredHolder<SoundEvent, SoundEvent> register(String name) {
         ResourceLocation id = ResourceLocation.fromNamespaceAndPath(Teras.MOD_ID, name);
         return SOUNDS.register(name, () -> SoundEvent.createVariableRangeEvent(id));

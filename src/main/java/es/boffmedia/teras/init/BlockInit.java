@@ -47,6 +47,14 @@ public final class BlockInit {
                     .strength(0.8F)
                     .noOcclusion()));
 
+    /** The record player. See {@link es.boffmedia.teras.blocks.Tocadiscos} — built, not ported. */
+    public static final DeferredBlock<es.boffmedia.teras.blocks.Tocadiscos> TOCADISCOS =
+            registerWithItem("tocadiscos", () -> new es.boffmedia.teras.blocks.Tocadiscos(
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.WOOD)
+                            .sound(SoundType.WOOD)
+                            .strength(1.5F)));
+
     public static final DeferredBlock<CarpetBlock> TWISTER_AMARILLO = twister("twister_amarillo", MapColor.COLOR_YELLOW);
     public static final DeferredBlock<CarpetBlock> TWISTER_AZUL = twister("twister_azul", MapColor.COLOR_BLUE);
     public static final DeferredBlock<CarpetBlock> TWISTER_ROJO = twister("twister_rojo", MapColor.COLOR_RED);

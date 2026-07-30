@@ -2,8 +2,13 @@ package es.boffmedia.teras.init;
 
 import es.boffmedia.teras.Teras;
 import es.boffmedia.teras.dungeon.item.DungeonPotionItem;
+import es.boffmedia.teras.items.ChapaOxidada;
+import es.boffmedia.teras.items.Disco;
 import es.boffmedia.teras.items.FunkoItem;
+import es.boffmedia.teras.items.LatigoNumeril;
+import es.boffmedia.teras.items.Porra;
 import es.boffmedia.teras.items.SmartRotom;
+import es.boffmedia.teras.items.Taser;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BucketItem;
@@ -156,6 +161,46 @@ public final class ItemInit {
     public static final DeferredItem<Item> GEAR_ARTILUGIO = ITEMS.registerItem(
             "gear_artilugio",
             es.boffmedia.teras.dungeon.gear.GadgetItem::new,
+            new Item.Properties().stacksTo(1)
+    );
+
+    // --- roleplay items -----------------------------------------------------------------------
+
+    /** The baton. Stats live in the class, not here: they are the item's identity. */
+    public static final DeferredItem<Porra> PORRA = ITEMS.registerItem(
+            "porra",
+            Porra::new,
+            new Item.Properties().stacksTo(1)
+    );
+
+    /** The whip: a weak melee weapon that drags what it is aimed at towards its holder. */
+    public static final DeferredItem<LatigoNumeril> LATIGO_NUMERIL = ITEMS.registerItem(
+            "latigo_numeril",
+            LatigoNumeril::new,
+            new Item.Properties().stacksTo(1)
+    );
+
+    /** Ranged crowd control: a point of damage and five seconds of Slowness III. */
+    public static final DeferredItem<Taser> TASER = ITEMS.registerItem(
+            "taser",
+            Taser::new,
+            new Item.Properties().stacksTo(1)
+    );
+
+    /**
+     * The rusty cap. Inert without Pixelmon — see
+     * {@link es.boffmedia.teras.pixelmon.chapa.ChapaBridge}.
+     */
+    public static final DeferredItem<ChapaOxidada> CHAPA_OXIDADA = ITEMS.registerItem(
+            "chapa_oxidada",
+            ChapaOxidada::new,
+            new Item.Properties().stacksTo(16)
+    );
+
+    /** A record. Blank until {@code /disco crear} stamps a track onto it. */
+    public static final DeferredItem<Disco> DISCO = ITEMS.registerItem(
+            "disco",
+            Disco::new,
             new Item.Properties().stacksTo(1)
     );
 

@@ -4,5 +4,23 @@
     "sounds": [
       "teras:sparkle"
     ]
+  },
+  "bonk": {
+    "subtitle": "subtitles.teras.bonk",
+    "sounds": [
+      "teras:bonk"
+    ]
+  },
+  "taser": {
+    "subtitle": "subtitles.teras.taser",
+    "sounds": [
+      "teras:taser"
+    ]
+  },
+  "latigo_numeril": {
+    "subtitle": "subtitles.teras.latigo_numeril",
+    "sounds": [
+      "teras:latigo_numeril"
+    ]
   }
 }

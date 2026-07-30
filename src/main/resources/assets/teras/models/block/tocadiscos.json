@@ -1,0 +1,9 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "particle": "teras:block/tocadiscos",
+    "top": "teras:block/tocadiscos_top",
+    "bottom": "teras:block/tocadiscos",
+    "side": "teras:block/tocadiscos"
+  }
+}

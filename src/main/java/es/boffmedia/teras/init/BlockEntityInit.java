@@ -20,6 +20,12 @@ public final class BlockEntityInit {
                     .of(FunkoBlockEntity::new, BlockInit.FUNKO.get())
                     .build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>,
+            BlockEntityType<es.boffmedia.teras.blockentity.TocadiscosBlockEntity>> TOCADISCOS =
+            BLOCK_ENTITIES.register("tocadiscos", () -> BlockEntityType.Builder
+                    .of(es.boffmedia.teras.blockentity.TocadiscosBlockEntity::new, BlockInit.TOCADISCOS.get())
+                    .build(null));
+
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FrameBlockEntity>> FRAME =
             BLOCK_ENTITIES.register("picture_frame", () -> BlockEntityType.Builder
                     .of(FrameBlockEntity::new, BlockInit.PICTURE_FRAME.get())
