@@ -35,6 +35,7 @@ class QueryTypeTest {
         assertEquals(QueryType.GET_ZOOM_LEVEL, QueryType.fromQuery("getZoomLevel"));
         assertEquals(QueryType.SET_ZOOM_LEVEL, QueryType.fromQuery("setZoomLevel"));
         assertEquals(QueryType.GET_WAYPOINTS, QueryType.fromQuery("getWaypoints"));
+        assertEquals(QueryType.MC_JOIN_SERVER, QueryType.fromQuery("mcJoinServer"));
     }
 
     @Test

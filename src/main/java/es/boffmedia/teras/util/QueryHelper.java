@@ -71,6 +71,10 @@ public final class QueryHelper {
                 es.boffmedia.teras.client.camera.CameraQueries.handleGetFlashlight(cb));
         HANDLERS.put(QueryType.SET_FLASHLIGHT, (json, raw, cb) ->
                 es.boffmedia.teras.client.camera.CameraQueries.handleSetFlashlight(raw, cb));
+        // Async off the client thread: proves this player's Minecraft identity to Mojang so the page
+        // can trade the result for an in-game session that was verified rather than asserted.
+        HANDLERS.put(QueryType.MC_JOIN_SERVER, (json, raw, cb) ->
+                es.boffmedia.teras.client.auth.MinecraftJoinQueries.handleJoinServer(json, cb));
         HANDLERS.put(QueryType.DAR_CAJA, QueryHelper::handleDarCaja);
         HANDLERS.put(QueryType.SET_CALL, QueryHelper::handleSetCall);
         // Async: the server removes this player from any voice group and replies under the id.

@@ -31,7 +31,9 @@ enum QueryType {
     GET_ZOOM_LEVEL,
     SET_ZOOM_LEVEL,
     GET_FLASHLIGHT,
-    SET_FLASHLIGHT;
+    SET_FLASHLIGHT,
+    /** Mojang identity handshake, step 2. See {@code client.auth.MinecraftJoinQueries}. */
+    MC_JOIN_SERVER;
 
     /** Normalized constant name -> constant. Built once; the enum is fixed at class-load. */
     private static final Map<String, QueryType> BY_NORMALIZED_NAME = new HashMap<>();
